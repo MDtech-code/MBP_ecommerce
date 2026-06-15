@@ -7,15 +7,13 @@ services:
       dockerfile: Dockerfile
     container_name: django_backend
     # command: gunicorn config.wsgi:application --bind 0.0.0.0:8000
-    command: >
-      sh -c "if [ $DJANGO_ENV = 'development' ];
-         then python manage.py runserver 0.0.0.0:8000;
-         else gunicorn config.wsgi:application --bind 0.0.0.0:8000;
-         fi"
+    command: python manage.py runserver 0.0.0.0:8000
+    
     volumes:
       - ./backend:/app
     env_file:
-      - .env
+      - ./backend/.env.docker
+    
     ports:
       - "8000:8000"
     depends_on:
@@ -31,6 +29,8 @@ services:
     volumes:
     - ./frontend:/app
     - /app/node_modules
+    env_file:
+      - ./frontend/.env
     ports:
       - "5173:5173"
 
@@ -38,7 +38,7 @@ services:
     image: postgres:16
     container_name: postgres_db
     env_file:               
-      - .env
+      - ./backend/.env
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:

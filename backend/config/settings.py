@@ -1,8 +1,10 @@
-
+import os
 from pathlib import Path
 import environ
 env=environ.Env()
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
+
+
+#________ django project directory path and read .env file 
 BASE_DIR = Path(__file__).resolve().parent.parent
 environ.Env.read_env(BASE_DIR / ".env")
 
@@ -10,8 +12,11 @@ environ.Env.read_env(BASE_DIR / ".env")
 # ─── Core ────────────────────────────────────────────
 SECRET_KEY = env('SECRET_KEY')
 DEBUG = env.bool('DEBUG',default=False)
-
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost"])
+CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
+CSRF_COOKIE_SECURE = False
+SESSION_COOKIE_SECURE = False
+
 
 
 # ______ Django-debug tool bar config _________________________
@@ -95,8 +100,14 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # ─── Database ─────────────────────────────────────────
 
 DATABASES = {
-    "default": env.db(
-        "DATABASE_URL")
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": env("POSTGRES_DB"),
+        "USER": env("POSTGRES_USER"),
+        "PASSWORD": env("POSTGRES_PASSWORD"),
+        "HOST": env('POSTGRES_HOST', default='localhost'),
+        "PORT": env("POSTGRES_PORT", default="5432"),
+    }
 }
 
 
