@@ -38,7 +38,7 @@ services:
     image: postgres:16
     container_name: postgres_db
     env_file:               
-      - ./backend/.env
+      - ./backend/.env.docker
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
