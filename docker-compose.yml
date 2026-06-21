@@ -1,42 +1,105 @@
-version: '3.9'
+
 
 services:
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: django_backend
-    # command: gunicorn config.wsgi:application --bind 0.0.0.0:8000
-    command: python manage.py runserver 0.0.0.0:8000
+      context: .
+      dockerfile: /backend/Dockerfile
+    container_name: django_MBP_backend
+    command: python manage.py runserver_plus --cert-file /app/certs/localhost.pem --key-file /app/certs/localhost-key.pem 0.0.0.0:8000
     
     volumes:
       - ./backend:/app
+      - ./certs:/app/certs
     env_file:
       - ./backend/.env.docker
-    
+     
     ports:
       - "8000:8000"
     depends_on:
        db:
         condition: service_healthy 
+       redis:
+        condition: service_healthy
+    develop:
+       watch:
+         - action: sync
+           path: ./backend
+           target: /app
+           ignore:
+             - "**/__pycache__"
+             - "**/*.pyc"
+         - action: rebuild
+           path: ./backend/requirements.txt
 
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: react_frontend
-    command: npm run dev -- --host 0.0.0.0
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: react_MBP_frontend
+    command: npm run dev -- --mode docker --host 0.0.0.0
+    environment:
+    - NODE_OPTIONS=--use-system-ca
     volumes:
     - ./frontend:/app
     - /app/node_modules
+    - ./certs:/app/certs
     env_file:
-      - ./frontend/.env
+      - ./frontend/.env.docker
     ports:
       - "5173:5173"
+    depends_on:
+      - backend
+    develop:
+      watch:
+        - action: sync
+          path: ./frontend
+          target: /app
+          ignore:
+            - "node_modules"
+        - action: rebuild
+          path: ./frontend/package.json
 
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis_MBP_cache
+    
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  celery:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: celery_MBP_worker
+    command: celery -A config worker --loglevel=info
+    volumes:
+      - ./backend:/app
+      - ./certs:/app/certs
+    env_file:
+      - ./backend/.env.docker
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    develop:
+      watch:
+        - action: sync
+          path: ./backend
+          target: /app
+          ignore:
+            - "**/__pycache__"
+            - "**/*.pyc"
   db:
     image: postgres:16
-    container_name: postgres_db
+    container_name: postgres_MBP_db
     env_file:               
       - ./backend/.env.docker
     volumes:

@@ -48,6 +48,8 @@ INSTALLED_APPS = [
     'corsheaders',
     'debug_toolbar',
     'django_extensions',
+    'integration_test',
+    'drf_spectacular',
 ]
 
 MIDDLEWARE = [
@@ -130,6 +132,7 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 # ─── DRF ─────────────────────────────────────────────
 REST_FRAMEWORK = {
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
@@ -179,3 +182,26 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 
 
+# ─── Redis Cache ──────────────────────────────────────
+CACHES = {
+    'default': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': env('REDIS_URL', default='redis://127.0.0.1:6380/0'),
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+        }
+    }
+}
+
+# ─── Celery ───────────────────────────────────────────
+CELERY_BROKER_URL = env('REDIS_URL', default='redis://127.0.0.1:6380/0')
+CELERY_RESULT_BACKEND = env('REDIS_URL', default='redis://127.0.0.1:6380/0')
+BROKER_TRANSPORT_OPTIONS = {"protocol": 2}
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'UTC'
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_TIMEZONE = 'Asia/Karachi'
