@@ -5,13 +5,7 @@ FROM python:3.12-slim
 # Set work directory
 WORKDIR /app
 
-# RUN apt-get update && apt-get install -y --no-install-recommends \
-#     gcc \
-#     libpq-dev \
-#     libssl-dev \
-#     pkg-config \
-#     netcat-openbsd \
-#     && rm -rf /var/lib/apt/lists/*
+
 
 # # Install ca-certificates
 # RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*

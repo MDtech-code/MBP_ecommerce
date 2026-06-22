@@ -14,21 +14,22 @@ SECRET_KEY = env('SECRET_KEY')
 DEBUG = env.bool('DEBUG',default=False)
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost"])
 CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
-CSRF_COOKIE_SECURE = False
-SESSION_COOKIE_SECURE = False
+
+CSRF_COOKIE_SECURE = env.bool('CSRF_COOKIE_SECURE',default=False)
+SESSION_COOKIE_SECURE = env.bool('SESSION_COOKIE_SECURE',default=False)
 
 
 
 # ______ Django-debug tool bar config _________________________
-INTERNAL_IPS = [
-    "127.0.0.1",
-    "localhost",
-]
+
+INTERNAL_IPS=env.list("INTERNAL_IPS",default=['127.0.0.1','localhost'])
+
 # Detect Docker internal IPs
 import socket
 try:
     hostname, _, ips = socket.gethostbyname_ex(socket.gethostname())
     INTERNAL_IPS += [ip[:-1] + "1" for ip in ips]
+    #INTERNAL_IPS += [ip.rsplit(".", 1)[0] + ".1" for ip in ips]
 except Exception:
     pass
 
@@ -36,21 +37,27 @@ except Exception:
 
 # ─── Apps ────────────────────────────────────────────
 
-INSTALLED_APPS = [
+
+DJANGO_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.staticfiles',
     'django.contrib.sessions',       
     'django.contrib.messages', 
-    # Third party
+]
+PROJECT_APPS = [
+    'integration_test',
+]
+THIRD_PARTY_APPS = [
     'rest_framework',
     'corsheaders',
     'debug_toolbar',
     'django_extensions',
-    'integration_test',
     'drf_spectacular',
 ]
+INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + PROJECT_APPS
+
 
 MIDDLEWARE = [
     # 1. Third‑party / cross‑origin
@@ -132,21 +139,25 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 # ─── DRF ─────────────────────────────────────────────
 REST_FRAMEWORK = {
+    #* Auto-generates OpenAPI schema (used by drf-spectacular for API docs)
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    #* Use JWT tokens for authentication
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
+    #* Require all requests to be from authenticated users by default
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
+    #* Paginate results using page numbers (e.g., ?page=2) & mention page size 
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 12,
 }
 # ─── CORS ─────────────────────────────────────────────
 CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=[
-    'http://localhost:5173',   # Vite dev
-    'http://localhost:3000',
+    'httpS://localhost:5173',   # Vite dev
 ])
+
 # ─── JWT ──────────────────────────────────────────────
 from datetime import timedelta
 SIMPLE_JWT = {
@@ -196,11 +207,10 @@ CACHES = {
 # ─── Celery ───────────────────────────────────────────
 CELERY_BROKER_URL = env('REDIS_URL', default='redis://127.0.0.1:6380/0')
 CELERY_RESULT_BACKEND = env('REDIS_URL', default='redis://127.0.0.1:6380/0')
-BROKER_TRANSPORT_OPTIONS = {"protocol": 2}
+
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
-CELERY_TIMEZONE = 'UTC'
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
