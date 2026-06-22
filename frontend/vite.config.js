@@ -4,6 +4,7 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import process from 'process'
+import tailwindcss from '@tailwindcss/vite'
 
 //* Resolve the absolute directory of vite.config.js
 const __dirname = path.dirname(fileURLToPath(import.meta.url)) 
@@ -38,7 +39,7 @@ export default defineConfig(({ mode }) => {
   console.log('apiTarget =',apiTarget)
 
   return {
-    plugins: [react()],
+    plugins: [react(),tailwindcss()],
     server: {
       host: '0.0.0.0',
       port: 5173,

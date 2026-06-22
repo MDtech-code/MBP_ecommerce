@@ -268,6 +268,7 @@ LOGGING = {
         'apps.orders':   {'handlers': ['console', 'file'], 'level': 'DEBUG', 'propagate': False},
         'apps.cart':     {'handlers': ['console', 'file'], 'level': 'DEBUG', 'propagate': False},
         'apps.core':     {'handlers': ['console', 'file'], 'level': 'DEBUG', 'propagate': False},
+        'apps.integration_test':     {'handlers': ['console', 'file'], 'level': 'DEBUG', 'propagate': False},
         'celery':        {'handlers': ['console', 'file'], 'level': 'INFO',  'propagate': False},
         'django':        {'handlers': ['console', 'file'], 'level': 'INFO',  'propagate': False},
         '':              {'handlers': ['console', 'file'], 'level': 'WARNING'},
