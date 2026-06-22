@@ -9,6 +9,7 @@ from apps.core.api.views import BaseAPIView
 from .serializers import AuthorSerializer, BookSerializer, ActivityLogSerializer
 from .models import Author, Book, ActivityLog
 from .tasks import calculate_author_books
+from apps.core.cache import two_level_cache
 
 logger = logging.getLogger('apps.integration_test')
 
@@ -26,7 +27,8 @@ class CreateBookAPIView(CreateAPIView):
 
     def perform_create(self, serializer):
         serializer.save()
-        cache.delete("all_books")
+        # cache.delete("all_books")
+        two_level_cache.delete("all_books")
         logger.info("Book created, cache invalidated")
 
 
@@ -35,17 +37,19 @@ class BookListAPIView(BaseAPIView):
 
     def get(self, request):
         cache_key = "all_books"
-        data = cache.get(cache_key)
+        # data = cache.get(cache_key)
+        data, source = two_level_cache.get(cache_key)
 
         if data:
             logger.debug("Books served from Redis cache")
-            return Response({"source": "redis", "books": data})
+            return Response({"source": source, "books": data})
 
         books = Book.objects.select_related("author").all()
         serialized = BookSerializer(books, many=True).data
-        cache.set(cache_key, serialized, timeout=300)
+        # cache.set(cache_key, serialized, timeout=300)
+        two_level_cache.set(cache_key, serialized)
 
-        logger.debug("Books served from database, cached in Redis")
+        logger.debug("Books served from database, cached in L1+L2")
         return Response({"source": "database", "books": serialized})
 
 
@@ -60,21 +64,24 @@ class SystemHealthAPIView(BaseAPIView):
 
     def get(self, request):
         cache_key = "integration-health"
-        cached = cache.get(cache_key)
+        # cached = cache.get(cache_key)
+        cached, source = two_level_cache.get(cache_key)
 
         if cached:
             logger.debug("Health check served from cache")
-            return self.success_response(data=cached, message="Cache hit")
+            return self.success_response(data={**cached,"served_from": source}, message=f"Cache hit from {source}")
 
         task = calculate_author_books.delay()
         data = {
             "database": "connected",
             "celery_task_id": task.id,
-            "redis_cache": "working"
+            "redis_cache": "working",
+            "served_from": "database"
         }
-        cache.set(cache_key, data, 60)
+        # cache.set(cache_key, data, 60)
+        two_level_cache.set(cache_key, data)
 
-        logger.info("Health check passed: db + celery + redis all working")
+        logger.info("Health check passed: db + celery + L1 + L2 all working")
         return self.success_response(data=data, message="All systems operational")
 
 # from django.core.cache import cache

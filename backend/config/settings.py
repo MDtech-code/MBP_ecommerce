@@ -209,11 +209,22 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 # ─── Redis Cache ──────────────────────────────────────
 CACHES = {
+    # L2 — Redis (shared, persistent across processes)
     'default': {
         'BACKEND': 'django_redis.cache.RedisCache',
         'LOCATION': env('REDIS_URL', default='redis://127.0.0.1:6380/0'),
         'OPTIONS': {
             'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+        },
+        'TIMEOUT': 300,
+    },
+    # L1 — In-memory (per process, ultra fast, small)
+    'local': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'mbp-l1-cache',
+        'TIMEOUT': 60,   # shorter — memory is limited
+        'OPTIONS': {
+            'MAX_ENTRIES': 500   # max keys before eviction
         }
     }
 }
