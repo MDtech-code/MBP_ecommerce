@@ -47,7 +47,9 @@ DJANGO_APPS = [
     'django.contrib.messages', 
 ]
 PROJECT_APPS = [
-    'integration_test',
+    'apps.core',
+    'apps.common',
+    'apps.integration_test',
 ]
 THIRD_PARTY_APPS = [
     'rest_framework',
@@ -63,25 +65,27 @@ MIDDLEWARE = [
     # 1. Third‑party / cross‑origin
     'corsheaders.middleware.CorsMiddleware',
 
-    # 2. Security 
+    # 1.  track request unique ID
+    'apps.core.middleware.RequestIDMiddleware',
+    # 3. Security 
     'django.middleware.security.SecurityMiddleware',
-    # 3. serve static file before gunicorn
+    # 4. serve static file before gunicorn
     "whitenoise.middleware.WhiteNoiseMiddleware",
-    # 4. common protections
+    # 5. common protections
     'django.middleware.common.CommonMiddleware',
 
-    # 5. Session & authentication (needed for admin)
+    # 6. Session & authentication (needed for admin)
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
 
-    # 6. CSRF & messages (needed for forms/admin)
+    # 7. CSRF & messages (needed for forms/admin)
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
 
-    # 7. Clickjacking protection
+    # 8. Clickjacking protection
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 
-    # 8. Debug Toolbar (only in DEBUG mode)
+    # 9. Debug Toolbar (only in DEBUG mode)
     'debug_toolbar.middleware.DebugToolbarMiddleware',
 ]
 
@@ -150,8 +154,18 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ),
     #* Paginate results using page numbers (e.g., ?page=2) & mention page size 
-    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
-    'PAGE_SIZE': 12,
+    'DEFAULT_PAGINATION_CLASS': 'apps.core.pagination.StandardPagination',
+    'PAGE_SIZE': 20,
+    
+    'DEFAULT_THROTTLE_CLASSES': [
+        'apps.core.throttles.CustomAnonRateThrottle',
+        'apps.core.throttles.CustomUserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '100/hour',
+        'user': '1000/hour',
+    },
+    "EXCEPTION_HANDLER": "apps.core.api.exceptions.custom_exception_handler",
 }
 # ─── CORS ─────────────────────────────────────────────
 CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=[
@@ -215,3 +229,47 @@ CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 CELERY_TIMEZONE = 'Asia/Karachi'
+
+
+
+# ─── Logging ──────────────────────────────────────────
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'filters': {
+        'sensitive_data': {
+            '()': 'apps.core.logging.SensitiveDataFilter',
+        }
+    },
+    'formatters': {
+        'verbose': {
+            'format': '[{asctime}] {levelname} {name} {message}',
+            'style': '{',
+            'datefmt': '%Y-%m-%d %H:%M:%S',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+            'level': 'DEBUG',
+        },
+        'file': {
+            'class': 'logging.FileHandler',
+            'filename': 'logs/django.log',
+            'formatter': 'verbose',
+            'filters': ['sensitive_data'],
+            'level': 'DEBUG',
+        },
+    },
+    'loggers': {
+        'apps.accounts': {'handlers': ['console', 'file'], 'level': 'DEBUG', 'propagate': False},
+        'apps.products': {'handlers': ['console', 'file'], 'level': 'DEBUG', 'propagate': False},
+        'apps.orders':   {'handlers': ['console', 'file'], 'level': 'DEBUG', 'propagate': False},
+        'apps.cart':     {'handlers': ['console', 'file'], 'level': 'DEBUG', 'propagate': False},
+        'apps.core':     {'handlers': ['console', 'file'], 'level': 'DEBUG', 'propagate': False},
+        'celery':        {'handlers': ['console', 'file'], 'level': 'INFO',  'propagate': False},
+        'django':        {'handlers': ['console', 'file'], 'level': 'INFO',  'propagate': False},
+        '':              {'handlers': ['console', 'file'], 'level': 'WARNING'},
+    },
+}

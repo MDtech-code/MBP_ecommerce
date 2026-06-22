@@ -22,7 +22,7 @@ def trigger_test(request):
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/test-celery/', trigger_test),
-    path('api/integration/',include("integration_test.urls")),
+    path('api/integration/',include("apps.integration_test.urls")),
 
      # Schema + Docs (global)
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),

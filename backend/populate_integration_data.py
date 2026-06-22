@@ -5,7 +5,7 @@ from decimal import Decimal
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
 django.setup()
 
-from integration_test.models import Author, Book, ActivityLog
+from backend.apps.integration_test.models import Author, Book, ActivityLog
 
 
 # ✅ 15 Well-Known Authors and Their Famous Books

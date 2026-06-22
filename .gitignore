@@ -70,7 +70,8 @@ venv.bak/
 certs/
 # Jupyter Notebook
 .ipynb_checkpoints
-
+logs/
+*.log
 # PyCharm
 .idea/
 
