@@ -119,4 +119,4 @@ jobs:
           AWS_S3_REGION_NAME: ""
         run: |
           cd backend
-          python manage.py migrate showmigrations
+          python manage.py migrate 
