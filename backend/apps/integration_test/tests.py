@@ -143,4 +143,4 @@ def test_create_book_price_validation(api_client, author, price, expected_status
     assert response.status_code == expected_status
 
 def test_book_created(book):
-    assert Book.objects.count() == 99  # ← intentionally wrong
+    assert Book.objects.count() == 9  # ← intentionally wrong
