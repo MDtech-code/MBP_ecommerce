@@ -263,7 +263,7 @@ EMAIL_HOST_USER =env('EMAIL_HOST_USER', default="test@example.com")
 EMAIL_HOST_PASSWORD =env('EMAIL_HOST_PASSWORD',default='dummy')
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
-
+FRONTEND_URL = env('FRONTEND_URL', default='https://localhost:5173')
 # ─── Sentry ───────────────────────────────────────────
 import sentry_sdk
 from sentry_sdk.integrations.django import DjangoIntegration
@@ -293,6 +293,9 @@ if SENTRY_DSN:
 # AWS_ACCESS_KEY_ID = env('AWS_ACCESS_KEY_ID')
 # AWS_SECRET_ACCESS_KEY = env('AWS_SECRET_ACCESS_KEY')
 # ─── Logging ──────────────────────────────────────────
+
+LOGS_DIR = BASE_DIR / 'logs'
+LOGS_DIR.mkdir(exist_ok=True)
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
