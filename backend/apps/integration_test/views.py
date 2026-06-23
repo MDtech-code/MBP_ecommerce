@@ -76,6 +76,7 @@ class SystemHealthAPIView(BaseAPIView):
             "database": "connected",
             "celery_task_id": task.id,
             "redis_cache": "working",
+            "l1_cache": "working", 
             "served_from": "database"
         }
         # cache.set(cache_key, data, 60)
@@ -84,6 +85,12 @@ class SystemHealthAPIView(BaseAPIView):
         logger.info("Health check passed: db + celery + L1 + L2 all working")
         return self.success_response(data=data, message="All systems operational")
 
+class SentryTestAPIView(BaseAPIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        # deliberately raise an error to test Sentry
+        raise Exception("Sentry test error from integration_test!")
 # from django.core.cache import cache
 
 # from rest_framework.generics import (

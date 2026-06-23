@@ -13,6 +13,11 @@ class BookSerializer(BaseModelSerializer):
         source="author.name",
         read_only=True
     )
+    price = serializers.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        min_value=0  # ← rejects negative prices
+    )
 
     class Meta:
         model = Book

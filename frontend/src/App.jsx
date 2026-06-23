@@ -107,12 +107,19 @@ console.log('authors:', authors)
 console.log('logs:', logs)
 
 
+// function handleTabClick(tab) {
+//   setActiveTab(tab)
+//   if (tab === 'authors') loadAuthors()
+//   if (tab === 'logs') loadLogs()
+//   if (tab === 'health') return
+//   if (tab === 'celery') return
+// }
 function handleTabClick(tab) {
   setActiveTab(tab)
+  if (tab === 'books') loadBooks()
   if (tab === 'authors') loadAuthors()
   if (tab === 'logs') loadLogs()
-  if (tab === 'health') return
-  if (tab === 'celery') return
+  if (tab === 'health') loadHealth()
 }
 
  // auto load on mount
@@ -123,7 +130,7 @@ function handleTabClick(tab) {
   }, [])
 
 
-  const tabs = ['books', 'authors', 'logs', 'health', 'celery']
+  const tabs = ['books', 'authors', 'logs', 'health', 'celery','sentry']
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -330,6 +337,7 @@ function handleTabClick(tab) {
               </div>
             )}
           </Card>
+
         )}
 
         {/* Celery Tab */}
@@ -350,7 +358,31 @@ function handleTabClick(tab) {
               </div>
             )}
           </Card>
+
         )}
+        {/* sentry Tab */}
+        {activeTab === 'sentry' && (
+  <Card title="🚨 Sentry Error Monitoring">
+    <p className="text-muted mb-3">
+      Click the button to trigger a test error. 
+      Check your Sentry dashboard to confirm it's captured.
+    </p>
+    <button
+      className="btn btn-danger"
+      onClick={async () => {
+        try {
+          await fetch('/api/integration/sentry-test/')
+        } catch(e) {
+          console.log(e)
+        }
+        alert('Error triggered — check Sentry dashboard!')
+      }}
+    >
+      🔥 Trigger Test Error
+    </button>
+  </Card>
+)}
+
 
       </div>
     </div>
