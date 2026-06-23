@@ -142,5 +142,8 @@ def test_create_book_price_validation(api_client, author, price, expected_status
     }, format='json')
     assert response.status_code == expected_status
 
+@pytest.mark.django_db
 def test_book_created(book):
-    assert Book.objects.count() == 9  # ← intentionally wrong
+    saved_book = Book.objects.get(id=book.id)
+    assert saved_book.title == book.title
+  
