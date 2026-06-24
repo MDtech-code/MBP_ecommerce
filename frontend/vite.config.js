@@ -40,11 +40,21 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react(),tailwindcss()],
+    // optimizeDeps: {
+    //   include: ["@apollo/client", "graphql"],
+    // },
+    // build: {
+    //   commonjsOptions: {
+    //     transformMixedEsModules: true,
+    //   },
+    // },
+    
     test: {
       globals: true,
       environment: 'jsdom',
       setupFiles: './src/test/setup.js',
     },
+    
     server: {
       host: '0.0.0.0',
       port: 5173,

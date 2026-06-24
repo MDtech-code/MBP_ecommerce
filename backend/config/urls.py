@@ -11,6 +11,8 @@ from drf_spectacular.views import (
     SpectacularRedocView,
     SpectacularSwaggerView,
 )
+from graphene_django.views import GraphQLView
+from django.views.decorators.csrf import csrf_exempt
 
 
 def trigger_test(request):
@@ -28,6 +30,9 @@ urlpatterns = [
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
     path("api/redoc/", SpectacularRedocView.as_view(url_name="schema"), name="redoc"),
+
+    # graphQL
+     path("graphql/", csrf_exempt(GraphQLView.as_view(graphiql=True))),
     
 
 ]

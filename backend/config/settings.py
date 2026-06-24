@@ -59,6 +59,7 @@ THIRD_PARTY_APPS = [
     'debug_toolbar',
     'django_extensions',
     'drf_spectacular',
+    "graphene_django",
 ]
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + PROJECT_APPS
 
@@ -161,7 +162,7 @@ REST_FRAMEWORK = {
     ),
     #* Paginate results using page numbers (e.g., ?page=2) & mention page size 
     'DEFAULT_PAGINATION_CLASS': 'apps.core.pagination.StandardPagination',
-    'PAGE_SIZE': 20,
+    'PAGE_SIZE': 10,
 
     
     'DEFAULT_THROTTLE_CLASSES': [
@@ -169,11 +170,17 @@ REST_FRAMEWORK = {
         'apps.core.throttles.CustomUserRateThrottle',
     ],
     'DEFAULT_THROTTLE_RATES': {
-        'anon': '100/hour',
+        'anon': '10000/hour',
         'user': '1000/hour',
     },
     "EXCEPTION_HANDLER": "apps.core.api.exceptions.custom_exception_handler",
 }
+
+# ─── graphQL ─────────────────────────────────────────────
+GRAPHENE = {
+    "SCHEMA": "config.schema.schema"
+}
+
 # ─── CORS ─────────────────────────────────────────────
 CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=[
     'httpS://localhost:5173',   # Vite dev

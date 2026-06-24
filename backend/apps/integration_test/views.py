@@ -43,14 +43,23 @@ class BookListAPIView(BaseAPIView):
         if data:
             logger.debug("Books served from Redis cache")
             return Response({"source": source, "books": data})
+            # return self.success_response(
+            #     data={"source": source, "data": data},
+            #     message="Books retrieved successfully"
+            #     )
+        
 
         books = Book.objects.select_related("author").all()
         serialized = BookSerializer(books, many=True).data
         # cache.set(cache_key, serialized, timeout=300)
         two_level_cache.set(cache_key, serialized)
-
+        
         logger.debug("Books served from database, cached in L1+L2")
         return Response({"source": "database", "books": serialized})
+        # return self.success_response(
+        #         data={"source": "database", "data": serialized},
+        #         message="Books retrieved successfully"
+        #         )
 
 
 class ActivityLogAPIView(ListAPIView):
