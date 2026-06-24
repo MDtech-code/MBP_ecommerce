@@ -95,5 +95,5 @@ jobs:
         
         run: |
           cd backend
-          python manage.py migrate --check
           python manage.py makemigrations --check --dry-run
+          python manage.py migrate --check
