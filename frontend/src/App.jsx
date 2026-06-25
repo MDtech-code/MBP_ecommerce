@@ -6,7 +6,7 @@ import { useState,useEffect} from 'react'
 import './App.css'
 
 const API = {
-  testCelery: () => fetch('/api/test-celery/').then(r => r.json()),
+  testCelery: () => fetch('/api/integration/test-celery/').then(r => r.json()),
   getBooks: () => fetch('/api/integration/books/').then(r => r.json()),
   getAuthors: () => fetch('/api/integration/authors/').then(r => r.json()),
   getLogs: () => fetch('/api/integration/logs/').then(r => r.json()),

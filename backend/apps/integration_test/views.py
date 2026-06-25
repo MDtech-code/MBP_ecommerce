@@ -13,6 +13,11 @@ from apps.core.cache import two_level_cache
 
 logger = logging.getLogger('apps.integration_test')
 
+from django.http import JsonResponse
+from .tasks import test_task
+def trigger_test(request):
+    task = test_task.delay("Hello from Django to Celery!")
+    return JsonResponse({'task_id': task.id, 'status': 'queued'})
 
 class AuthorListAPIView(ListAPIView):
     permission_classes = [AllowAny]

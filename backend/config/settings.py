@@ -183,7 +183,7 @@ GRAPHENE = {
 
 # ─── CORS ─────────────────────────────────────────────
 CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=[
-    'httpS://localhost:5173',   # Vite dev
+    'https://localhost:5173',   # Vite dev
 ])
 
 # ─── JWT ──────────────────────────────────────────────

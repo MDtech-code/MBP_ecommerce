@@ -3,8 +3,7 @@ from django.contrib import admin
 from django.urls import path,include
 from django.conf import settings
 from django.conf.urls.static import static
-from django.http import JsonResponse
-from .tasks import test_task
+
 
 from drf_spectacular.views import (
     SpectacularAPIView,
@@ -15,15 +14,13 @@ from graphene_django.views import GraphQLView
 from django.views.decorators.csrf import csrf_exempt
 
 
-def trigger_test(request):
-    task = test_task.delay("Hello from Django to Celery!")
-    return JsonResponse({'task_id': task.id, 'status': 'queued'})
+
 
 
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/test-celery/', trigger_test),
+    
     path('api/integration/',include("apps.integration_test.urls")),
 
      # Schema + Docs (global)

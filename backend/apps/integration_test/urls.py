@@ -5,7 +5,8 @@ from .views import (
     ActivityLogAPIView,
     SystemHealthAPIView,
     CreateBookAPIView,
-    SentryTestAPIView
+    SentryTestAPIView,
+    trigger_test,
 )
 
 urlpatterns = [
@@ -15,4 +16,5 @@ urlpatterns = [
     path("logs/", ActivityLogAPIView.as_view()),
     path("health/", SystemHealthAPIView.as_view()),
     path("sentry-test/", SentryTestAPIView.as_view()),
+    path('test-celery/', trigger_test),
 ]
