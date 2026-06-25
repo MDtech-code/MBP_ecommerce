@@ -44,11 +44,22 @@ class TwoLevelCache:
         self.l2.set(key, value, self.l2_timeout)
         logger.debug("Cache SET both levels: %s", key)
 
-    def delete(self, key):
-        # Delete from both levels
-        self.l1.delete(key)
-        self.l2.delete(key)
-        logger.debug("Cache DELETE both levels: %s", key)
+    def delete(self, prefix: str):
+        """Delete all keys starting with prefix from both L1 and L2."""
+        # L2 Redis — supports pattern deletion
+        from django_redis import get_redis_connection
+        redis_client = get_redis_connection("default")
+        pattern = f"*{prefix}*"
+        keys = redis_client.keys(pattern)
+        if keys:
+            redis_client.delete(*keys)
+            logger.debug("Cache DELETE pattern L2: %s (%d keys)", pattern, len(keys))
+
+        # L1 memory — no pattern support, clear entirely
+        self.l1.clear()
+        logger.debug("Cache CLEAR L1 (memory) on pattern delete: %s", prefix)
+       
+
 
 
 # Single instance to use across the project

@@ -1,27 +1,28 @@
-
-
 /* eslint-disable react-hooks/exhaustive-deps */
-
-import { useState,useEffect} from 'react'
+import { useState, useEffect } from 'react'
 import './App.css'
 
 const API = {
   testCelery: () => fetch('/api/integration/test-celery/').then(r => r.json()),
-  getBooks: () => fetch('/api/integration/books/').then(r => r.json()),
-  getAuthors: () => fetch('/api/integration/authors/').then(r => r.json()),
-  getLogs: () => fetch('/api/integration/logs/').then(r => r.json()),
+  getBooks: (page = 1, pageSize = 10) =>
+    fetch(`/api/integration/books/?page=${page}&page_size=${pageSize}`).then(r => r.json()),
+  getAuthors: (page = 1, pageSize = 10) =>
+    fetch(`/api/integration/authors/?page=${page}&page_size=${pageSize}`).then(r => r.json()),
+  getLogs: (page = 1, pageSize = 20) =>
+    fetch(`/api/integration/logs/?page=${page}&page_size=${pageSize}`).then(r => r.json()),
   getHealth: () => fetch('/api/integration/health/').then(r => r.json()),
   createBook: (data) => fetch('/api/integration/books/create/', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
   }).then(r => r.json()),
+  triggerSentryError: () => fetch('/api/integration/sentry-test/').then(r => r.json()),
 }
 
+// ─── Reusable Components ──────────────────────────────
+
 function Badge({ text, variant = 'primary' }) {
-  return (
-    <span className={`badge bg-${variant} me-1`}>{text}</span>
-  )
+  return <span className={`badge bg-${variant} me-1`}>{text}</span>
 }
 
 function Card({ title, children, className = '' }) {
@@ -36,16 +37,39 @@ function Card({ title, children, className = '' }) {
 function SourceBadge({ source }) {
   const config = {
     l1_memory: { color: 'bg-warning text-dark', icon: '⚡⚡', label: 'L1 Memory' },
-    l2_redis:  { color: 'bg-success', icon: '⚡', label: 'L2 Redis' },
-    database:  { color: 'bg-primary', icon: '🗄️', label: 'Database' },
+    l2_redis: { color: 'bg-success', icon: '⚡', label: 'L2 Redis' },
+    database: { color: 'bg-primary', icon: '🗄️', label: 'Database' },
   }
   const s = config[source] || config.database
+  return <span className={`badge ${s.color}`}>{s.icon} {s.label}</span>
+}
+
+function PaginationControls({ meta, onPageChange }) {
+  if (!meta || meta.total_pages <= 1) return null
   return (
-    <span className={`badge ${s.color}`}>
-      {s.icon} {s.label}
-    </span>
+    <div className="flex items-center gap-2 mt-3">
+      <button
+        className="btn btn-sm btn-outline-secondary"
+        disabled={meta.page <= 1}
+        onClick={() => onPageChange(meta.page - 1)}
+      >
+        ← Prev
+      </button>
+      <span className="text-sm text-gray-600">
+        Page {meta.page} of {meta.total_pages} ({meta.total_items} total)
+      </span>
+      <button
+        className="btn btn-sm btn-outline-secondary"
+        disabled={meta.page >= meta.total_pages}
+        onClick={() => onPageChange(meta.page + 1)}
+      >
+        Next →
+      </button>
+    </div>
   )
 }
+
+// ─── Main App ─────────────────────────────────────────
 
 export default function App() {
   const [books, setBooks] = useState(null)
@@ -56,27 +80,36 @@ export default function App() {
   const [loading, setLoading] = useState({})
   const [newBook, setNewBook] = useState({ title: '', price: '', author: '' })
   const [activeTab, setActiveTab] = useState('books')
+  const [createError, setCreateError] = useState(null)
+
+  // pagination state per tab
+  const [booksPage, setBooksPage] = useState(1)
+  const [authorsPage, setAuthorsPage] = useState(1)
+  const [logsPage, setLogsPage] = useState(1)
 
   const setLoad = (key, val) => setLoading(p => ({ ...p, [key]: val }))
 
-  async function loadBooks() {
+  async function loadBooks(page = booksPage) {
     setLoad('books', true)
-    const data = await API.getBooks()
+    const data = await API.getBooks(page)
     setBooks(data)
+    setBooksPage(page)
     setLoad('books', false)
   }
 
-  async function loadAuthors() {
+  async function loadAuthors(page = authorsPage) {
     setLoad('authors', true)
-    const data = await API.getAuthors()
+    const data = await API.getAuthors(page)
     setAuthors(data)
+    setAuthorsPage(page)
     setLoad('authors', false)
   }
 
-  async function loadLogs() {
+  async function loadLogs(page = logsPage) {
     setLoad('logs', true)
-    const data = await API.getLogs()
+    const data = await API.getLogs(page)
     setLogs(data)
+    setLogsPage(page)
     setLoad('logs', false)
   }
 
@@ -96,54 +129,50 @@ export default function App() {
 
   async function handleCreate(e) {
     e.preventDefault()
-    await API.createBook({
+    setCreateError(null)
+    const res = await API.createBook({
       title: newBook.title,
       price: parseFloat(newBook.price),
       author: parseInt(newBook.author)
     })
+    if (!res.success) {
+      setCreateError(res.errors)
+      return
+    }
     setNewBook({ title: '', price: '', author: '' })
-    await loadBooks()
-    await loadLogs()
+    await loadBooks(1)   // reset to page 1 after create
+    await loadLogs(1)
   }
-console.log('authors:', authors)
-console.log('logs:', logs)
 
+  function handleTabClick(tab) {
+    setActiveTab(tab)
+    if (tab === 'books') loadBooks(1)
+    if (tab === 'authors') loadAuthors(1)
+    if (tab === 'logs') loadLogs(1)
+    if (tab === 'health') loadHealth()
+  }
 
-
-function handleTabClick(tab) {
-  setActiveTab(tab)
-  if (tab === 'books') loadBooks()
-  if (tab === 'authors') loadAuthors()
-  if (tab === 'logs') loadLogs()
-  if (tab === 'health') loadHealth()
-}
-
- // auto load on mount
   useEffect(() => {
-    loadBooks()
-    loadAuthors()
-    loadLogs()
+    loadBooks(1)
+    loadAuthors(1)
+    loadLogs(1)
   }, [])
 
-
-  const tabs = ['books', 'authors', 'logs', 'health', 'celery','sentry']
+  const tabs = ['books', 'authors', 'logs', 'health', 'celery', 'sentry']
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Navbar — Bootstrap */}
-      <nav className="navbar navbar-dark bg-dark px-4 mb-6">
-        <span className="navbar-brand fw-bold">
-          🔧 Integration Test Dashboard
-        </span>
-        <span className="text-secondary small">
-          Django + DRF + Redis + Celery
-        </span>
+
+      {/* Navbar */}
+      <nav className="navbar navbar-dark bg-dark px-4 mb-4">
+        <span className="navbar-brand fw-bold">🔧 Integration Test Dashboard</span>
+        <span className="text-secondary small">Django + DRF + Redis + Celery</span>
       </nav>
 
       <div className="container-fluid px-4">
 
-        {/* Status Bar — Tailwind */}
-        <div className="flex gap-3 mb-6 flex-wrap">
+        {/* Status Bar */}
+        <div className="flex gap-3 mb-4 flex-wrap">
           {[
             { label: 'Django', color: 'bg-green-500' },
             { label: 'PostgreSQL', color: 'bg-blue-500' },
@@ -157,7 +186,7 @@ function handleTabClick(tab) {
           ))}
         </div>
 
-        {/* Tabs — Bootstrap */}
+        {/* Tabs */}
         <ul className="nav nav-tabs mb-4">
           {tabs.map(tab => (
             <li className="nav-item" key={tab}>
@@ -171,30 +200,30 @@ function handleTabClick(tab) {
           ))}
         </ul>
 
-        {/* Books Tab */}
+        {/* ─── Books Tab ─── */}
         {activeTab === 'books' && (
           <div className="row">
             <div className="col-md-8">
               <Card title={
                 <div className="flex justify-between items-center">
                   <span>📚 Books</span>
-                  {books && <SourceBadge source={books.source} />}
+                  {books?.meta && <SourceBadge source={books.meta.source} />}
                 </div>
               }>
                 <button
                   className="btn btn-sm btn-outline-primary mb-3"
-                  onClick={loadBooks}
+                  onClick={() => loadBooks(booksPage)}
                   disabled={loading.books}
                 >
                   {loading.books ? 'Loading...' : '🔄 Reload'}
                 </button>
 
-                {books?.books?.length === 0 && (
+                {books?.data?.length === 0 && (
                   <p className="text-muted">No books yet.</p>
                 )}
 
                 <div className="flex flex-col gap-2">
-                  {books?.books?.map(book => (
+                  {books?.data?.map(book => (
                     <div key={book.id}
                       className="flex justify-between items-center bg-gray-50 rounded-lg px-3 py-2 border">
                       <div>
@@ -205,12 +234,26 @@ function handleTabClick(tab) {
                     </div>
                   ))}
                 </div>
+
+                <PaginationControls
+                  meta={books?.meta}
+                  onPageChange={(page) => loadBooks(page)}
+                />
               </Card>
             </div>
 
             <div className="col-md-4">
               <Card title="➕ Create Book">
-                {/* Pure CSS form */}
+                {createError && (
+                  <div className="alert alert-danger py-2 small mb-3">
+                    {typeof createError === 'object'
+                      ? Object.entries(createError).map(([k, v]) => (
+                        <div key={k}><strong>{k}:</strong> {v}</div>
+                      ))
+                      : createError
+                    }
+                  </div>
+                )}
                 <form onSubmit={handleCreate} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <div>
                     <label className="form-label small fw-semibold">Title</label>
@@ -253,16 +296,22 @@ function handleTabClick(tab) {
           </div>
         )}
 
-        {/* Authors Tab */}
+        {/* ─── Authors Tab ─── */}
         {activeTab === 'authors' && (
-          <Card title="👤 Authors">
+          <Card title={
+            <div className="flex justify-between items-center">
+              <span>👤 Authors</span>
+              {authors?.meta && <SourceBadge source={authors.meta.source} />}
+            </div>
+          }>
             <button
               className="btn btn-sm btn-outline-primary mb-3"
-              onClick={loadAuthors}
+              onClick={() => loadAuthors(authorsPage)}
               disabled={loading.authors}
             >
               {loading.authors ? 'Loading...' : '🔄 Reload'}
             </button>
+
             <div className="row g-3">
               {authors?.data?.map(author => (
                 <div key={author.id} className="col-md-4">
@@ -272,42 +321,54 @@ function handleTabClick(tab) {
                     <Badge text={`${author.total_books} books`} variant="info" />
                     <div className="mt-2 flex flex-col gap-1">
                       {author.books?.map(b => (
-                        <div key={b.id} className="text-sm text-gray-600">
-                          • {b.title}
-                        </div>
+                        <div key={b.id} className="text-sm text-gray-600">• {b.title}</div>
                       ))}
                     </div>
                   </div>
                 </div>
               ))}
             </div>
+
+            <PaginationControls
+              meta={authors?.meta}
+              onPageChange={(page) => loadAuthors(page)}
+            />
           </Card>
         )}
 
-        {/* Logs Tab */}
+        {/* ─── Logs Tab ─── */}
         {activeTab === 'logs' && (
-          <Card title="📋 Activity Logs">
+          <Card title={
+            <div className="flex justify-between items-center">
+              <span>📋 Activity Logs</span>
+              {logs?.meta && <SourceBadge source={logs.meta.source} />}
+            </div>
+          }>
             <button
               className="btn btn-sm btn-outline-secondary mb-3"
-              onClick={loadLogs}
+              onClick={() => loadLogs(logsPage)}
               disabled={loading.logs}
             >
-              {loading.logs ? 'Loading...' : '🔄 Load Logs'}
+              {loading.logs ? 'Loading...' : '🔄 Reload'}
             </button>
-            <div style={{ fontFamily: 'monospace', fontSize: '13px' }}
-              className="flex flex-col gap-1">
+
+            <div style={{ fontFamily: 'monospace', fontSize: '13px' }} className="flex flex-col gap-1">
               {logs?.data?.map(log => (
-                <div key={log.id}
-                  className="bg-gray-900 text-green-400 rounded px-3 py-1">
+                <div key={log.id} className="bg-gray-900 text-green-400 rounded px-3 py-1">
                   <span className="text-gray-500 mr-2">{log.created_at}</span>
                   {log.message}
                 </div>
               ))}
             </div>
+
+            <PaginationControls
+              meta={logs?.meta}
+              onPageChange={(page) => loadLogs(page)}
+            />
           </Card>
         )}
 
-        {/* Health Tab */}
+        {/* ─── Health Tab ─── */}
         {activeTab === 'health' && (
           <Card title="❤️ System Health">
             <button
@@ -317,12 +378,19 @@ function handleTabClick(tab) {
             >
               {loading.health ? 'Checking...' : '🩺 Run Health Check'}
             </button>
+
             {health && (
               <div className="flex flex-col gap-3">
+                {health.meta && (
+                  <div className="mb-2">
+                    <SourceBadge source={health.meta.source} />
+                  </div>
+                )}
                 <div className="flex gap-3 flex-wrap">
-                  {Object.entries(health.data || health).map(([key, val]) => (
+                  {Object.entries(health.data || {}).map(([key, val]) => (
                     <div key={key}
-                      className="bg-white border rounded-lg px-4 py-3 shadow-sm text-center min-w-32">
+                      className="bg-white border rounded-lg px-4 py-3 shadow-sm text-center"
+                      style={{ minWidth: '120px' }}>
                       <div className="text-xs text-gray-500 uppercase tracking-wide">{key}</div>
                       <div className="fw-semibold text-green-600 text-sm mt-1">
                         {typeof val === 'string' ? val : '✓'}
@@ -333,10 +401,9 @@ function handleTabClick(tab) {
               </div>
             )}
           </Card>
-
         )}
 
-        {/* Celery Tab */}
+        {/* ─── Celery Tab ─── */}
         {activeTab === 'celery' && (
           <Card title="⚙️ Celery Task Test">
             <button
@@ -354,32 +421,31 @@ function handleTabClick(tab) {
               </div>
             )}
           </Card>
-
         )}
-        {/* sentry Tab */}
+
+        {/* ─── Sentry Tab ─── */}
         {activeTab === 'sentry' && (
-  <Card title="🚨 Sentry Error Monitoring">
-    <p className="text-muted mb-3">
-      Click the button to trigger a test error. 
-      Check your Sentry dashboard to confirm it's captured.
-    </p>
-    <button
-      className="btn btn-danger"
-      onClick={async () => {
-        try {
-          await fetch('/api/integration/sentry-test/')
-        } catch(e) {
-          console.log(e)
-        }
-        alert('Error triggered — check Sentry dashboard!')
-      }}
-    >
-      🔥 Trigger Test Error
-    </button>
-  </Card>
-)}
+          <Card title="🚨 Sentry Error Monitoring">
+            <p className="text-muted mb-3">
+              Click to trigger a test error and verify Sentry captures it.
+            </p>
+            <button
+              className="btn btn-danger"
+              onClick={async () => {
+                try {
+                  await API.triggerSentryError()
+                } catch (e) {
+                  console.log(e)
+                }
+                alert('Error triggered — check Sentry dashboard!')
+              }}
+            >
+              🔥 Trigger Test Error
+            </button>
+          </Card>
+        )}
+
       </div>
     </div>
   )
 }
-

@@ -40,14 +40,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react(),tailwindcss()],
-    // optimizeDeps: {
-    //   include: ["@apollo/client", "graphql"],
-    // },
-    // build: {
-    //   commonjsOptions: {
-    //     transformMixedEsModules: true,
-    //   },
-    // },
+   
     
     test: {
       globals: true,

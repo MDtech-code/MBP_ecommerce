@@ -1,76 +1,174 @@
 
 import logging
-from django.core.cache import cache
+from django.http import JsonResponse
 from rest_framework.permissions import AllowAny
-from rest_framework.response import Response
-from rest_framework.generics import ListAPIView, CreateAPIView
+from rest_framework import status
 
 from apps.core.api.views import BaseAPIView
+from apps.core.cache import two_level_cache
 from .serializers import AuthorSerializer, BookSerializer, ActivityLogSerializer
 from .models import Author, Book, ActivityLog
-from .tasks import calculate_author_books
-from apps.core.cache import two_level_cache
+from .tasks import calculate_author_books, test_task
 
 logger = logging.getLogger('apps.integration_test')
 
-from django.http import JsonResponse
-from .tasks import test_task
+
 def trigger_test(request):
     task = test_task.delay("Hello from Django to Celery!")
     return JsonResponse({'task_id': task.id, 'status': 'queued'})
 
-class AuthorListAPIView(ListAPIView):
+
+def get_pagination_params(request, default_page_size=10):
+    """Extract and validate pagination params from request."""
+    try:
+        page = max(1, int(request.query_params.get('page', 1)))
+        page_size = min(100, max(1, int(request.query_params.get('page_size', default_page_size))))
+    except (ValueError, TypeError):
+        page, page_size = 1, default_page_size
+    return page, page_size
+
+
+def build_pagination_meta(page, page_size, total, source=None):
+    """Build consistent pagination meta dict."""
+    meta = {
+        "page": page,
+        "page_size": page_size,
+        "total_items": total,
+        "total_pages": -(-total // page_size),  # ceiling division
+    }
+    if source:
+        meta["source"] = source
+    return meta
+
+
+class AuthorListAPIView(BaseAPIView):
     permission_classes = [AllowAny]
-    queryset = Author.objects.prefetch_related("books").all()
-    serializer_class = AuthorSerializer
+
+    def get(self, request):
+        page, page_size = get_pagination_params(request, default_page_size=10)
+        cache_key = f"authors_page_{page}_size_{page_size}"
+
+        cached_data, source = two_level_cache.get(cache_key)
+        if cached_data:
+            logger.debug("Authors served from %s", source)
+            return self.success_response(
+                data=cached_data["data"],
+                message="Authors retrieved successfully",
+                meta=build_pagination_meta(
+                    page, page_size,
+                    cached_data["total"],
+                    source=source
+                )
+            )
+
+        queryset = Author.objects.prefetch_related("books").all()
+        total = queryset.count()
+        offset = (page - 1) * page_size
+        authors = queryset[offset:offset + page_size]
+        serialized = list(AuthorSerializer(authors, many=True).data)
+
+        two_level_cache.set(cache_key, {"data": serialized, "total": total})
+        logger.debug("Authors served from database, cached in L1+L2")
+
+        return self.success_response(
+            data=serialized,
+            message="Authors retrieved successfully",
+            meta=build_pagination_meta(page, page_size, total, source="database")
+        )
 
 
-class CreateBookAPIView(CreateAPIView):
+class CreateBookAPIView(BaseAPIView):
     permission_classes = [AllowAny]
-    queryset = Book.objects.all()
-    serializer_class = BookSerializer
 
-    def perform_create(self, serializer):
+    def post(self, request):
+        serializer = BookSerializer(data=request.data)
+        if not serializer.is_valid():
+            return self.error_response(
+                message="Validation failed",
+                errors=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
         serializer.save()
-        # cache.delete("all_books")
-        two_level_cache.delete("all_books")
-        logger.info("Book created, cache invalidated")
+
+        two_level_cache.delete("books_page")
+        logger.info("Book created — all_books cache invalidated")
+
+        return self.created_response(
+            data=serializer.data,
+            message="Book created successfully"
+        )
 
 
 class BookListAPIView(BaseAPIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-        cache_key = "all_books"
-        # data = cache.get(cache_key)
-        data, source = two_level_cache.get(cache_key)
+        page, page_size = get_pagination_params(request, default_page_size=10)
+        cache_key = f"books_page_{page}_size_{page_size}"
 
-        if data:
-            logger.debug("Books served from Redis cache")
-            return Response({"source": source, "books": data})
-            # return self.success_response(
-            #     data={"source": source, "data": data},
-            #     message="Books retrieved successfully"
-            #     )
-        
+        cached_data, source = two_level_cache.get(cache_key)
+        if cached_data:
+            logger.debug("Books served from %s", source)
+            return self.success_response(
+                data=cached_data["data"],
+                message="Books retrieved successfully",
+                meta=build_pagination_meta(
+                    page, page_size,
+                    cached_data["total"],
+                    source=source
+                )
+            )
 
-        books = Book.objects.select_related("author").all()
-        serialized = BookSerializer(books, many=True).data
-        # cache.set(cache_key, serialized, timeout=300)
-        two_level_cache.set(cache_key, serialized)
-        
+        queryset = Book.objects.select_related("author").all()
+        total = queryset.count()
+        offset = (page - 1) * page_size
+        books = queryset[offset:offset + page_size]
+        serialized = list(BookSerializer(books, many=True).data)
+
+        two_level_cache.set(cache_key, {"data": serialized, "total": total})
         logger.debug("Books served from database, cached in L1+L2")
-        return Response({"source": "database", "books": serialized})
-        # return self.success_response(
-        #         data={"source": "database", "data": serialized},
-        #         message="Books retrieved successfully"
-        #         )
+
+        return self.success_response(
+            data=serialized,
+            message="Books retrieved successfully",
+            meta=build_pagination_meta(page, page_size, total, source="database")
+        )
 
 
-class ActivityLogAPIView(ListAPIView):
+class ActivityLogAPIView(BaseAPIView):
     permission_classes = [AllowAny]
-    queryset = ActivityLog.objects.all()
-    serializer_class = ActivityLogSerializer
+
+    def get(self, request):
+        page, page_size = get_pagination_params(request, default_page_size=20)
+        cache_key = f"logs_page_{page}_size_{page_size}"
+
+        cached_data, source = two_level_cache.get(cache_key)
+        if cached_data:
+            logger.debug("Logs served from %s", source)
+            return self.success_response(
+                data=cached_data["data"],
+                message="Logs retrieved successfully",
+                meta=build_pagination_meta(
+                    page, page_size,
+                    cached_data["total"],
+                    source=source
+                )
+            )
+
+        queryset = ActivityLog.objects.all()
+        total = queryset.count()
+        offset = (page - 1) * page_size
+        logs = queryset[offset:offset + page_size]
+        serialized = list(ActivityLogSerializer(logs, many=True).data)
+
+        two_level_cache.set(cache_key, {"data": serialized, "total": total})
+        logger.debug("Logs served from database, cached in L1+L2")
+
+        return self.success_response(
+            data=serialized,
+            message="Logs retrieved successfully",
+            meta=build_pagination_meta(page, page_size, total, source="database")
+        )
 
 
 class SystemHealthAPIView(BaseAPIView):
@@ -78,209 +176,35 @@ class SystemHealthAPIView(BaseAPIView):
 
     def get(self, request):
         cache_key = "integration-health"
-        # cached = cache.get(cache_key)
         cached, source = two_level_cache.get(cache_key)
 
         if cached:
             logger.debug("Health check served from cache")
-            return self.success_response(data={**cached,"served_from": source}, message=f"Cache hit from {source}")
+            return self.success_response(
+                data=cached,
+                message=f"Cache hit from {source}",
+                meta={"source": source}
+            )
 
         task = calculate_author_books.delay()
         data = {
             "database": "connected",
             "celery_task_id": task.id,
             "redis_cache": "working",
-            "l1_cache": "working", 
-            "served_from": "database"
+            "l1_cache": "working",
         }
-        # cache.set(cache_key, data, 60)
         two_level_cache.set(cache_key, data)
 
         logger.info("Health check passed: db + celery + L1 + L2 all working")
-        return self.success_response(data=data, message="All systems operational")
+        return self.success_response(
+            data=data,
+            message="All systems operational",
+            meta={"source": "database"}
+        )
+
 
 class SentryTestAPIView(BaseAPIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-        # deliberately raise an error to test Sentry
         raise Exception("Sentry test error from integration_test!")
-# from django.core.cache import cache
-
-# from rest_framework.generics import (
-#     ListAPIView
-# )
-# from rest_framework.permissions import AllowAny
-
-# from rest_framework.response import Response
-# from rest_framework.views import APIView
-# from rest_framework.generics import CreateAPIView
-
-# from .serializers import BookSerializer
-
-
-# from .models import (
-#     Author,
-#     Book,
-#     ActivityLog
-# )
-
-# from .serializers import (
-#     AuthorSerializer,
-#     BookSerializer,
-#     ActivityLogSerializer
-# )
-
-# from .tasks import calculate_author_books
-
-
-
-# class AuthorListAPIView(ListAPIView):
-#     permission_classes=[AllowAny]
-
-#     queryset = Author.objects.prefetch_related(
-#         "books"
-#     ).all()
-
-#     serializer_class = AuthorSerializer
-
-
-# class CreateBookAPIView(CreateAPIView):
-
-#     permission_classes = [AllowAny]
-
-#     queryset = Book.objects.all()
-
-#     serializer_class = BookSerializer
-
-#     def perform_create(self, serializer):
-#         serializer.save()
-#         cache.delete("all_books")
-
-
-
-# class BookListAPIView(APIView):
-
-
-#     permission_classes = [AllowAny]
-
-
-#     def get(self, request):
-
-
-#         cache_key = "all_books"
-
-
-
-#         data = cache.get(cache_key)
-
-
-#         if data:
-
-
-#             return Response({
-
-#                 "source":"redis",
-
-#                 "books":data
-
-#             })
-
-
-
-#         books = Book.objects.select_related(
-#             "author"
-#         ).all()
-
-
-
-#         serialized = BookSerializer(
-#             books,
-#             many=True
-#         ).data
-
-
-
-#         cache.set(
-
-#             cache_key,
-
-#             serialized,
-
-#             timeout=300
-
-#         )
-
-
-#         return Response({
-
-#             "source":"database",
-
-#             "books":serialized
-
-#         })
-
-
-
-
-# class ActivityLogAPIView(ListAPIView):
-#     permission_classes=[AllowAny]
-#     queryset = ActivityLog.objects.all()
-
-#     serializer_class = ActivityLogSerializer
-
-
-
-# class SystemHealthAPIView(APIView):
-
-#     permission_classes = [AllowAny] 
-#     def get(self, request):
-
-
-#         cache_key = "integration-health"
-
-
-
-#         cached = cache.get(cache_key)
-
-
-#         if cached:
-
-#             return Response(
-#                 {
-#                     "cache":
-#                     "redis",
-
-#                     "data":
-#                     cached
-#                 }
-#             )
-
-
-#         task = calculate_author_books.delay()
-
-
-
-#         data = {
-
-#             "database":
-#             "connected",
-
-#             "celery_task_id":
-#             task.id,
-
-
-#             "redis_cache":
-#             "working"
-#         }
-
-
-
-#         cache.set(
-#             cache_key,
-#             data,
-#             60
-#         )
-
-
-#         return Response(data)

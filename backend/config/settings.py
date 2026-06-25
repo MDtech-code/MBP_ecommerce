@@ -292,7 +292,6 @@ if SENTRY_DSN:
         traces_sample_rate=1.0,
         send_default_pii=False,  # don't send personal data
     )
-
 # ─── Storage ──────────────────────────────────────────
 # Production: uncomment and configure S3
 # DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
@@ -322,8 +321,15 @@ LOGGING = {
         'integration_test_file': {
             'level': 'INFO',
             'class': 'logging.FileHandler',
-            'filename': 'logs/integration_test.log',
+            'filename': str(LOGS_DIR / 'integration_test.log'),
             'formatter': 'verbose',
+        },
+        'core_file':{
+            'level': 'INFO',
+            'class': 'logging.FileHandler',
+            'filename': str(LOGS_DIR / 'core.log'),
+            'formatter': 'verbose',
+
         },
         'console': {
             'class': 'logging.StreamHandler',
@@ -332,7 +338,7 @@ LOGGING = {
         },
         'file': {
             'class': 'logging.FileHandler',
-            'filename': 'logs/django.log',
+            'filename': str(LOGS_DIR / 'django.log'),
             'formatter': 'verbose',
             'filters': ['sensitive_data'],
             'level': 'DEBUG',

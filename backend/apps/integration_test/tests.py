@@ -6,7 +6,6 @@ from .models import Author, Book, ActivityLog
 
 @pytest.fixture(autouse=True)
 def clear_cache():
-    """Clear both cache levels before each test."""
     caches['default'].clear()
     caches['local'].clear()
     yield
@@ -54,29 +53,57 @@ def test_timestamps_exist(book, author):
     assert author.created_at is not None
 
 
-# ─── API tests ────────────────────────────────────────
+# ─── Response structure tests ─────────────────────────
 @pytest.mark.django_db
-def test_books_api(api_client, book):
-    response = api_client.get("/api/integration/books/")
+@pytest.mark.parametrize("url", [
+    "/api/integration/books/",
+    "/api/integration/authors/",
+    "/api/integration/logs/",
+])
+def test_all_list_views_have_consistent_structure(api_client, book, url):
+    """Every list view must return success, data, meta with pagination."""
+    response = api_client.get(url)
     assert response.status_code == 200
+    assert response.data["success"] is True
+    assert "data" in response.data
+    assert "message" in response.data
+    assert "meta" in response.data
+    # pagination fields always present
+    assert "page" in response.data["meta"]
+    assert "page_size" in response.data["meta"]
+    assert "total_items" in response.data["meta"]
+    assert "total_pages" in response.data["meta"]
+    # cache source always present
+    assert "source" in response.data["meta"]
 
 
-# ─── Two-level cache tests ─────────────────────────────
+# ─── Cache source tests ────────────────────────────────
 @pytest.mark.django_db
-def test_first_request_hits_database(api_client, book):
-    response = api_client.get("/api/integration/books/")
-    assert response.data["source"] == "database"
+@pytest.mark.parametrize("url", [
+    "/api/integration/books/",
+    "/api/integration/authors/",
+    "/api/integration/logs/",
+])
+def test_first_request_hits_database(api_client, book, url):
+    response = api_client.get(url)
+    assert response.data["meta"]["source"] == "database"
 
 
 @pytest.mark.django_db
-def test_second_request_hits_l1_memory(api_client, book):
-    api_client.get("/api/integration/books/")
-    response = api_client.get("/api/integration/books/")
-    assert response.data["source"] == "l1_memory"
+@pytest.mark.parametrize("url", [
+    "/api/integration/books/",
+    "/api/integration/authors/",
+    "/api/integration/logs/",
+])
+def test_second_request_hits_l1_memory(api_client, book, url):
+    api_client.get(url)
+    response = api_client.get(url)
+    assert response.data["meta"]["source"] == "l1_memory"
 
 
+# ─── Cache invalidation ───────────────────────────────
 @pytest.mark.django_db
-def test_cache_invalidation_on_create(api_client, book, author):
+def test_create_book_invalidates_books_cache(api_client, book, author):
     api_client.get("/api/integration/books/")
     api_client.post("/api/integration/books/create/", {
         "title": "New Book",
@@ -84,7 +111,42 @@ def test_cache_invalidation_on_create(api_client, book, author):
         "author": author.id
     }, format='json')
     response = api_client.get("/api/integration/books/")
-    assert response.data["source"] == "database"
+    assert response.data["meta"]["source"] == "database"
+
+
+# ─── Pagination tests ──────────────────────────────────
+@pytest.mark.django_db
+def test_pagination_page_param(api_client, author):
+    # create 15 books
+    for i in range(15):
+        Book.objects.create(author=author, title=f"Book {i}", price=100)
+
+    response = api_client.get("/api/integration/books/?page=1&page_size=5")
+    assert response.status_code == 200
+    assert len(response.data["data"]) == 5
+    assert response.data["meta"]["total_items"] == 15
+    assert response.data["meta"]["total_pages"] == 3
+    assert response.data["meta"]["page"] == 1
+
+
+@pytest.mark.django_db
+def test_pagination_second_page(api_client, author):
+    for i in range(15):
+        Book.objects.create(author=author, title=f"Book {i}", price=100)
+
+    response = api_client.get("/api/integration/books/?page=2&page_size=5")
+    assert response.status_code == 200
+    assert len(response.data["data"]) == 5
+    assert response.data["meta"]["page"] == 2
+
+
+# ─── Author tests ─────────────────────────────────────
+@pytest.mark.django_db
+def test_author_total_books(api_client, book, author):
+    response = api_client.get("/api/integration/authors/")
+    assert response.status_code == 200
+    author_data = response.data["data"][0]
+    assert author_data["total_books"] == 1
 
 
 # ─── Health API ───────────────────────────────────────
@@ -97,42 +159,57 @@ def test_health_api_structure(api_client, book):
     assert "celery_task_id" in response.data["data"]
     assert "database" in response.data["data"]
     assert "l1_cache" in response.data["data"]
+    assert response.data["meta"]["source"] == "database"
 
 
 @pytest.mark.django_db
 def test_health_api_cached_on_second_request(api_client, book):
     api_client.get("/api/integration/health/")
     response = api_client.get("/api/integration/health/")
-    assert response.data["data"]["served_from"] in ["l1_memory", "l2_redis"]
+    assert response.data["meta"]["source"] in ["l1_memory", "l2_redis"]
 
 
-# ─── Author tests ─────────────────────────────────────
+# ─── Create book ──────────────────────────────────────
 @pytest.mark.django_db
-def test_author_total_books(api_client, book, author):
-    response = api_client.get("/api/integration/authors/")
-    assert response.status_code == 200
-    author_data = response.data["data"][0]
-    assert author_data["total_books"] == 1
+def test_create_book_returns_201_with_correct_structure(api_client, author):
+    response = api_client.post("/api/integration/books/create/", {
+        "title": "New Book",
+        "price": 150,
+        "author": author.id
+    }, format='json')
+    assert response.status_code == 201
+    assert response.data["success"] is True
+    assert response.data["data"]["title"] == "New Book"
+    assert response.data["errors"] is None
+
+
+@pytest.mark.django_db
+def test_create_book_validation_error_structure(api_client, author):
+    response = api_client.post("/api/integration/books/create/", {
+        "title": "",   # invalid
+        "price": 150,
+        "author": author.id
+    }, format='json')
+    assert response.status_code == 400
+    assert response.data["success"] is False
+    assert response.data["errors"] is not None
+    assert response.data["data"] is None
 
 
 # ─── Signal test ──────────────────────────────────────
 @pytest.mark.django_db
 def test_signal_creates_log_on_book_create(author):
     initial_count = ActivityLog.objects.count()
-    Book.objects.create(
-        author=author,
-        title="Signal Test Book",
-        price=50
-    )
+    Book.objects.create(author=author, title="Signal Test Book", price=50)
     assert ActivityLog.objects.count() == initial_count + 1
 
 
-# ─── Parametrize example — pytest superpower ──────────
+# ─── Price validation ─────────────────────────────────
 @pytest.mark.django_db
 @pytest.mark.parametrize("price,expected_status", [
-    (100, 201),    # valid price
-    (-1, 400),     # invalid price
-    (0, 201),      # zero price — valid
+    (100, 201),
+    (-1, 400),
+    (0, 201),
 ])
 def test_create_book_price_validation(api_client, author, price, expected_status):
     response = api_client.post("/api/integration/books/create/", {
@@ -141,9 +218,3 @@ def test_create_book_price_validation(api_client, author, price, expected_status
         "author": author.id
     }, format='json')
     assert response.status_code == expected_status
-
-@pytest.mark.django_db
-def test_book_created(book):
-    saved_book = Book.objects.get(id=book.id)
-    assert saved_book.title == book.title
-  
