@@ -3,22 +3,7 @@ import { useState, useEffect } from 'react'
 import { useApi } from './hooks/useApi'
 import './App.css'
 
-// const API = {
-//   testCelery: () => fetch('/api/integration/test-celery/').then(r => r.json()),
-//   getBooks: (page = 1, pageSize = 10) =>
-//     fetch(`/api/integration/books/?page=${page}&page_size=${pageSize}`).then(r => r.json()),
-//   getAuthors: (page = 1, pageSize = 10) =>
-//     fetch(`/api/integration/authors/?page=${page}&page_size=${pageSize}`).then(r => r.json()),
-//   getLogs: (page = 1, pageSize = 20) =>
-//     fetch(`/api/integration/logs/?page=${page}&page_size=${pageSize}`).then(r => r.json()),
-//   getHealth: () => fetch('/api/integration/health/').then(r => r.json()),
-//   createBook: (data) => fetch('/api/integration/books/create/', {
-//     method: 'POST',
-//     headers: { 'Content-Type': 'application/json' },
-//     body: JSON.stringify(data)
-//   }).then(r => r.json()),
-//   triggerSentryError: () => fetch('/api/integration/sentry-test/').then(r => r.json()),
-// }
+
 
 // ─── Reusable Components ──────────────────────────────
 
