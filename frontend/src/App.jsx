@@ -1,23 +1,24 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { useState, useEffect } from 'react'
+import { useApi } from './hooks/useApi'
 import './App.css'
 
-const API = {
-  testCelery: () => fetch('/api/integration/test-celery/').then(r => r.json()),
-  getBooks: (page = 1, pageSize = 10) =>
-    fetch(`/api/integration/books/?page=${page}&page_size=${pageSize}`).then(r => r.json()),
-  getAuthors: (page = 1, pageSize = 10) =>
-    fetch(`/api/integration/authors/?page=${page}&page_size=${pageSize}`).then(r => r.json()),
-  getLogs: (page = 1, pageSize = 20) =>
-    fetch(`/api/integration/logs/?page=${page}&page_size=${pageSize}`).then(r => r.json()),
-  getHealth: () => fetch('/api/integration/health/').then(r => r.json()),
-  createBook: (data) => fetch('/api/integration/books/create/', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
-  }).then(r => r.json()),
-  triggerSentryError: () => fetch('/api/integration/sentry-test/').then(r => r.json()),
-}
+// const API = {
+//   testCelery: () => fetch('/api/integration/test-celery/').then(r => r.json()),
+//   getBooks: (page = 1, pageSize = 10) =>
+//     fetch(`/api/integration/books/?page=${page}&page_size=${pageSize}`).then(r => r.json()),
+//   getAuthors: (page = 1, pageSize = 10) =>
+//     fetch(`/api/integration/authors/?page=${page}&page_size=${pageSize}`).then(r => r.json()),
+//   getLogs: (page = 1, pageSize = 20) =>
+//     fetch(`/api/integration/logs/?page=${page}&page_size=${pageSize}`).then(r => r.json()),
+//   getHealth: () => fetch('/api/integration/health/').then(r => r.json()),
+//   createBook: (data) => fetch('/api/integration/books/create/', {
+//     method: 'POST',
+//     headers: { 'Content-Type': 'application/json' },
+//     body: JSON.stringify(data)
+//   }).then(r => r.json()),
+//   triggerSentryError: () => fetch('/api/integration/sentry-test/').then(r => r.json()),
+// }
 
 // ─── Reusable Components ──────────────────────────────
 
@@ -72,6 +73,7 @@ function PaginationControls({ meta, onPageChange }) {
 // ─── Main App ─────────────────────────────────────────
 
 export default function App() {
+  const { get, post } = useApi()
   const [books, setBooks] = useState(null)
   const [authors, setAuthors] = useState(null)
   const [logs, setLogs] = useState(null)
@@ -91,7 +93,7 @@ export default function App() {
 
   async function loadBooks(page = booksPage) {
     setLoad('books', true)
-    const data = await API.getBooks(page)
+    const data = await get(`/api/integration/books/?page=${page}&page_size=10`)
     setBooks(data)
     setBooksPage(page)
     setLoad('books', false)
@@ -99,7 +101,7 @@ export default function App() {
 
   async function loadAuthors(page = authorsPage) {
     setLoad('authors', true)
-    const data = await API.getAuthors(page)
+    const data = await get(`/api/integration/authors/?page=${page}&page_size=10`)
     setAuthors(data)
     setAuthorsPage(page)
     setLoad('authors', false)
@@ -107,7 +109,7 @@ export default function App() {
 
   async function loadLogs(page = logsPage) {
     setLoad('logs', true)
-    const data = await API.getLogs(page)
+    const data = await get(`/api/integration/logs/?page=${page}&page_size=20`)
     setLogs(data)
     setLogsPage(page)
     setLoad('logs', false)
@@ -115,22 +117,31 @@ export default function App() {
 
   async function loadHealth() {
     setLoad('health', true)
-    const data = await API.getHealth()
+    const data = await get('/api/integration/health/')
     setHealth(data)
     setLoad('health', false)
   }
 
   async function testCelery() {
     setLoad('celery', true)
-    const data = await API.testCelery()
+    const data = await get('/api/integration/test-celery/')
     setCelery(data)
     setLoad('celery', false)
   }
+  
+  async function triggerSentryError() {
+  try {
+    await get('/api/integration/sentry-test/')
+  } catch (e) {
+    console.log(e)
+  }
+  alert('Error triggered — check Sentry dashboard!')
+}
 
   async function handleCreate(e) {
     e.preventDefault()
     setCreateError(null)
-    const res = await API.createBook({
+    const res = await post('/api/integration/books/create/', {
       title: newBook.title,
       price: parseFloat(newBook.price),
       author: parseInt(newBook.author)
@@ -431,14 +442,7 @@ export default function App() {
             </p>
             <button
               className="btn btn-danger"
-              onClick={async () => {
-                try {
-                  await API.triggerSentryError()
-                } catch (e) {
-                  console.log(e)
-                }
-                alert('Error triggered — check Sentry dashboard!')
-              }}
+              onClick={triggerSentryError}
             >
               🔥 Trigger Test Error
             </button>

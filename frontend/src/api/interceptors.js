@@ -78,3 +78,58 @@ api.interceptors.response.use(
         return Promise.reject(error);
     }
 );
+/*
+import axios from "axios";
+import { api } from "./client";
+import { setAuthToken, clearAuth, broadcastLogout } from "./auth";
+
+let refreshPromise = null;
+
+async function refreshAccessToken() {
+  if (!refreshPromise) {
+    refreshPromise = axios
+      .post(`${import.meta.env.VITE_API_ORIGIN}/token/refresh/`, {}, { withCredentials: true })
+      .then((res) => {
+        const newAccess = res.data.data.access;
+        setAuthToken(newAccess);
+        return newAccess;
+      })
+      .catch((err) => {
+        clearAuth();
+        broadcastLogout();
+        window.location.href = "/login";
+        throw err;
+      })
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+
+  return refreshPromise;
+}
+
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+
+      try {
+        const newAccess = await refreshAccessToken();
+        originalRequest.headers.Authorization = `Bearer ${newAccess}`;
+        return api(originalRequest);
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    }
+
+    if (error.response?.status === 429) {
+      alert("Too many requests. Please slow down.");
+    }
+
+    return Promise.reject(error);
+  }
+);
+*/
