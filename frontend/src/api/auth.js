@@ -8,17 +8,18 @@ export const setAuthToken = (token) => {
     accessToken = token;
 
     if (token) {
-        api.defaults.headers.Authorization = `Bearer ${token}`;
+        api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
     } else {
-        delete api.defaults.headers.Authorization;
+        delete api.defaults.headers.common["Authorization"];
     }
 };
 
 export const getAuthToken = () => accessToken;
+export const hasAuthToken = () => !!accessToken
 
 export const clearAuth = () => {
     accessToken = null;
-    delete api.defaults.headers.Authorization;
+    delete api.defaults.headers.common["Authorization"];
 };
 
 export const broadcastLogin = () => {

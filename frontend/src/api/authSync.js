@@ -5,16 +5,20 @@ export const initAuthSync = () => {
     window.addEventListener("storage", (event) => {
         if (event.key !== "auth_event") return;
 
-        const data = JSON.parse(event.newValue);
 
-        if (data.type === "LOGOUT") {
-            clearAuth();
-            window.location.href = "/login";
-        }
+        try {
+            const data = JSON.parse(event.newValue)
 
-        if (data.type === "LOGIN") {
-            // Optional: force reload to fetch new access token
-            window.location.reload();
+            if (data.type === "LOGOUT") {
+                clearAuth()
+                window.location.href = "/login"
+            }
+
+            if (data.type === "LOGIN") {
+                window.location.reload()
+            }
+        } catch {
+            // invalid JSON in storage — ignore
         }
     });
 

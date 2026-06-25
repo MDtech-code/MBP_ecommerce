@@ -1,5 +1,6 @@
-/* eslint-disable react-hooks/exhaustive-deps */
+
 import { useState, useEffect } from 'react'
+// import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApi } from './hooks/useApi'
 import './App.css'
 
@@ -59,6 +60,8 @@ function PaginationControls({ meta, onPageChange }) {
 
 export default function App() {
   const { get, post } = useApi()
+  // const queryClient = useQueryClient();
+  
   const [books, setBooks] = useState(null)
   const [authors, setAuthors] = useState(null)
   const [logs, setLogs] = useState(null)

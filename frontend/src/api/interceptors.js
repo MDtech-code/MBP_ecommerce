@@ -1,135 +1,98 @@
 // src/api/interceptors.js
+import { api } from "./client"
+import { setAuthToken, clearAuth, broadcastLogout,getAuthToken } from "./auth"
+import axios from "axios"
 
-import axios from "axios";
-import { api } from "./client";
-import { setAuthToken, clearAuth,broadcastLogin,broadcastLogout } from "./auth";
-
-let isRefreshing = false;
-let failedQueue = [];
+let isRefreshing = false
+let failedQueue = []
 
 const processQueue = (error, token = null) => {
-    failedQueue.forEach((prom) => {
-        if (error) {
-            prom.reject(error);
-        } else {
-            prom.resolve(token);
-        }
-    });
-
-    failedQueue = [];
-};
-
-api.interceptors.response.use(
-    (response) => response,
-    async (error) => {
-        const originalRequest = error.config;
-
-        // ✅ 401 handling
-        if (error.response?.status === 401 && !originalRequest._retry) {
-
-            if (isRefreshing) {
-                return new Promise((resolve, reject) => {
-                    failedQueue.push({ resolve, reject });
-                })
-                    .then((token) => {
-                        originalRequest.headers.Authorization = `Bearer ${token}`;
-                        return api(originalRequest);
-                    })
-                    .catch((err) => Promise.reject(err));
-            }
-
-            originalRequest._retry = true;
-            isRefreshing = true;
-
-            try {
-                const response = await axios.post(
-                    `${import.meta.env.VITE_API_ORIGIN}/token/refresh/`,
-                    {},
-                    { withCredentials: true }
-                );
-
-                const newAccess = response.data.data.access;
-
-                setAuthToken(newAccess);
-                broadcastLogin();
-                
-                processQueue(null, newAccess);
-
-                return api(originalRequest);
-
-            } catch (err) {
-                processQueue(err, null);
-                clearAuth();
-                broadcastLogout();
-                window.location.href = "/login";
-                return Promise.reject(err);
-
-            } finally {
-                isRefreshing = false;
-            }
-        }
-
-         // Rate limit handling
-         if (error.response?.status === 429) {
-             alert("Too many requests. Please slow down.");
-             return Promise.reject(error);
-         }
-
-        return Promise.reject(error);
-    }
-);
-/*
-import axios from "axios";
-import { api } from "./client";
-import { setAuthToken, clearAuth, broadcastLogout } from "./auth";
-
-let refreshPromise = null;
-
-async function refreshAccessToken() {
-  if (!refreshPromise) {
-    refreshPromise = axios
-      .post(`${import.meta.env.VITE_API_ORIGIN}/token/refresh/`, {}, { withCredentials: true })
-      .then((res) => {
-        const newAccess = res.data.data.access;
-        setAuthToken(newAccess);
-        return newAccess;
-      })
-      .catch((err) => {
-        clearAuth();
-        broadcastLogout();
-        window.location.href = "/login";
-        throw err;
-      })
-      .finally(() => {
-        refreshPromise = null;
-      });
-  }
-
-  return refreshPromise;
+  failedQueue.forEach(p => error ? p.reject(error) : p.resolve(token))
+  failedQueue = []
 }
 
-api.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    const originalRequest = error.config;
+export const setupInterceptors = () => {
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true;
-
-      try {
-        const newAccess = await refreshAccessToken();
-        originalRequest.headers.Authorization = `Bearer ${newAccess}`;
-        return api(originalRequest);
-      } catch (err) {
-        return Promise.reject(err);
+  // Request interceptor — attach token to every request
+  api.interceptors.request.use(
+    (config) => {
+      const token = getAuthToken()
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`
       }
-    }
+      return config
+    },
+    (error) => Promise.reject(error)
+  )
 
-    if (error.response?.status === 429) {
-      alert("Too many requests. Please slow down.");
-    }
+  // Response interceptor — handle 401, 429
+  api.interceptors.response.use(
+    (response) => response,
+    async (error) => {
+      const originalRequest = error.config
+      const status = error.response?.status
+      const errorCode = error.response?.data?.errors?.code
 
-    return Promise.reject(error);
-  }
-);
-*/
+      // ─── 401 handling ─────────────────────────────────────
+      // Only refresh if it's a token expiry, not invalid credentials
+      // Invalid credentials return 401 with specific error code
+      if (
+        status === 401 &&
+        !originalRequest._retry &&
+        errorCode !== "invalid_credentials"   // ← fine-grained check
+      ) {
+        if (isRefreshing) {
+          return new Promise((resolve, reject) => {
+            failedQueue.push({ resolve, reject })
+          })
+            .then(token => {
+              originalRequest.headers.Authorization = `Bearer ${token}`
+              return api(originalRequest)
+            })
+            .catch(err => Promise.reject(err))
+        }
+
+        originalRequest._retry = true
+        isRefreshing = true
+
+        try {
+          const response = await axios.post(
+            `${import.meta.env.VITE_API_ORIGIN}/api/token/refresh/`,
+            {},
+            { withCredentials: true }
+          )
+
+          const newToken = response.data.data.access
+          setAuthToken(newToken)
+          processQueue(null, newToken)
+          return api(originalRequest)
+
+        } catch (err) {
+          processQueue(err, null)
+          clearAuth()
+          broadcastLogout()
+          window.location.href = "/login"
+          return Promise.reject(err)
+
+        } finally {
+          isRefreshing = false
+        }
+      }
+
+      // ─── 429 rate limit ───────────────────────────────────
+      if (status === 429) {
+        const retryAfter = error.response?.headers["retry-after"] || 60
+        console.warn(`Rate limited. Retry after ${retryAfter}s`)
+        // Could implement exponential backoff here later
+        return Promise.reject(error)
+      }
+
+      // ─── 500 server error ─────────────────────────────────
+      if (status >= 500) {
+        console.error("Server error:", error.response?.data)
+      }
+
+      return Promise.reject(error)
+    }
+  )
+}

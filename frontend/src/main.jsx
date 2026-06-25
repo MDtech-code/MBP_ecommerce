@@ -7,10 +7,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 import { ApolloProvider } from "@apollo/client/react";
 import { client } from "./graphql/client";
-import "./api/interceptors";
+import { setupInterceptors } from './api/interceptors'
 import { initAuthSync } from "./api/authSync";
 
 initAuthSync();
+setupInterceptors();
 const queryClient = new QueryClient() 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
