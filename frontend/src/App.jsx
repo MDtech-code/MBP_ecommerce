@@ -1,7 +1,7 @@
 
 import { useState, useEffect } from 'react'
 import { useApi } from './hooks/useApi'
-import './App.css'
+
 import Badge  from '../components/Badge'
 import Card from '../components/Card'
 import SourceBadge from '../components/SourceBadge'
