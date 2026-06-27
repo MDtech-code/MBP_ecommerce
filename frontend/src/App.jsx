@@ -1,67 +1,24 @@
 
 import { useState, useEffect } from 'react'
-// import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApi } from './hooks/useApi'
 import './App.css'
+import Badge  from '../components/Badge'
+import Card from '../components/Card'
+import SourceBadge from '../components/SourceBadge'
+import PaginationControls from '../components/PaginationControls'
 
 
 
-// ─── Reusable Components ──────────────────────────────
 
-function Badge({ text, variant = 'primary' }) {
-  return <span className={`badge bg-${variant} me-1`}>{text}</span>
-}
 
-function Card({ title, children, className = '' }) {
-  return (
-    <div className={`card shadow-sm mb-4 ${className}`}>
-      <div className="card-header fw-bold">{title}</div>
-      <div className="card-body">{children}</div>
-    </div>
-  )
-}
 
-function SourceBadge({ source }) {
-  const config = {
-    l1_memory: { color: 'bg-warning text-dark', icon: '⚡⚡', label: 'L1 Memory' },
-    l2_redis: { color: 'bg-success', icon: '⚡', label: 'L2 Redis' },
-    database: { color: 'bg-primary', icon: '🗄️', label: 'Database' },
-  }
-  const s = config[source] || config.database
-  return <span className={`badge ${s.color}`}>{s.icon} {s.label}</span>
-}
 
-function PaginationControls({ meta, onPageChange }) {
-  if (!meta || meta.total_pages <= 1) return null
-  return (
-    <div className="flex items-center gap-2 mt-3">
-      <button
-        className="btn btn-sm btn-outline-secondary"
-        disabled={meta.page <= 1}
-        onClick={() => onPageChange(meta.page - 1)}
-      >
-        ← Prev
-      </button>
-      <span className="text-sm text-gray-600">
-        Page {meta.page} of {meta.total_pages} ({meta.total_items} total)
-      </span>
-      <button
-        className="btn btn-sm btn-outline-secondary"
-        disabled={meta.page >= meta.total_pages}
-        onClick={() => onPageChange(meta.page + 1)}
-      >
-        Next →
-      </button>
-    </div>
-  )
-}
+
 
 // ─── Main App ─────────────────────────────────────────
 
 export default function App() {
   const { get, post } = useApi()
-  // const queryClient = useQueryClient();
-  
   const [books, setBooks] = useState(null)
   const [authors, setAuthors] = useState(null)
   const [logs, setLogs] = useState(null)
@@ -160,6 +117,8 @@ export default function App() {
   const tabs = ['books', 'authors', 'logs', 'health', 'celery', 'sentry']
 
   return (
+    <>
+    
     <div className="min-h-screen bg-gray-50">
 
       {/* Navbar */}
@@ -210,7 +169,7 @@ export default function App() {
                 </div>
               }>
                 <button
-                  className="btn btn-sm btn-outline-primary mb-3"
+                  className="btn btn-sm btn-outline-primary mb-3 w-fit inline-flex"
                   onClick={() => loadBooks(booksPage)}
                   disabled={loading.books}
                 >
@@ -304,7 +263,7 @@ export default function App() {
             </div>
           }>
             <button
-              className="btn btn-sm btn-outline-primary mb-3"
+              className="btn btn-sm btn-outline-primary mb-3 w-fit inline-flex"
               onClick={() => loadAuthors(authorsPage)}
               disabled={loading.authors}
             >
@@ -344,7 +303,7 @@ export default function App() {
             </div>
           }>
             <button
-              className="btn btn-sm btn-outline-secondary mb-3"
+              className="btn btn-sm btn-outline-secondary mb-3 w-fit inline-flex"
               onClick={() => loadLogs(logsPage)}
               disabled={loading.logs}
             >
@@ -371,7 +330,7 @@ export default function App() {
         {activeTab === 'health' && (
           <Card title="❤️ System Health">
             <button
-              className="btn btn-success mb-3"
+              className="btn btn-success mb-3 w-fit inline-flex"
               onClick={loadHealth}
               disabled={loading.health}
             >
@@ -406,7 +365,7 @@ export default function App() {
         {activeTab === 'celery' && (
           <Card title="⚙️ Celery Task Test">
             <button
-              className="btn btn-warning mb-3"
+              className="btn btn-warning mb-3 w-fit inline-flex"
               onClick={testCelery}
               disabled={loading.celery}
             >
@@ -429,7 +388,7 @@ export default function App() {
               Click to trigger a test error and verify Sentry captures it.
             </p>
             <button
-              className="btn btn-danger"
+              className="btn btn-danger w-fit inline-flex"
               onClick={triggerSentryError}
             >
               🔥 Trigger Test Error
@@ -439,5 +398,6 @@ export default function App() {
 
       </div>
     </div>
+    </>
   )
 }

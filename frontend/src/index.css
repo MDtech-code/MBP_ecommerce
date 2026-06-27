@@ -1,1 +1,8 @@
-@import "tailwindcss";
+@import "tailwindcss/preflight";
+
+/* custom overrides here */
+body {
+    font-family: Inter, sans-serif;
+}
+
+@import "tailwindcss/utilities";

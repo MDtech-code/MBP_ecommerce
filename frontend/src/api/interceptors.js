@@ -11,6 +11,12 @@ const processQueue = (error, token = null) => {
   failedQueue = []
 }
 
+function getCookie(name) {
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) return parts.pop().split(";").shift();
+}
+
 export const setupInterceptors = () => {
 
   // Request interceptor — attach token to every request
@@ -58,8 +64,14 @@ export const setupInterceptors = () => {
         try {
           const response = await axios.post(
             `${import.meta.env.VITE_API_ORIGIN}/api/token/refresh/`,
-            {},
-            { withCredentials: true }
+            {
+              
+            },
+            {
+              withCredentials: true, headers: {
+                "X-CSRFToken": getCookie("csrftoken"), // attach CSRF token
+              }, },
+            
           )
 
           const newToken = response.data.data.access
