@@ -3,17 +3,22 @@ import daisyui from "daisyui";
 export default {
     content: [
         "./index.html",
-        "./src/**/*.{js,ts,jsx,tsx}", // scan your React files
+        "./src/**/*.{js,ts,jsx,tsx}", 
     ],
     theme: {
         extend: {
             colors: {
-                primary: "#2563eb",   // MBP brand blue
-                secondary: "#f59e0b", // MBP brand orange
-                neutral: "#1f2937",   // dark gray for text
+                primary: "#DC2626",
+                dark: "#0B0F14",
+                surface: "#F8FAFC",
+                muted: "#64748B"
+                
             },
             fontFamily: {
-                sans: ["Inter", "sans-serif"],
+                sans: [
+                    "Inter", "Arial",
+                    "sans-serif"
+                ]
             },
         },
     },
@@ -22,19 +27,16 @@ export default {
         themes: [
             {
                 mbp: {
-                    "primary": "#2563eb",
-                    "secondary": "#f59e0b",
-                    "accent": "#10b981",
-                    "neutral": "#1f2937",
-                    "base-100": "#ffffff",
-                    "info": "#3b82f6",
-                    "success": "#22c55e",
-                    "warning": "#facc15",
-                    "error": "#ef4444",
+                    primary: "#DC2626",
+
+                    secondary: "#0B0F14",
+
+                    base: "#FFFFFF",
+
+                    neutral: "#111827"
                 },
             },
-            "light",
-            "dark",
+           
         ],
     },
 };

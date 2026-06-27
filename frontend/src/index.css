@@ -1,8 +1,37 @@
-@import "tailwindcss/preflight";
+@import "tailwindcss";
 
-/* custom overrides here */
-body {
-    font-family: Inter, sans-serif;
+
+@theme {
+
+    --color-primary: #DC2626;
+    --color-dark: #0B0F14;
+    --color-surface: #F8FAFC;
+    --color-muted: #64748B;
+
+
+    --font-sans: Inter, Arial, sans-serif;
+
 }
 
-@import "tailwindcss/utilities";
+
+:root {
+
+    font-family: Inter, Arial, sans-serif;
+
+}
+
+
+html {
+    scroll-behavior: smooth;
+}
+
+
+body {
+
+    margin: 0;
+
+    min-width: 320px;
+
+    background: white;
+
+}
