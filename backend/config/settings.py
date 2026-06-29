@@ -49,6 +49,7 @@ DJANGO_APPS = [
 PROJECT_APPS = [
     'apps.core',
     'apps.common',
+    'apps.accounts',
     'apps.integration_test',
 ]
 THIRD_PARTY_APPS = [
@@ -209,6 +210,7 @@ USE_TZ = True
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+AUTH_USER_MODEL = "accounts.User"
 # ─── Static & Media ───────────────────────────────────
 
 STORAGES = {
@@ -328,6 +330,13 @@ LOGGING = {
             'level': 'INFO',
             'class': 'logging.FileHandler',
             'filename': str(LOGS_DIR / 'core.log'),
+            'formatter': 'verbose',
+
+        },
+        'accounts_file':{
+            'level': 'INFO',
+            'class': 'logging.FileHandler',
+            'filename': str(LOGS_DIR / 'accounts.log'),
             'formatter': 'verbose',
 
         },

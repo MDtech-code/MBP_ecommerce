@@ -1,0 +1,311 @@
+from __future__ import annotations
+
+import logging
+
+from django.contrib.auth import authenticate
+from django.contrib.auth.password_validation import validate_password
+from django.utils.translation import gettext_lazy as _
+from rest_framework import serializers
+
+from apps.core.api.serializers import BaseModelSerializer
+from .models import User, UserProfile
+from .validators import validate_email_unique,validate_full_name,validate_image_file,validate_pakistani_phone,validate_passwords_match,validate_strong_password
+logger = logging.getLogger("apps.accounts")
+
+
+# ─── Profile Serializer ───────────────────────────────────────────────────────
+
+class UserProfileSerializer(BaseModelSerializer):
+    """Read/update profile information."""
+
+    province_display = serializers.CharField(
+        source="get_province_display",
+        read_only=True,
+    )
+    gender_display = serializers.CharField(
+        source="get_gender_display",
+        read_only=True,
+    )
+    full_address = serializers.CharField(read_only=True)
+    has_complete_address = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = UserProfile
+        fields = [
+            "phone",
+            "date_of_birth",
+            "gender",
+            "gender_display",
+            "avatar",
+            "address_line1",
+            "address_line2",
+            "city",
+            "province",
+            "province_display",
+            "postal_code",
+            "country",
+            "full_address",
+            "has_complete_address",
+            "created_at",
+            "updated_at",
+        ]
+        extra_kwargs = {
+            "avatar": {"read_only": True},  # handled by separate upload endpoint
+        }
+
+
+# ─── User Serializer ──────────────────────────────────────────────────────────
+
+class UserSerializer(BaseModelSerializer):
+    """Read-only user representation returned in responses."""
+
+    profile = UserProfileSerializer(read_only=True)
+    role_display = serializers.CharField(
+        source="get_role_display",
+        read_only=True,
+    )
+    short_name = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = User
+        fields = [
+            "id",
+            "email",
+            "full_name",
+            "short_name",
+            "role",
+            "role_display",
+            "is_verified",
+            "date_joined",
+            "profile",
+        ]
+        read_only_fields = fields
+
+
+# ─── Registration Serializer ──────────────────────────────────────────────────
+
+class RegisterSerializer(serializers.Serializer):
+    """Handles new user registration input validation."""
+
+    full_name = serializers.CharField(
+        max_length=255,
+        error_messages={"blank": _("Full name is required.")},
+    )
+    email = serializers.EmailField(
+        error_messages={
+            "blank": _("Email address is required."),
+            "invalid": _("Enter a valid email address."),
+        }
+    )
+    password = serializers.CharField(
+        write_only=True,
+        min_length=8,
+        error_messages={
+            "blank": _("Password is required."),
+            "min_length": _("Password must be at least 8 characters."),
+        },
+    )
+    confirm_password = serializers.CharField(
+        write_only=True,
+        error_messages={"blank": _("Please confirm your password.")},
+    )
+
+    def validate_email(self, value):
+        return validate_email_unique(value)
+
+    def validate_full_name(self, value):
+        return validate_full_name(value)
+
+    def validate_password(self, value):
+        return validate_strong_password(value)
+
+    def validate(self, attrs):
+        validate_passwords_match(attrs["password"], attrs["confirm_password"])
+        return attrs
+
+    def create(self, validated_data: dict) -> User:
+        validated_data.pop("confirm_password")
+        user = User.objects.create_user(
+            email=validated_data["email"],
+            full_name=validated_data["full_name"],
+            password=validated_data["password"],
+        )
+        logger.info("New user registered: %s", user.email)
+        return user
+
+
+# ─── Login Serializer ─────────────────────────────────────────────────────────
+
+class LoginSerializer(serializers.Serializer):
+    """Validates login credentials."""
+
+    email = serializers.EmailField(
+        error_messages={"blank": _("Email address is required.")}
+    )
+    password = serializers.CharField(
+        write_only=True,
+        error_messages={"blank": _("Password is required.")}
+    )
+
+    def validate(self, attrs: dict) -> dict:
+        email = attrs["email"].lower().strip()
+        password = attrs["password"]
+
+        user = authenticate(
+            request=self.context.get("request"),
+            username=email,
+            password=password,
+        )
+
+        if not user:
+            raise serializers.ValidationError(
+                {"error": _("Invalid email or password.")},
+                code="invalid_credentials",
+            )
+
+        if not user.is_active:
+            raise serializers.ValidationError(
+                {"error": _("Your account has been deactivated. Contact support.")},
+                code="account_inactive",
+            )
+
+        attrs["user"] = user
+        return attrs
+
+
+# ─── Email Verification Serializer ───────────────────────────────────────────
+
+class EmailVerificationSerializer(serializers.Serializer):
+    """Accepts email verification token."""
+
+    token = serializers.UUIDField(
+        error_messages={
+            "invalid": _("Invalid verification token."),
+            "blank": _("Verification token is required."),
+        }
+    )
+
+
+# ─── Resend Verification Serializer ──────────────────────────────────────────
+
+class ResendVerificationSerializer(serializers.Serializer):
+    """Accepts email to resend verification."""
+
+    email = serializers.EmailField(
+        error_messages={"blank": _("Email address is required.")}
+    )
+
+    def validate_email(self, value: str) -> str:
+        return value.lower().strip()
+
+
+# ─── Password Reset Request Serializer ───────────────────────────────────────
+
+class PasswordResetRequestSerializer(serializers.Serializer):
+    """Accepts email for password reset request."""
+
+    email = serializers.EmailField(
+        error_messages={"blank": _("Email address is required.")}
+    )
+
+    def validate_email(self, value: str) -> str:
+        return value.lower().strip()
+
+
+# ─── Password Reset Confirm Serializer ───────────────────────────────────────
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    """Accepts token and new password for password reset."""
+
+    token = serializers.UUIDField(
+        error_messages={"invalid": _("Invalid reset token.")}
+    )
+    password = serializers.CharField(
+        write_only=True,
+        min_length=8,
+        error_messages={
+            "min_length": _("Password must be at least 8 characters."),
+            "blank": _("Password is required."),
+        },
+    )
+    confirm_password = serializers.CharField(
+        write_only=True,
+        error_messages={"blank": _("Please confirm your password.")},
+    )
+
+    def validate_password(self, value):
+        return validate_strong_password(value)
+
+    def validate(self, attrs):
+        validate_passwords_match(attrs["password"], attrs["confirm_password"])
+        return attrs
+
+
+
+# ─── Change Password Serializer ───────────────────────────────────────────────
+
+class ChangePasswordSerializer(serializers.Serializer):
+    """Allows authenticated user to change their password."""
+
+    current_password = serializers.CharField(
+        write_only=True,
+        error_messages={"blank": _("Current password is required.")},
+    )
+    new_password = serializers.CharField(
+        write_only=True,
+        min_length=8,
+        error_messages={
+            "min_length": _("New password must be at least 8 characters."),
+            "blank": _("New password is required."),
+        },
+    )
+    confirm_new_password = serializers.CharField(
+        write_only=True,
+        error_messages={"blank": _("Please confirm your new password.")},
+    )
+
+    def validate_password(self, value):
+        return validate_strong_password(value)
+
+    def validate(self, attrs):
+        validate_passwords_match(attrs["password"], attrs["confirm_password"])
+        return attrs
+
+
+# ─── Profile Update Serializer ───────────────────────────────────────────────
+
+class ProfileUpdateSerializer(BaseModelSerializer):
+    """Allows authenticated user to update their profile."""
+
+    class Meta:
+        model = UserProfile
+        fields = [
+            "phone",
+            "date_of_birth",
+            "gender",
+            "address_line1",
+            "address_line2",
+            "city",
+            "province",
+            "postal_code",
+            "country",
+        ]
+
+    def validate_phone(self, value: str) -> str:
+        return validate_pakistani_phone(value)
+
+
+# ─── Avatar Upload Serializer ─────────────────────────────────────────────────
+
+class AvatarUploadSerializer(serializers.Serializer):
+    """Handles avatar image upload."""
+
+    avatar = serializers.ImageField(
+        error_messages={
+            "invalid_image": _("Upload a valid image file."),
+            "blank": _("No image was submitted."),
+        }
+    )
+
+    def validate_avatar(self, value):
+       return validate_image_file(value)
