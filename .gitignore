@@ -82,3 +82,8 @@ logs/
 *.bak
 
 
+
+# database backups
+/backups/
+*.dump
+*.sql
