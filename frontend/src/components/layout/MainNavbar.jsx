@@ -9,7 +9,7 @@ return (
 <nav className="bg-white border-b">
 <Container>
 <div className="h-24 flex items-center justify-between">
-<Logo />
+<Logo variant="light" size="md" />
 {/* Menu */}
 
 <div className="hidden lg:flex items-center gap-7 font-semibold">

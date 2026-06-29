@@ -151,7 +151,7 @@ export default function Hero() {
 
 
 
-            <HeroBenefits />
+            <HeroBenefits  direction="horizontal" showDivider={true} />
 
 
           </div>
