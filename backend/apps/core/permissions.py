@@ -36,6 +36,31 @@ class IsAdmin(BasePermission):
             )
         return allowed
 
+class IsAdminOrReadOnly(BasePermission):
+    """
+    Allows read access (GET, HEAD, OPTIONS) to anyone.
+    Allows write access (POST, PUT, PATCH, DELETE) to ADMIN role only.
+
+    Used for: products, categories, brands — public browsing,
+    admin-only management.
+    """
+    message = "You must be an admin to perform this action."
+
+    def has_permission(self, request: Request, view: APIView) -> bool:
+        if request.method in ("GET", "HEAD", "OPTIONS"):
+            return True
+
+        allowed: bool = (
+            request.user.is_authenticated
+            and getattr(request.user, "role", None) == Role.ADMIN
+        )
+        if not allowed:
+            logger.warning(
+                "User %s denied write access: role=%s",
+                getattr(request.user, "username", "anonymous"),
+                getattr(request.user, "role", None),
+            )
+        return allowed
 
 class IsCustomer(BasePermission):
     """

@@ -50,6 +50,7 @@ PROJECT_APPS = [
     'apps.core',
     'apps.common',
     'apps.accounts',
+    'apps.products',
     'apps.integration_test',
 ]
 THIRD_PARTY_APPS = [
@@ -162,8 +163,8 @@ REST_FRAMEWORK = {
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
     #* Paginate results using page numbers (e.g., ?page=2) & mention page size 
-    'DEFAULT_PAGINATION_CLASS': 'apps.core.pagination.StandardPagination',
-    'PAGE_SIZE': 10,
+    # 'DEFAULT_PAGINATION_CLASS': 'apps.core.pagination.StandardPagination',
+    # 'PAGE_SIZE': 10,
 
     
     'DEFAULT_THROTTLE_CLASSES': [
