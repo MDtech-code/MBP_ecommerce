@@ -268,7 +268,10 @@ class ChangePasswordSerializer(serializers.Serializer):
         return validate_strong_password(value)
 
     def validate(self, attrs):
-        validate_passwords_match(attrs["password"], attrs["confirm_password"])
+        if attrs["new_password"] != attrs["confirm_new_password"]:
+            raise serializers.ValidationError(
+                {"confirm_new_password": _("Passwords do not match.")}
+            )
         return attrs
 
 
