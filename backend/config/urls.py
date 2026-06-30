@@ -22,6 +22,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/accounts/', include('apps.accounts.urls', namespace='accounts')),
     path('api/products/', include('apps.products.urls', namespace='products')),
+    path('api/cart/', include('apps.cart.urls', namespace='cart')),
     path('api/integration/',include("apps.integration_test.urls")),
 
      # Schema + Docs (global)

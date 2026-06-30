@@ -51,6 +51,7 @@ PROJECT_APPS = [
     'apps.common',
     'apps.accounts',
     'apps.products',
+    'apps.cart',
     'apps.integration_test',
 ]
 THIRD_PARTY_APPS = [
