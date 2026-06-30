@@ -23,12 +23,12 @@ def create_user_profile(
         logger.info("Profile created for user: %s", instance.email)
 
 
-@receiver(post_save, sender=User)
-def save_user_profile(
-    sender: type[User],
-    instance: User,
-    **kwargs,
-) -> None:
-    """Keep profile in sync when user is saved."""
-    if hasattr(instance, "profile"):
-        instance.profile.save()
+# @receiver(post_save, sender=User)
+# def save_user_profile(
+#     sender: type[User],
+#     instance: User,
+#     **kwargs,
+# ) -> None:
+#     """Keep profile in sync when user is saved."""
+#     if hasattr(instance, "profile"):
+#         instance.profile.save()
