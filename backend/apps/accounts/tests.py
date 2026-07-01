@@ -14,6 +14,7 @@ from apps.common.choices.role import Role
 
 @pytest.fixture(autouse=True)
 def clear_cache():
+   
     caches['default'].clear()
     caches['local'].clear()
     yield

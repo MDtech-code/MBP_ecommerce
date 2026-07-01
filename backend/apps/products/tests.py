@@ -65,10 +65,33 @@ def customer_client(api_client, customer) -> APIClient:
     api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
     return api_client
 
-
+# ── New category hierarchy fixtures ───────────────────────────────────────────
 @pytest.fixture
 def category(db) -> Category:
     return Category.objects.create(name="Engine Parts")
+
+@pytest.fixture
+def child_category(db, category) -> Category:
+    """Direct child of 'Engine Parts' — tests parent/child relationship."""
+    return Category.objects.create(name="Pistons", parent=category)
+
+
+@pytest.fixture
+def grandchild_category(db, child_category) -> Category:
+    """
+    One level deeper — tests that tree serializer recurses
+    beyond depth 1 correctly.
+    """
+    return Category.objects.create(name="Piston Rings", parent=child_category)
+
+
+@pytest.fixture
+def inactive_category(db) -> Category:
+    """
+    Exists in DB but is_active=False.
+    Must never appear in any API response.
+    """
+    return Category.objects.create(name="Discontinued Parts", is_active=False)
 
 
 @pytest.fixture
@@ -102,25 +125,398 @@ def product(db, category, brand, bike_model) -> Product:
 
 # ─── Category Tests ──────────────────────────────────────────────────────────
 
+
+
 @pytest.mark.django_db
 class TestCategoryList:
+    """
+    All tests scoped to:
+        GET /api/products/categories/         (flat — default)
+        GET /api/products/categories/?view=flat
+        GET /api/products/categories/?view=tree
+    """
+
+    URL = "/api/products/categories/"
+
+    # ── Original 3 tests — untouched ──────────────────────────────────────
 
     def test_list_categories_success(self, api_client, category):
-        response = api_client.get("/api/products/categories/")
+        response = api_client.get(self.URL)
         assert response.status_code == 200
         assert response.data["success"] is True
         assert len(response.data["data"]) == 1
 
     def test_categories_cached_on_second_request(self, api_client, category):
-        api_client.get("/api/products/categories/")
-        response = api_client.get("/api/products/categories/")
+        api_client.get(self.URL)
+        response = api_client.get(self.URL)
         assert response.data["meta"]["source"] == "l1_memory"
 
     def test_inactive_category_excluded(self, api_client, category):
         category.is_active = False
         category.save()
-        response = api_client.get("/api/products/categories/")
+        response = api_client.get(self.URL)
         assert len(response.data["data"]) == 0
+
+    # ── Response envelope ──────────────────────────────────────────────────
+
+    def test_response_envelope_fields_present(self, api_client, category):
+        """
+        Why: every response must have success / data / message / meta.
+        If BaseAPIView or APIResponseMixin changes shape, this catches it.
+        """
+        response = api_client.get(self.URL)
+        assert "success" in response.data
+        assert "data" in response.data
+        assert "message" in response.data
+        assert "meta" in response.data
+
+    def test_meta_contains_expected_keys(self, api_client, category):
+        """
+        Why: frontend reads meta.source, meta.count, meta.view, meta.elapsed_ms.
+        Missing any key breaks frontend logic silently.
+        """
+        response = api_client.get(self.URL)
+        meta = response.data["meta"]
+        assert "source" in meta
+        assert "count" in meta
+        assert "view" in meta
+        assert "elapsed_ms" in meta
+
+    def test_meta_count_matches_data_length(self, api_client, category, child_category):
+        """
+        Why: meta.count must always equal len(data).
+        Mismatch causes frontend pagination / display bugs.
+        """
+        response = api_client.get(self.URL)
+        assert response.data["meta"]["count"] == len(response.data["data"])
+
+    def test_meta_view_is_flat_by_default(self, api_client, category):
+        response = api_client.get(self.URL)
+        assert response.data["meta"]["view"] == "flat"
+
+    # ── Flat serializer fields ─────────────────────────────────────────────
+
+    def test_flat_item_has_all_required_fields(self, api_client, category):
+        """
+        Why: if a field is removed from CategoryFlatSerializer,
+        frontend breaks silently. This test is the contract.
+        """
+        response = api_client.get(self.URL)
+        item = response.data["data"][0]
+        expected_fields = {
+            "id", "name", "slug",
+            "parent", "parent_name",
+            "is_subcategory", "subcategory_count", "is_active",
+        }
+        assert expected_fields.issubset(set(item.keys()))
+
+    def test_root_category_parent_fields_are_null(self, api_client, category):
+        """
+        Why: root categories have no parent.
+        parent and parent_name must both be null — not missing, not 0.
+        """
+        response = api_client.get(self.URL)
+        item = response.data["data"][0]
+        assert item["parent"] is None
+        assert item["parent_name"] is None
+        assert item["is_subcategory"] is False
+
+    def test_child_category_parent_fields_populated(
+        self, api_client, category, child_category
+    ):
+        """
+        Why: frontend dropdown shows "Pistons (Engine Parts)".
+        Without parent_name, frontend needs extra API calls to resolve parent name.
+        This test ensures parent_name is correctly populated from select_related.
+        """
+        response = api_client.get(self.URL)
+        items = {i["name"]: i for i in response.data["data"]}
+
+        assert items["Pistons"]["parent"] == category.pk
+        assert items["Pistons"]["parent_name"] == "Engine Parts"
+        assert items["Pistons"]["is_subcategory"] is True
+
+    def test_subcategory_count_correct_for_parent(
+        self, api_client, category, child_category
+    ):
+        """
+        Why: subcategory_count comes from a queryset annotation.
+        If annotation is removed, it defaults to 0 and this test catches it.
+        Ensures N+1 fix (annotation) is still in place.
+        """
+        response = api_client.get(self.URL)
+        items = {i["name"]: i for i in response.data["data"]}
+        assert items["Engine Parts"]["subcategory_count"] == 1
+
+    def test_subcategory_count_zero_for_leaf(
+        self, api_client, category, child_category
+    ):
+        response = api_client.get(self.URL)
+        items = {i["name"]: i for i in response.data["data"]}
+        assert items["Pistons"]["subcategory_count"] == 0
+
+    def test_slug_present_and_correct(self, api_client, category):
+        """
+        Why: slug is auto-generated in Category.save().
+        If that logic breaks, slug is empty — this catches it.
+        """
+        response = api_client.get(self.URL)
+        assert response.data["data"][0]["slug"] == "engine-parts"
+
+    # ── Query param validation ─────────────────────────────────────────────
+
+    def test_explicit_flat_param_works(self, api_client, category):
+        """?view=flat must behave identically to default (no param)."""
+        response = api_client.get(self.URL, {"view": "flat"})
+        assert response.status_code == 200
+        assert response.data["meta"]["view"] == "flat"
+
+    def test_invalid_view_param_returns_400(self, api_client):
+        """
+        Why: arbitrary ?view= values must be rejected.
+        Prevents cache key pollution and undefined behaviour.
+        """
+        response = api_client.get(self.URL, {"view": "invalid"})
+        assert response.status_code == 400
+
+    def test_view_param_case_sensitive_rejection(self, api_client):
+        """
+        Why: view_type is lowercased in the view but 'Tree' != 'tree'
+        before lowercasing — confirms .lower() is applied correctly.
+        Actually after .lower(), 'Tree' becomes 'tree' which IS valid.
+        This test documents that behaviour explicitly.
+        """
+        response = api_client.get(self.URL, {"view": "Tree"})
+        assert response.status_code == 200
+        assert response.data["meta"]["view"] == "tree"
+
+    def test_empty_list_returns_200_not_404(self, api_client):
+        """
+        Why: no categories in DB must return empty list, not 404.
+        Frontend expects an iterable always — null or 404 breaks render loops.
+        """
+        response = api_client.get(self.URL)
+        assert response.status_code == 200
+        assert response.data["data"] == []
+
+    # ── Tree view ──────────────────────────────────────────────────────────
+
+    def test_tree_returns_200(self, api_client, category):
+        response = api_client.get(self.URL, {"view": "tree"})
+        assert response.status_code == 200
+
+    def test_tree_meta_view_is_tree(self, api_client, category):
+        response = api_client.get(self.URL, {"view": "tree"})
+        assert response.data["meta"]["view"] == "tree"
+
+    def test_tree_item_has_children_field(self, api_client, category):
+        """
+        Why: children field is the entire point of tree view.
+        If CategoryTreeSerializer drops it, frontend navigation breaks.
+        """
+        response = api_client.get(self.URL, {"view": "tree"})
+        assert "children" in response.data["data"][0]
+
+    def test_tree_root_has_empty_children_when_no_subcategories(
+        self, api_client, category
+    ):
+        response = api_client.get(self.URL, {"view": "tree"})
+        assert response.data["data"][0]["children"] == []
+
+    def test_tree_nests_child_under_parent(
+        self, api_client, category, child_category
+    ):
+        """
+        Why: core correctness of tree view.
+        Only root categories must appear at top level.
+        Children must be nested, not duplicated at root.
+        """
+        response = api_client.get(self.URL, {"view": "tree"})
+        data = response.data["data"]
+
+        # Only 1 root — child must not appear at top level
+        assert len(data) == 1
+        root = data[0]
+        assert root["name"] == "Engine Parts"
+        assert len(root["children"]) == 1
+        assert root["children"][0]["name"] == "Pistons"
+
+    def test_tree_renders_three_levels_deep(
+        self, api_client, category, child_category, grandchild_category
+    ):
+        """
+        Why: recursive serializer must work beyond depth 1.
+        Prefetch chain in view covers 3 levels — this confirms it works.
+        """
+        response = api_client.get(self.URL, {"view": "tree"})
+        root = response.data["data"][0]
+        child = root["children"][0]
+        grandchild = child["children"][0]
+
+        assert root["name"] == "Engine Parts"
+        assert child["name"] == "Pistons"
+        assert grandchild["name"] == "Piston Rings"
+        assert grandchild["children"] == []
+
+    def test_tree_excludes_inactive_children(self, api_client, category):
+        """
+        Why: inactive child categories must not appear in tree even if
+        their parent is active. Tests the is_active filter inside
+        get_children() in CategoryTreeSerializer.
+        """
+        Category.objects.create(
+            name="Hidden Part",
+            parent=category,
+            is_active=False,
+        )
+        response = api_client.get(self.URL, {"view": "tree"})
+        root = response.data["data"][0]
+        assert root["children"] == []
+
+    def test_tree_count_is_root_count_only(
+        self, api_client, category, child_category
+    ):
+        """
+        Why: meta.count in tree = number of ROOT nodes, not total categories.
+        Frontend uses count to render top-level navigation items.
+        Total count would be misleading for navigation purposes.
+        """
+        response = api_client.get(self.URL, {"view": "tree"})
+        # 2 categories exist but only 1 is root
+        assert response.data["meta"]["count"] == 1
+
+    # ── Cache behaviour ────────────────────────────────────────────────────
+
+    def test_first_request_source_is_database(self, api_client, category):
+        """Cache is cold — must always come from database on first hit."""
+        response = api_client.get(self.URL)
+        assert response.data["meta"]["source"] == "database"
+
+    def test_empty_list_is_cached_not_re_fetched(self, api_client):
+        """
+        Why: [] is falsy — old implementation treated it as cache miss.
+        Sentinel encoding fix must make [] a valid cached value.
+        If broken, every request hits DB even after caching empty list.
+        """
+        api_client.get(self.URL)           # DB hit, caches []
+        response = api_client.get(self.URL)  # must serve from cache
+        assert response.data["meta"]["source"] == "l1_memory"
+
+    def test_cache_invalidated_on_category_update(self, api_client, category):
+        """
+        Why: post_save signal must fire on .save() and clear cache.
+        After update, next request must go to DB and return updated name.
+        """
+        api_client.get(self.URL)           # warm cache
+
+        category.name = "Updated Engine Parts"
+        category.save()                    # triggers signal → cache.delete()
+
+        response = api_client.get(self.URL)
+        assert response.data["meta"]["source"] == "database"
+        names = [i["name"] for i in response.data["data"]]
+        assert "Updated Engine Parts" in names
+
+    def test_cache_invalidated_on_category_delete(self, api_client, category):
+        """
+        Why: deleted categories must not appear in cached response.
+        Without signal, deleted category stays in cache until TTL expires.
+        """
+        api_client.get(self.URL)  # warm cache — 1 category
+        category.delete()         # triggers post_delete signal
+
+        response = api_client.get(self.URL)
+        assert response.data["meta"]["source"] == "database"
+        assert len(response.data["data"]) == 0
+
+    def test_cache_invalidated_on_new_category_added(self, api_client, category):
+        """
+        Why: newly added categories must appear immediately.
+        Tests that post_save signal fires on INSERT (created=True).
+        """
+        api_client.get(self.URL)               # warm cache — 1 category
+        Category.objects.create(name="Brakes") # triggers signal
+
+        response = api_client.get(self.URL)
+        assert response.data["meta"]["source"] == "database"
+        assert len(response.data["data"]) == 2
+
+    def test_flat_and_tree_caches_are_independent(self, api_client, category):
+        """
+        Why: flat and tree use separate cache keys.
+        Warming flat must not warm tree — they are different payloads.
+        """
+        api_client.get(self.URL)                          # warm flat only
+        response = api_client.get(self.URL, {"view": "tree"})
+        assert response.data["meta"]["source"] == "database"
+
+    def test_signal_invalidates_both_flat_and_tree_cache(
+        self, api_client, category
+    ):
+        """
+        Why: _invalidate_all_category_caches() must clear BOTH keys.
+        If only flat is cleared, tree serves stale data after a category change.
+        """
+        api_client.get(self.URL)                    # warm flat
+        api_client.get(self.URL, {"view": "tree"})  # warm tree
+
+        category.name = "Changed"
+        category.save()                             # signal fires
+
+        flat = api_client.get(self.URL)
+        tree = api_client.get(self.URL, {"view": "tree"})
+
+        assert flat.data["meta"]["source"] == "database"
+        assert tree.data["meta"]["source"] == "database"
+
+    def test_deactivating_category_invalidates_cache(self, api_client, category):
+        """
+        Why: toggling is_active=False is a .save() call — signal must fire.
+        Without this, deactivated categories remain visible until TTL expires.
+        """
+        api_client.get(self.URL)   # warm cache — 1 active category
+
+        category.is_active = False
+        category.save()            # triggers signal
+
+        response = api_client.get(self.URL)
+        assert response.data["meta"]["source"] == "database"
+        assert len(response.data["data"]) == 0
+
+    # ── Model integrity (no HTTP — direct ORM) ─────────────────────────────
+
+    def test_root_category_is_not_subcategory(self, category):
+        assert category.is_subcategory is False
+
+    def test_child_category_is_subcategory(self, category):
+        child = Category.objects.create(name="Pistons", parent=category)
+        assert child.is_subcategory is True
+
+    def test_slug_auto_generated_from_name(self, db):
+        cat = Category.objects.create(name="Engine Parts")
+        assert cat.slug == "engine-parts"
+
+    def test_custom_slug_not_overwritten(self, db):
+        """
+        Why: Category.save() only sets slug when blank.
+        If someone provides a slug, it must be preserved.
+        """
+        cat = Category.objects.create(name="Engine Parts", slug="my-custom-slug")
+        assert cat.slug == "my-custom-slug"
+
+    def test_cascade_delete_removes_children(self, category, child_category):
+        """
+        Why: parent FK uses on_delete=CASCADE.
+        Deleting a parent must remove all its children from DB.
+        Admin must be aware of this — signal fires per deleted object.
+        """
+        child_pk = child_category.pk
+        category.delete()
+        assert not Category.objects.filter(pk=child_pk).exists()
+
+    def test_str_representation(self, category):
+        assert str(category) == "Engine Parts"
+
 
 
 # ─── Brand Tests ─────────────────────────────────────────────────────────────

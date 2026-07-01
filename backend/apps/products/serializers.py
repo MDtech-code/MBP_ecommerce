@@ -12,11 +12,30 @@ logger = logging.getLogger("apps.products")
 
 
 # ─── Category Serializers ──────────────────────────────────────────────────
+class CategoryFlatSerializer(BaseModelSerializer):
+    """
+    Flat representation — one object per category, no nesting.
 
-class CategorySerializer(BaseModelSerializer):
-    """Used for category listing and dropdowns."""
+    Use cases:
+        - Dropdown / select inputs  (frontend needs id + name only)
+        - Search results
+        - Admin panels
+        - Any place where hierarchy does not matter
+
+    Why parent_name included:
+        Dropdown needs to show "Pistons (Engine)" not just "Pistons".
+        Without parent_name, frontend makes extra API calls to resolve it.
+
+    Why subcategory_count included:
+        Tells frontend whether a category is expandable without extra calls.
+
+    DB cost: ZERO extra queries when queryset uses:
+        .select_related("parent")           → covers parent_name
+        .annotate(subcategories_count=Count("subcategories"))  → covers count
+    """
+
     parent_name = serializers.SerializerMethodField()
-    subcategory_count: serializers.IntegerField = serializers.IntegerField(
+    subcategory_count = serializers.IntegerField(
         source="subcategories_count",
         read_only=True,
         default=0,
@@ -34,16 +53,114 @@ class CategorySerializer(BaseModelSerializer):
             "subcategory_count",
             "is_active",
         ]
+
     def get_parent_name(self, obj: Category) -> str | None:
-        """
-        Why check obj.parent_id first:
-            Avoids attribute access on None.
-            parent_id is a DB column — always available without extra query.
-            obj.parent is the related object — available free via select_related.
-        """
         if obj.parent_id is None:
             return None
         return obj.parent.name if obj.parent else None
+
+
+class CategoryTreeSerializer(BaseModelSerializer):
+    """
+    Recursive tree representation.
+
+    Each root category contains its children, each child contains
+    its children, and so on — to any depth.
+
+    Use cases:
+        - Navigation menus
+        - Category sidebar
+        - Category selection tree (accordion UI)
+
+    How recursion works:
+        children field calls CategoryTreeSerializer on each child object.
+        DRF handles the recursion — no manual looping needed.
+
+    Why 'many=True' on children:
+        Each category can have multiple children — always a list.
+
+    Why read_only=True:
+        This serializer is for GET responses only.
+        Write operations use a dedicated write serializer.
+
+    DB cost: ZERO extra queries when queryset uses:
+        .prefetch_related("subcategories__subcategories__subcategories")
+        This covers 3 levels of depth in one prefetch.
+        Adjust depth prefix chain based on your max tree depth.
+
+    Important — why we do NOT call this serializer on the full queryset:
+        We only pass ROOT categories (parent=None) to this serializer.
+        The serializer then accesses .subcategories.all() on each root,
+        which is served from the prefetch cache — not hitting DB again.
+        Passing all categories would double-render subcategories.
+    """
+
+    children = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Category
+        fields = [
+            "id",
+            "name",
+            "slug",
+            "is_subcategory",
+            "is_active",
+            "children",
+        ]
+
+    def get_children(self, obj: Category) -> list:
+        """
+        Why SerializerMethodField instead of nested serializer directly:
+            Direct nested serializer = DRF evaluates it even when empty.
+            SerializerMethodField = we control exactly what is passed in,
+            and we can filter (only active children) before serializing.
+
+        Why filter is_active here:
+            prefetch_related fetches ALL subcategories including inactive.
+            We must filter them out here before sending to frontend.
+            We cannot filter inside prefetch_related without a custom Prefetch object
+            (shown in the view below).
+        """
+        # subcategories is the related_name on the Category model
+        # Because we use prefetch_related, .all() hits no DB — uses prefetch cache
+        active_children = [
+            child for child in obj.subcategories.all()
+            if child.is_active
+        ]
+        # Recursive — each child is serialized the same way
+        return CategoryTreeSerializer(active_children, many=True).data
+
+# class CategorySerializer(BaseModelSerializer):
+#     """Used for category listing and dropdowns."""
+#     parent_name = serializers.SerializerMethodField()
+#     subcategory_count: serializers.IntegerField = serializers.IntegerField(
+#         source="subcategories_count",
+#         read_only=True,
+#         default=0,
+#     )
+
+#     class Meta:
+#         model = Category
+#         fields = [
+#             "id",
+#             "name",
+#             "slug",
+#             "parent",
+#             "parent_name",
+#             "is_subcategory",
+#             "subcategory_count",
+#             "is_active",
+#         ]
+#     def get_parent_name(self, obj: Category) -> str | None:
+#         """
+#         Why check obj.parent_id first:
+#             Avoids attribute access on None.
+#             parent_id is a DB column — always available without extra query.
+#             obj.parent is the related object — available free via select_related.
+#         """
+#         if obj.parent_id is None:
+#             return None
+#         return obj.parent.name if obj.parent else None
 
 
 # ─── Brand Serializers ─────────────────────────────────────────────────────
@@ -176,7 +293,7 @@ class ProductDetailSerializer(BaseModelSerializer):
     Includes all images, compatible bikes, and full description.
     """
 
-    category: CategorySerializer = CategorySerializer(read_only=True)
+    category: CategoryFlatSerializer = CategoryFlatSerializer(read_only=True)
     brand: BrandSerializer = BrandSerializer(read_only=True)
     compatible_bikes: BikeModelSerializer = BikeModelSerializer(
         many=True, read_only=True,
