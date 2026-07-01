@@ -1272,3 +1272,649 @@ class TestProductList:
 
 
 
+# apps/products/tests.py
+# ADD these two classes at the bottom — do not touch anything above
+
+
+@pytest.mark.django_db
+class TestProductDetail:
+    """
+    Tests for GET /api/products/<slug>/
+    Covers: response shape, nested objects, cache behaviour, signal invalidation.
+    """
+
+    URL = "/api/products/{}/"
+
+    # ── Basic response ─────────────────────────────────────────────────────
+
+    def test_returns_200_for_valid_slug(self, api_client, product):
+        response = api_client.get(self.URL.format(product.slug))
+        assert response.status_code == 200
+        assert response.data["success"] is True
+
+    def test_returns_404_for_invalid_slug(self, api_client):
+        response = api_client.get(self.URL.format("slug-does-not-exist"))
+        assert response.status_code == 404
+
+    def test_response_envelope_shape(self, api_client, product):
+        response = api_client.get(self.URL.format(product.slug))
+        for key in ["success", "data", "message", "meta"]:
+            assert key in response.data
+
+    def test_meta_has_source_and_elapsed_ms(self, api_client, product):
+        response = api_client.get(self.URL.format(product.slug))
+        assert "source" in response.data["meta"]
+        assert "elapsed_ms" in response.data["meta"]
+
+    # ── Required fields ────────────────────────────────────────────────────
+
+    def test_detail_has_all_required_fields(self, api_client, product):
+        """
+        Why: these are the exact fields the frontend detail page renders.
+        Missing any = broken UI section.
+        """
+        response = api_client.get(self.URL.format(product.slug))
+        data = response.data["data"]
+        expected = {
+            "id", "name", "slug", "sku", "description",
+            "category", "brand", "compatible_bikes", "images",
+            "price", "discount_price", "current_price",
+            "has_discount", "discount_percentage",
+            "stock", "is_in_stock", "status", "is_featured",
+            "related_products", "created_at", "updated_at",
+        }
+        assert expected.issubset(set(data.keys()))
+
+    # ── Nested category (breadcrumb) ───────────────────────────────────────
+
+    def test_category_is_nested_object(self, api_client, product):
+        """
+        Why: list view returns category_name string.
+        Detail returns full category object for breadcrumb rendering.
+        """
+        response = api_client.get(self.URL.format(product.slug))
+        cat = response.data["data"]["category"]
+        assert isinstance(cat, dict)
+        for field in ["name", "slug", "parent_name", "is_subcategory"]:
+            assert field in cat
+
+    def test_category_parent_name_for_subcategory(
+        self, api_client, brand, admin
+    ):
+        """
+        Why: tests select_related("category__parent") is on the queryset.
+        Without __parent in the chain → parent_name always None.
+        Breadcrumb needs: Home > Bike Parts > Brake Parts > Product.
+        """
+        parent = Category.objects.create(name="Bike Parts")
+        child = Category.objects.create(name="Brake Parts", parent=parent)
+        p = Product.objects.create(
+            name="Brake Test Part",
+            category=child,
+            brand=brand,
+            sku="BRK-CAT-001",
+            price=500,
+            stock=5,
+            created_by=admin,
+        )
+        response = api_client.get(self.URL.format(p.slug))
+        cat = response.data["data"]["category"]
+        assert cat["parent_name"] == "Bike Parts"
+        assert cat["is_subcategory"] is True
+
+    # ── Nested brand ───────────────────────────────────────────────────────
+
+    def test_brand_is_nested_object(self, api_client, product, brand):
+        response = api_client.get(self.URL.format(product.slug))
+        brand_data = response.data["data"]["brand"]
+        assert isinstance(brand_data, dict)
+        assert brand_data["name"] == brand.name
+        assert "slug" in brand_data
+
+    # ── Images ─────────────────────────────────────────────────────────────
+
+    def test_images_empty_when_no_images(self, api_client, product):
+        response = api_client.get(self.URL.format(product.slug))
+        assert response.data["data"]["images"] == []
+
+    def test_images_returned_correctly(self, api_client, product):
+        ProductImage.objects.create(
+            product=product,
+            image="products/2024/01/primary.jpg",
+            is_primary=True,
+            order=0,
+        )
+        ProductImage.objects.create(
+            product=product,
+            image="products/2024/01/secondary.jpg",
+            is_primary=False,
+            order=1,
+        )
+        response = api_client.get(self.URL.format(product.slug))
+        images = response.data["data"]["images"]
+        assert len(images) == 2
+
+    def test_image_fields_present(self, api_client, product):
+        ProductImage.objects.create(
+            product=product,
+            image="products/2024/01/img.jpg",
+            is_primary=True,
+        )
+        response = api_client.get(self.URL.format(product.slug))
+        img = response.data["data"]["images"][0]
+        assert {"id", "image", "is_primary", "order"}.issubset(set(img.keys()))
+
+    def test_only_one_primary_image(self, api_client, product):
+        """
+        Why: ProductImage.save() ensures only one primary per product.
+        Detail page uses is_primary to pick the large display image.
+        """
+        ProductImage.objects.create(
+            product=product,
+            image="products/2024/01/img1.jpg",
+            is_primary=True,
+        )
+        ProductImage.objects.create(
+            product=product,
+            image="products/2024/01/img2.jpg",
+            is_primary=True,  # save() should demote the first
+        )
+        response = api_client.get(self.URL.format(product.slug))
+        images = response.data["data"]["images"]
+        primary_count = sum(1 for img in images if img["is_primary"])
+        assert primary_count == 1
+
+    # ── Compatible bikes ───────────────────────────────────────────────────
+
+    def test_compatible_bikes_contains_assigned_bike(
+        self, api_client, product, bike_model
+    ):
+        """product fixture already has bike_model assigned."""
+        response = api_client.get(self.URL.format(product.slug))
+        bikes = response.data["data"]["compatible_bikes"]
+        assert len(bikes) == 1
+        assert bikes[0]["name"] == bike_model.name
+
+    def test_compatible_bike_has_brand_name(
+        self, api_client, product, bike_model
+    ):
+        """
+        Why: tests Prefetch(compatible_bikes, select_related("brand")).
+        brand_name in response proves brand was joined, not lazy-loaded.
+        """
+        response = api_client.get(self.URL.format(product.slug))
+        bike = response.data["data"]["compatible_bikes"][0]
+        assert bike["brand_name"] == bike_model.brand.name
+
+    def test_compatible_bikes_empty_for_universal_product(
+        self, api_client, category, brand, admin
+    ):
+        p = Product.objects.create(
+            name="Universal Part",
+            category=category,
+            brand=brand,
+            sku="UNI-DET-001",
+            price=200,
+            stock=5,
+            created_by=admin,
+        )
+        response = api_client.get(self.URL.format(p.slug))
+        assert response.data["data"]["compatible_bikes"] == []
+
+    # ── Pricing ────────────────────────────────────────────────────────────
+
+    def test_no_discount_fields_correct(self, api_client, product):
+        """product fixture has no discount_price."""
+        response = api_client.get(self.URL.format(product.slug))
+        data = response.data["data"]
+        assert data["has_discount"] is False
+        assert data["discount_percentage"] == 0
+        assert data["current_price"] == data["price"]
+
+    def test_discount_fields_correct_when_discount_set(
+        self, api_client, product
+    ):
+        product.discount_price = 1200
+        product.save()
+        response = api_client.get(self.URL.format(product.slug))
+        data = response.data["data"]
+        assert data["has_discount"] is True
+        assert data["current_price"] == "1200.00"
+        assert data["discount_percentage"] == 20
+
+    def test_is_in_stock_true_when_stock_available(self, api_client, product):
+        """product fixture: stock=10, status=available."""
+        response = api_client.get(self.URL.format(product.slug))
+        assert response.data["data"]["is_in_stock"] is True
+        assert response.data["data"]["stock"] == 10
+
+    def test_is_in_stock_false_when_stock_zero(
+        self, api_client, category, brand, admin
+    ):
+        p = Product.objects.create(
+            name="Zero Stock Part",
+            category=category,
+            brand=brand,
+            sku="ZERO-001",
+            price=300,
+            stock=0,
+            created_by=admin,
+        )
+        response = api_client.get(self.URL.format(p.slug))
+        assert response.data["data"]["is_in_stock"] is False
+
+    # ── Related products ───────────────────────────────────────────────────
+
+    def test_related_products_is_list(self, api_client, product):
+        response = api_client.get(self.URL.format(product.slug))
+        assert isinstance(response.data["data"]["related_products"], list)
+
+    def test_related_products_empty_when_only_product_in_category(
+        self, api_client, product
+    ):
+        """product fixture is the only product in Engine Parts category."""
+        response = api_client.get(self.URL.format(product.slug))
+        assert response.data["data"]["related_products"] == []
+
+    def test_related_products_same_category(
+        self, api_client, product, category, brand, admin
+    ):
+        related = Product.objects.create(
+            name="Related Engine Part",
+            category=category,
+            brand=brand,
+            sku="REL-ENG-001",
+            price=800,
+            stock=5,
+            created_by=admin,
+        )
+        response = api_client.get(self.URL.format(product.slug))
+        slugs = [r["slug"] for r in response.data["data"]["related_products"]]
+        assert related.slug in slugs
+
+    def test_related_products_excludes_self(self, api_client, product):
+        response = api_client.get(self.URL.format(product.slug))
+        slugs = [r["slug"] for r in response.data["data"]["related_products"]]
+        assert product.slug not in slugs
+
+    def test_related_products_excludes_other_categories(
+        self, api_client, product, brand, admin
+    ):
+        other_cat = Category.objects.create(name="Brakes")
+        other = Product.objects.create(
+            name="Brake Pad",
+            category=other_cat,
+            brand=brand,
+            sku="BRK-OTH-001",
+            price=400,
+            stock=5,
+            created_by=admin,
+        )
+        response = api_client.get(self.URL.format(product.slug))
+        slugs = [r["slug"] for r in response.data["data"]["related_products"]]
+        assert other.slug not in slugs
+
+    def test_related_products_capped_at_four(
+        self, api_client, product, category, brand, admin
+    ):
+        for i in range(6):
+            Product.objects.create(
+                name=f"Related Part {i}",
+                category=category,
+                brand=brand,
+                sku=f"REL-CAP-{i:03d}",
+                price=300,
+                stock=5,
+                created_by=admin,
+            )
+        response = api_client.get(self.URL.format(product.slug))
+        assert len(response.data["data"]["related_products"]) <= 4
+
+    def test_related_products_only_available(
+        self, api_client, product, category, brand, admin
+    ):
+        Product.objects.create(
+            name="Discontinued Part",
+            category=category,
+            brand=brand,
+            sku="DIS-REL-001",
+            price=300,
+            stock=0,
+            status=Product.Status.DISCONTINUED,
+            created_by=admin,
+        )
+        response = api_client.get(self.URL.format(product.slug))
+        for r in response.data["data"]["related_products"]:
+            assert r["status"] == Product.Status.AVAILABLE
+
+    def test_related_products_use_list_serializer_fields(
+        self, api_client, product, category, brand, admin
+    ):
+        """
+        Why: related products use ProductListSerializer not detail.
+        Must have card fields, must NOT have heavy detail fields.
+        Prevents accidental infinite recursion.
+        """
+        Product.objects.create(
+            name="Related Card Part",
+            category=category,
+            brand=brand,
+            sku="REL-SER-001",
+            price=500,
+            stock=5,
+            created_by=admin,
+        )
+        response = api_client.get(self.URL.format(product.slug))
+        related = response.data["data"]["related_products"]
+        if related:
+            assert "name" in related[0]
+            assert "current_price" in related[0]
+            assert "is_in_stock" in related[0]
+            # detail-only fields must NOT be present in related cards
+            assert "description" not in related[0]
+            assert "compatible_bikes" not in related[0]
+            assert "related_products" not in related[0]
+
+    # ── Cache behaviour ────────────────────────────────────────────────────
+
+    def test_first_request_hits_database(self, api_client, product):
+        response = api_client.get(self.URL.format(product.slug))
+        assert response.data["meta"]["source"] == "database"
+
+    def test_second_request_hits_l1_cache(self, api_client, product):
+        """
+        Why: get_or_set stores result in L1 after first DB hit.
+        Second request from same worker must be served from memory.
+        """
+        api_client.get(self.URL.format(product.slug))
+        response = api_client.get(self.URL.format(product.slug))
+        assert response.data["meta"]["source"] == "l1_memory"
+
+    def test_each_slug_has_independent_cache(
+        self, api_client, product, category, brand, admin
+    ):
+        """
+        Why: cache key = product_detail_<slug>.
+        Warming product A must not affect product B's cache state.
+        """
+        other = Product.objects.create(
+            name="Other Product",
+            category=category,
+            brand=brand,
+            sku="OTH-CACHE-001",
+            price=300,
+            stock=5,
+            created_by=admin,
+        )
+        api_client.get(self.URL.format(product.slug))   # warm product A
+        response = api_client.get(self.URL.format(other.slug))
+        assert response.data["meta"]["source"] == "database"  # B still cold
+
+    def test_cache_invalidated_on_name_update(self, api_client, product):
+        api_client.get(self.URL.format(product.slug))   # warm cache
+
+        product.name = "Updated Name"
+        product.save()                                   # post_save signal fires
+
+        response = api_client.get(self.URL.format(product.slug))
+        assert response.data["meta"]["source"] == "database"
+        assert response.data["data"]["name"] == "Updated Name"
+
+    def test_cache_invalidated_on_price_update(self, api_client, product):
+        api_client.get(self.URL.format(product.slug))
+
+        product.price = 9999
+        product.save()
+
+        response = api_client.get(self.URL.format(product.slug))
+        assert response.data["meta"]["source"] == "database"
+        assert float(response.data["data"]["price"]) == 9999
+
+    def test_cache_invalidated_on_stock_update(self, api_client, product):
+        """
+        Why: stock shown as is_in_stock on detail page.
+        Stale cache showing "In Stock" for zero stock = critical bug.
+        """
+        api_client.get(self.URL.format(product.slug))
+
+        product.stock = 0
+        product.save()
+
+        response = api_client.get(self.URL.format(product.slug))
+        assert response.data["meta"]["source"] == "database"
+        assert response.data["data"]["is_in_stock"] is False
+
+    def test_cache_invalidated_on_discount_set(self, api_client, product):
+        """
+        Why: discount badge must appear immediately when admin sets it.
+        Without invalidation, page shows no badge until TTL expires.
+        """
+        api_client.get(self.URL.format(product.slug))
+
+        product.discount_price = 1200
+        product.save()
+
+        response = api_client.get(self.URL.format(product.slug))
+        assert response.data["meta"]["source"] == "database"
+        assert response.data["data"]["has_discount"] is True
+
+    def test_cache_invalidated_on_image_upload(self, api_client, product):
+        """
+        Why: gallery must show newly uploaded image immediately.
+        post_save on ProductImage fires signal → clears detail cache.
+        """
+        api_client.get(self.URL.format(product.slug))   # warm — 0 images
+
+        ProductImage.objects.create(
+            product=product,
+            image="products/2024/01/new.jpg",
+            is_primary=True,
+        )                                                # signal fires
+
+        response = api_client.get(self.URL.format(product.slug))
+        assert response.data["meta"]["source"] == "database"
+        assert len(response.data["data"]["images"]) == 1
+
+    def test_cache_invalidated_on_image_delete(self, api_client, product):
+        """
+        Why: deleted image must not appear in cached gallery response.
+        post_delete on ProductImage fires signal → clears detail cache.
+        """
+        img = ProductImage.objects.create(
+            product=product,
+            image="products/2024/01/del.jpg",
+            is_primary=True,
+        )
+        api_client.get(self.URL.format(product.slug))   # warm — 1 image
+        img.delete()                                     # signal fires
+
+        response = api_client.get(self.URL.format(product.slug))
+        assert response.data["meta"]["source"] == "database"
+        assert len(response.data["data"]["images"]) == 0
+
+    def test_cache_invalidated_on_product_delete(
+        self, api_client, category, brand, admin
+    ):
+        """
+        Why: separate from product fixture to avoid breaking other tests.
+        After delete, slug must return 404 not cached stale data.
+        """
+        p = Product.objects.create(
+            name="To Be Deleted",
+            category=category,
+            brand=brand,
+            sku="DEL-DET-001",
+            price=500,
+            stock=5,
+            created_by=admin,
+        )
+        slug = p.slug
+        api_client.get(self.URL.format(slug))   # warm cache
+
+        p.delete()                               # post_delete signal fires
+
+        response = api_client.get(self.URL.format(slug))
+        assert response.status_code == 404
+
+
+@pytest.mark.django_db
+class TestProductImageUpload:
+    """
+    Tests for:
+        POST   /api/products/<slug>/images/
+        DELETE /api/products/<slug>/images/<image_id>/
+
+    Admin only — IsAdminOrReadOnly permission.
+    """
+
+    IMAGE_URL = "/api/products/{}/images/"
+    IMAGE_DELETE_URL = "/api/products/{}/images/{}/"
+
+    # ── Permission tests ───────────────────────────────────────────────────
+
+    def test_anonymous_cannot_upload(self, api_client, product):
+        """
+        Why: IsAdminOrReadOnly must block unauthenticated POST.
+        Anonymous users can GET but not POST.
+        """
+        response = api_client.post(
+            self.IMAGE_URL.format(product.slug), data={}
+        )
+        assert response.status_code in (401, 403)
+
+    def test_customer_cannot_upload(self, customer_client, product):
+        """
+        Why: regular authenticated users are not admin.
+        IsAdminOrReadOnly must reject non-staff POST.
+        """
+        response = customer_client.post(
+            self.IMAGE_URL.format(product.slug), data={}
+        )
+        assert response.status_code == 403
+
+    def test_anonymous_cannot_delete(self, api_client, product):
+        img = ProductImage.objects.create(
+            product=product,
+            image="products/2024/01/test.jpg",
+            is_primary=False,
+        )
+        response = api_client.delete(
+            self.IMAGE_DELETE_URL.format(product.slug, img.pk)
+        )
+        assert response.status_code in (401, 403)
+
+    def test_customer_cannot_delete(self, customer_client, product):
+        img = ProductImage.objects.create(
+            product=product,
+            image="products/2024/01/test.jpg",
+            is_primary=False,
+        )
+        response = customer_client.delete(
+            self.IMAGE_DELETE_URL.format(product.slug, img.pk)
+        )
+        assert response.status_code == 403
+
+    # ── Delete success ─────────────────────────────────────────────────────
+
+    def test_admin_can_delete_image(self, admin_client, product):
+        img = ProductImage.objects.create(
+            product=product,
+            image="products/2024/01/test.jpg",
+            is_primary=False,
+        )
+        response = admin_client.delete(
+            self.IMAGE_DELETE_URL.format(product.slug, img.pk)
+        )
+        assert response.status_code == 200
+        assert response.data["success"] is True
+        assert not ProductImage.objects.filter(pk=img.pk).exists()
+
+    def test_delete_nonexistent_image_returns_404(
+        self, admin_client, product
+    ):
+        response = admin_client.delete(
+            self.IMAGE_DELETE_URL.format(product.slug, 99999)
+        )
+        assert response.status_code == 404
+
+    def test_delete_image_from_wrong_product_returns_404(
+        self, admin_client, product, category, brand, admin
+    ):
+        """
+        Why: image belongs to product A — cannot be deleted via product B URL.
+        get_object_or_404(ProductImage, id=X, product__slug=B) must return 404.
+        Prevents cross-product image manipulation.
+        """
+        other = Product.objects.create(
+            name="Other Product",
+            category=category,
+            brand=brand,
+            sku="OTH-IMG-001",
+            price=300,
+            stock=5,
+            created_by=admin,
+        )
+        img = ProductImage.objects.create(
+            product=product,
+            image="products/2024/01/test.jpg",
+            is_primary=False,
+        )
+        response = admin_client.delete(
+            self.IMAGE_DELETE_URL.format(other.slug, img.pk)
+        )
+        assert response.status_code == 404
+        # Image must still exist — wrong product, deletion rejected
+        assert ProductImage.objects.filter(pk=img.pk).exists()
+
+    # ── Cache invalidation via image operations ────────────────────────────
+
+    def test_image_delete_invalidates_detail_cache(
+        self, api_client, admin_client, product
+    ):
+        """
+        Why: post_delete on ProductImage fires signal.
+        Signal clears both list and detail cache.
+        After delete, detail must come from DB not stale cache.
+        """
+        img = ProductImage.objects.create(
+            product=product,
+            image="products/2024/01/cache_test.jpg",
+            is_primary=True,
+        )
+        # Warm detail cache
+        api_client.get(f"/api/products/{product.slug}/")
+
+        # Admin deletes image
+        admin_client.delete(
+            self.IMAGE_DELETE_URL.format(product.slug, img.pk)
+        )
+
+        # Detail cache must be cleared — fresh DB hit
+        response = api_client.get(f"/api/products/{product.slug}/")
+        assert response.data["meta"]["source"] == "database"
+        assert len(response.data["data"]["images"]) == 0
+
+    def test_image_delete_invalidates_list_cache(
+        self, api_client, admin_client, product
+    ):
+        """
+        Why: primary_image is in list response.
+        Deleting the primary image → list cards would show broken URL.
+        Signal must clear list cache so next list request re-fetches.
+        """
+        img = ProductImage.objects.create(
+            product=product,
+            image="products/2024/01/list_cache_test.jpg",
+            is_primary=True,
+        )
+        # Warm list cache
+        api_client.get("/api/products/")
+
+        # Admin deletes image
+        admin_client.delete(
+            self.IMAGE_DELETE_URL.format(product.slug, img.pk)
+        )
+
+        # List cache must be cleared
+        response = api_client.get("/api/products/")
+        assert response.data["meta"]["source"] == "database"

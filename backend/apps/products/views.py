@@ -480,34 +480,34 @@ class ProductListAPIView(BaseAPIView):
 
     # ── Param validation ───────────────────────────────────────────────────
 
-    def _get_pagination_params(
-        self, request: Request
-    ) -> tuple[int, int, bool]:
-        """
-        Returns (page, page_size, is_valid).
+    # def _get_pagination_params(
+    #     self, request: Request
+    # ) -> tuple[int, int, bool]:
+    #     """
+    #     Returns (page, page_size, is_valid).
 
-        Why max page_size=48:
-            Frontend grid shows 12 per page.
-            Allow up to 48 (4 pages worth) for power users.
-            Unlimited page_size = DB abuse risk.
+    #     Why max page_size=48:
+    #         Frontend grid shows 12 per page.
+    #         Allow up to 48 (4 pages worth) for power users.
+    #         Unlimited page_size = DB abuse risk.
 
-        Why default page_size=12:
-            Matches frontend grid design (4 columns × 3 rows).
-        """
-        try:
-            page = max(1, int(request.query_params.get("page", 1)))
-        except (ValueError, TypeError):
-            return 1, 12, False
+    #     Why default page_size=12:
+    #         Matches frontend grid design (4 columns × 3 rows).
+    #     """
+    #     try:
+    #         page = max(1, int(request.query_params.get("page", 1)))
+    #     except (ValueError, TypeError):
+    #         return 1, 12, False
 
-        try:
-            page_size = min(
-                48,
-                max(1, int(request.query_params.get("page_size", 12)))
-            )
-        except (ValueError, TypeError):
-            return 1, 12, False
+    #     try:
+    #         page_size = min(
+    #             48,
+    #             max(1, int(request.query_params.get("page_size", 12)))
+    #         )
+    #     except (ValueError, TypeError):
+    #         return 1, 12, False
 
-        return page, page_size, True
+    #     return page, page_size, True
 
     def _get_price_params(
         self, request: Request
@@ -674,7 +674,7 @@ class ProductListAPIView(BaseAPIView):
         start = time.monotonic()
 
         # ── Validate all params upfront ────────────────────────────────────
-        page, page_size, pagination_valid = self._get_pagination_params(request)
+        page, page_size, pagination_valid = get_pagination_params(request,default_page_size=12,max_page_size=48)
         if not pagination_valid:
             return self.error_response(
                 message="Invalid page or page_size parameter.",
@@ -714,14 +714,14 @@ class ProductListAPIView(BaseAPIView):
                 return self.success_response(
                     data=cached["data"],
                     message="Products retrieved successfully",
-                    meta={
-                        **self._build_pagination_meta(
-                            page, page_size, cached["total"]
-                        ),
-                        "source": source,
-                        "sort": sort_key,
-                        "elapsed_ms": elapsed_ms,
-                    },
+                    meta=build_pagination_meta(
+                        page,
+                        page_size,
+                        cached["total"],
+                        source=source,
+                        sort=sort_key,
+                        elapsed_ms=elapsed_ms,
+                    ),
                 )
         except Exception as exc:
             # Why continue on cache read failure:
@@ -788,40 +788,42 @@ class ProductListAPIView(BaseAPIView):
         return self.success_response(
             data=serialized,
             message="Products retrieved successfully",
-            meta={
-                **self._build_pagination_meta(page, page_size, total),
-                "source": "database",
-                "sort": sort_key,
-                "elapsed_ms": elapsed_ms,
-            },
+            meta=build_pagination_meta(
+                page,
+                page_size,
+                total,
+                source="database",
+                sort=sort_key,
+                elapsed_ms=elapsed_ms,
+            ),
         )
 
-    def _build_pagination_meta(
-        self, page: int, page_size: int, total: int
-    ) -> dict:
-        """
-        Why total_pages uses ceiling division:
-            10 items, page_size=3 → 4 pages (3+3+3+1).
-            Integer division would give 3 — last page lost.
+    # def _build_pagination_meta(
+    #     self, page: int, page_size: int, total: int
+    # ) -> dict:
+    #     """
+    #     Why total_pages uses ceiling division:
+    #         10 items, page_size=3 → 4 pages (3+3+3+1).
+    #         Integer division would give 3 — last page lost.
 
-        Why showing_from/showing_to:
-            Frontend shows "Showing 1-12 of 540 products".
-            Backend pre-calculates — frontend renders directly.
-        """
-        total_pages = (total + page_size - 1) // page_size
-        showing_from = ((page - 1) * page_size) + 1 if total > 0 else 0
-        showing_to = min(page * page_size, total)
+    #     Why showing_from/showing_to:
+    #         Frontend shows "Showing 1-12 of 540 products".
+    #         Backend pre-calculates — frontend renders directly.
+    #     """
+    #     total_pages = (total + page_size - 1) // page_size
+    #     showing_from = ((page - 1) * page_size) + 1 if total > 0 else 0
+    #     showing_to = min(page * page_size, total)
 
-        return {
-            "page": page,
-            "page_size": page_size,
-            "total": total,
-            "total_pages": total_pages,
-            "showing_from": showing_from,
-            "showing_to": showing_to,
-            "has_next": page < total_pages,
-            "has_previous": page > 1,
-        }
+    #     return {
+    #         "page": page,
+    #         "page_size": page_size,
+    #         "total": total,
+    #         "total_pages": total_pages,
+    #         "showing_from": showing_from,
+    #         "showing_to": showing_to,
+    #         "has_next": page < total_pages,
+    #         "has_previous": page > 1,
+    #     }
 
 
 
@@ -831,6 +833,9 @@ PRODUCT_DETAIL_CACHE_PREFIX = "product_detail"
 PRODUCT_DETAIL_L1_TTL = 60
 PRODUCT_DETAIL_L2_TTL = 300
 
+
+from django.http import Http404
+from django.core.exceptions import ObjectDoesNotExist
 class ProductDetailAPIView(BaseAPIView):
     """
     GET /api/products/<slug>/
@@ -881,6 +886,12 @@ class ProductDetailAPIView(BaseAPIView):
         cache_key = f"{PRODUCT_DETAIL_CACHE_PREFIX}_{slug}"
 
         def build_fresh_data():
+            """
+            Why get_object_or_404 inside build_fresh_data:
+                get_or_set only calls this on cache miss.
+                Http404 raised here propagates through get_or_set
+                and must be caught separately from real errors.
+            """
             product = get_object_or_404(
                 self._get_product_queryset(), slug=slug
             )
@@ -898,6 +909,13 @@ class ProductDetailAPIView(BaseAPIView):
                 l1_timeout=PRODUCT_DETAIL_L1_TTL,
                 l2_timeout=PRODUCT_DETAIL_L2_TTL,
             )
+        except Http404:
+        # Why separate Http404 catch BEFORE generic Exception:
+        #   Http404 is a valid business outcome — product does not exist.
+        #   Must return 404 not 503.
+        #   If caught by generic Exception below → returns 503 (wrong).
+        #   Order matters: most specific exception first.
+            raise
         except Exception as exc:
             logger.error(
                 "ProductDetailAPIView: GET failed | slug=%s error=%s",
