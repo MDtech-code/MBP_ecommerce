@@ -23,7 +23,6 @@ from .serializers import (
     BikeModelSerializer,
     ProductListSerializer,
     ProductDetailSerializer,
-    ProductWriteSerializer,
     ProductImageSerializer,
     ProductImageUploadSerializer,
 )
@@ -1312,102 +1311,172 @@ class ProductListAPIView(BaseAPIView):
 
 
 # ─── Product Detail View ────────────────────────────────────────────────────
+PRODUCT_DETAIL_CACHE_PREFIX = "product_detail"
+PRODUCT_DETAIL_L1_TTL = 60
+PRODUCT_DETAIL_L2_TTL = 300
 
 class ProductDetailAPIView(BaseAPIView):
     """
-    GET    /api/products/<slug>/   → public detail view
-    PUT    /api/products/<slug>/   → admin only, update
-    DELETE /api/products/<slug>/   → admin only, delete
+    GET /api/products/<slug>/
+
+    Public endpoint — no authentication required.
+    Returns full product data for the detail page including:
+        - Full image gallery
+        - Complete compatible bikes list
+        - Nested category with parent (for breadcrumb)
+        - Nested brand
+        - Related products (same category, up to 4)
+        - All computed price/discount/stock fields
     """
-    permission_classes = [IsAdminOrReadOnly]
 
-    def get(self, request, slug: str):
-        cache_key = f"product_detail_{slug}"
-        cached_data, source = two_level_cache.get(cache_key)
+    permission_classes = [AllowAny]
 
-        if cached_data:
-            logger.debug("Product detail served from %s", source)
-            return self.success_response(
-                data=cached_data,
-                message="Product retrieved successfully",
-                meta={"source": source},
+    def _get_product_queryset(self):
+        """
+        Why select_related("category__parent"):
+            CategoryFlatSerializer includes parent_name.
+            Breadcrumb needs: Home > Bike Parts > Brake Parts > Product.
+            category__parent fetches both levels in one JOIN.
+
+        Why Prefetch for compatible_bikes with select_related("brand"):
+            BikeModelSerializer accesses brand.name per bike.
+            Without this = one brand query per compatible bike = N+1.
+        """
+        return (
+            Product.objects
+            .select_related("category__parent", "brand")
+            .prefetch_related(
+                "images",
+                Prefetch(
+                    "compatible_bikes",
+                    queryset=BikeModel.objects.select_related("brand"),
+                ),
+            )
+        )
+
+    def get(
+        self,
+        request: Request,
+        slug: str,
+        *args: Any,
+        **kwargs: Any,
+    ):
+        start = time.monotonic()
+        cache_key = f"{PRODUCT_DETAIL_CACHE_PREFIX}_{slug}"
+
+        def build_fresh_data():
+            product = get_object_or_404(
+                self._get_product_queryset(), slug=slug
+            )
+            return dict(
+                ProductDetailSerializer(
+                    product,
+                    context={"request": request},
+                ).data
             )
 
-        product = get_object_or_404(
-            Product.objects.select_related("category", "brand")
-            .prefetch_related("images", "compatible_bikes"),
-            slug=slug,
-        )
-        serialized = ProductDetailSerializer(
-            product, context={"request": request}
-        ).data
-        two_level_cache.set(cache_key, serialized)
+        try:
+            data, source = two_level_cache.get_or_set(
+                cache_key,
+                build_fresh_data,
+                l1_timeout=PRODUCT_DETAIL_L1_TTL,
+                l2_timeout=PRODUCT_DETAIL_L2_TTL,
+            )
+        except Exception as exc:
+            logger.error(
+                "ProductDetailAPIView: GET failed | slug=%s error=%s",
+                slug, exc, exc_info=True,
+            )
+            return self.error_response(
+                message="Unable to retrieve product. Please try again.",
+                status_code=503,
+            )
 
-        logger.debug("Product detail served from database, cached in L1+L2")
+        elapsed_ms = round((time.monotonic() - start) * 1000, 2)
+        logger.info(
+            "ProductDetailAPIView: GET OK | slug=%s source=%s "
+            "elapsed_ms=%s request_id=%s",
+            slug, source, elapsed_ms, getattr(request, "id", "n/a"),
+        )
+
         return self.success_response(
-            data=serialized,
+            data=data,
             message="Product retrieved successfully",
-            meta={"source": "database"},
-        )
-
-    def put(self, request, slug: str):
-        product = get_object_or_404(Product, slug=slug)
-        serializer = ProductWriteSerializer(
-            product, data=request.data, partial=True, context={"request": request}
-        )
-        if not serializer.is_valid():
-            return self.error_response(
-                message="Product update failed",
-                errors=serializer.errors,
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
-
-        serializer.save()
-        logger.info("Product updated: %s (sku=%s)", product.name, product.sku)
-        return self.success_response(
-            data=ProductDetailSerializer(
-                product, context={"request": request}
-            ).data,
-            message="Product updated successfully",
-        )
-
-    def delete(self, request, slug: str):
-        product = get_object_or_404(Product, slug=slug)
-        name = product.name
-        product.delete()
-        logger.info("Product deleted: %s", name)
-        return self.success_response(
-            message="Product deleted successfully",
+            meta={
+                "source": source,
+                "elapsed_ms": elapsed_ms,
+            },
         )
 
 
-# ─── Product Create View ────────────────────────────────────────────────────
+# class ProductDetailAPIView(BaseAPIView):
+#     """
+#     GET    /api/products/<slug>/   → public detail view
+#     PUT    /api/products/<slug>/   → admin only, update
+#     DELETE /api/products/<slug>/   → admin only, delete
+#     """
+#     permission_classes = [IsAdminOrReadOnly]
 
-class ProductCreateAPIView(BaseAPIView):
-    """
-    POST /api/products/
-    Admin only — create new product.
-    """
-    permission_classes = [IsAdminOrReadOnly]
+#     def get(self, request, slug: str):
+#         cache_key = f"product_detail_{slug}"
+#         cached_data, source = two_level_cache.get(cache_key)
 
-    def post(self, request):
-        serializer = ProductWriteSerializer(
-            data=request.data, context={"request": request}
-        )
-        if not serializer.is_valid():
-            return self.error_response(
-                message="Product creation failed",
-                errors=serializer.errors,
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+#         if cached_data:
+#             logger.debug("Product detail served from %s", source)
+#             return self.success_response(
+#                 data=cached_data,
+#                 message="Product retrieved successfully",
+#                 meta={"source": source},
+#             )
 
-        product = serializer.save()
-        return self.created_response(
-            data=ProductDetailSerializer(
-                product, context={"request": request}
-            ).data,
-            message="Product created successfully",
-        )
+#         product = get_object_or_404(
+#             Product.objects.select_related("category", "brand")
+#             .prefetch_related("images", "compatible_bikes"),
+#             slug=slug,
+#         )
+#         serialized = ProductDetailSerializer(
+#             product, context={"request": request}
+#         ).data
+#         two_level_cache.set(cache_key, serialized)
+
+#         logger.debug("Product detail served from database, cached in L1+L2")
+#         return self.success_response(
+#             data=serialized,
+#             message="Product retrieved successfully",
+#             meta={"source": "database"},
+#         )
+
+#     def put(self, request, slug: str):
+#         product = get_object_or_404(Product, slug=slug)
+#         serializer = ProductWriteSerializer(
+#             product, data=request.data, partial=True, context={"request": request}
+#         )
+#         if not serializer.is_valid():
+#             return self.error_response(
+#                 message="Product update failed",
+#                 errors=serializer.errors,
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#             )
+
+#         serializer.save()
+#         logger.info("Product updated: %s (sku=%s)", product.name, product.sku)
+#         return self.success_response(
+#             data=ProductDetailSerializer(
+#                 product, context={"request": request}
+#             ).data,
+#             message="Product updated successfully",
+#         )
+
+#     def delete(self, request, slug: str):
+#         product = get_object_or_404(Product, slug=slug)
+#         name = product.name
+#         product.delete()
+#         logger.info("Product deleted: %s", name)
+#         return self.success_response(
+#             message="Product deleted successfully",
+#         )
+
+
 
 
 # ─── Product Image Upload View ──────────────────────────────────────────────

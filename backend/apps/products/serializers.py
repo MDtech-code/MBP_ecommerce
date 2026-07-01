@@ -4,7 +4,7 @@ import logging
 
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
-
+from django.db.models import Prefetch
 from apps.core.api.serializers import BaseModelSerializer
 from .models import Category, Brand, BikeModel, Product, ProductImage
 
@@ -489,33 +489,49 @@ class ProductListSerializer(BaseModelSerializer):
 
 
 # ─── Product Detail Serializer (full) ──────────────────────────────────────
-
 class ProductDetailSerializer(BaseModelSerializer):
     """
     Full serializer for single product detail page.
-    Includes all images, compatible bikes, and full description.
+
+    What frontend detail page needs (from design):
+        images[]          → gallery with primary + thumbnails
+        brand             → name shown in red under product title
+        category          → breadcrumb (name + parent_name)
+        compatible_bikes  → chip tags "Honda CD70", "Honda Dream"
+        current_price     → displayed prominently
+        price             → shown crossed out when discounted
+        discount_pct      → badge "-15%"
+        is_in_stock       → "In Stock" / "Out of Stock" badge
+        description       → description tab content
+        related_products  → 4 cards in "Related Products" section
+
+    Why related_products as SerializerMethodField:
+        Related products = same category, excluding self, limit 4.
+        This is computed at serialization time from the queryset.
+        Using a nested serializer (ProductListSerializer) keeps
+        the response shape consistent with the list endpoint.
+
+    DB query requirements for zero N+1:
+        select_related("category__parent", "brand")
+        prefetch_related(
+            "images",
+            Prefetch("compatible_bikes",
+                     queryset=BikeModel.objects.select_related("brand")),
+        )
+        Related products fetched separately in get_related_products().
     """
 
-    category: CategoryFlatSerializer = CategoryFlatSerializer(read_only=True)
-    brand: BrandSerializer = BrandSerializer(read_only=True)
-    compatible_bikes: BikeModelSerializer = BikeModelSerializer(
-        many=True, read_only=True,
-    )
-    images: ProductImageSerializer = ProductImageSerializer(
-        many=True, read_only=True,
-    )
-    current_price: serializers.DecimalField = serializers.DecimalField(
+    category = CategoryFlatSerializer(read_only=True)
+    brand = BrandSerializer(read_only=True)
+    compatible_bikes = BikeModelSerializer(many=True, read_only=True)
+    images = ProductImageSerializer(many=True, read_only=True)
+    current_price = serializers.DecimalField(
         max_digits=10, decimal_places=2, read_only=True,
     )
-    has_discount: serializers.BooleanField = serializers.BooleanField(
-        read_only=True,
-    )
-    discount_percentage: serializers.IntegerField = serializers.IntegerField(
-        read_only=True,
-    )
-    is_in_stock: serializers.BooleanField = serializers.BooleanField(
-        read_only=True,
-    )
+    has_discount = serializers.BooleanField(read_only=True)
+    discount_percentage = serializers.IntegerField(read_only=True)
+    is_in_stock = serializers.BooleanField(read_only=True)
+    related_products = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
@@ -538,67 +554,173 @@ class ProductDetailSerializer(BaseModelSerializer):
             "is_in_stock",
             "status",
             "is_featured",
+            "related_products",
             "created_at",
             "updated_at",
         ]
 
+    def get_related_products(self, obj: Product) -> list:
+        """
+        Returns up to 4 products from the same category excluding self.
+
+        Why same category:
+            Frontend "Related Products" section shows same-category items.
+            Most relevant context for a customer viewing a brake part
+            is other brake parts.
+
+        Why limit 4:
+            Frontend shows exactly 4 cards in a row.
+            Fetching more wastes DB and serialization time.
+
+        Why only AVAILABLE status:
+            Out of stock / discontinued items must not appear
+            as recommendations — bad UX.
+
+        Why ProductListSerializer not ProductDetailSerializer:
+            Prevents infinite recursion
+            (detail → related → each related has related → infinite).
+            List serializer has all fields the card needs.
+
+        Why no caching here:
+            The parent product detail is already cached.
+            Related products are cached as part of that cached payload.
+            No separate cache needed.
+
+        Why select_related + prefetch_related on related queryset:
+            ProductListSerializer accesses category_name, brand_name,
+            primary_image, primary_bike — all need prefetch to avoid N+1.
+        """
+        related = (
+            Product.objects
+            .filter(
+                category=obj.category,
+                status=Product.Status.AVAILABLE,
+            )
+            .exclude(pk=obj.pk)
+            .select_related("category", "brand")
+            .prefetch_related(
+                "images",
+                Prefetch(
+                    "compatible_bikes",
+                    queryset=BikeModel.objects.select_related("brand"),
+                ),
+            )
+            .order_by("-is_featured", "-created_at")[:4]
+        )
+        return ProductListSerializer(
+            related,
+            many=True,
+            context=self.context,
+        ).data
+# class ProductDetailSerializer(BaseModelSerializer):
+#     """
+#     Full serializer for single product detail page.
+#     Includes all images, compatible bikes, and full description.
+#     """
+
+#     category: CategoryFlatSerializer = CategoryFlatSerializer(read_only=True)
+#     brand: BrandSerializer = BrandSerializer(read_only=True)
+#     compatible_bikes: BikeModelSerializer = BikeModelSerializer(
+#         many=True, read_only=True,
+#     )
+#     images: ProductImageSerializer = ProductImageSerializer(
+#         many=True, read_only=True,
+#     )
+#     current_price: serializers.DecimalField = serializers.DecimalField(
+#         max_digits=10, decimal_places=2, read_only=True,
+#     )
+#     has_discount: serializers.BooleanField = serializers.BooleanField(
+#         read_only=True,
+#     )
+#     discount_percentage: serializers.IntegerField = serializers.IntegerField(
+#         read_only=True,
+#     )
+#     is_in_stock: serializers.BooleanField = serializers.BooleanField(
+#         read_only=True,
+#     )
+
+#     class Meta:
+#         model = Product
+#         fields = [
+#             "id",
+#             "name",
+#             "slug",
+#             "sku",
+#             "description",
+#             "category",
+#             "brand",
+#             "compatible_bikes",
+#             "images",
+#             "price",
+#             "discount_price",
+#             "current_price",
+#             "has_discount",
+#             "discount_percentage",
+#             "stock",
+#             "is_in_stock",
+#             "status",
+#             "is_featured",
+#             "created_at",
+#             "updated_at",
+#         ]
+
 
 # ─── Product Create/Update Serializer ──────────────────────────────────────
 
-class ProductWriteSerializer(BaseModelSerializer):
-    """
-    Used for admin create/update operations.
-    Accepts writable fields including FK ids and M2M list.
-    """
+# class ProductWriteSerializer(BaseModelSerializer):
+#     """
+#     Used for admin create/update operations.
+#     Accepts writable fields including FK ids and M2M list.
+#     """
 
-    class Meta:
-        model = Product
-        fields = [
-            "name",
-            "category",
-            "brand",
-            "compatible_bikes",
-            "description",
-            "sku",
-            "price",
-            "discount_price",
-            "stock",
-            "status",
-            "is_featured",
-        ]
+#     class Meta:
+#         model = Product
+#         fields = [
+#             "name",
+#             "category",
+#             "brand",
+#             "compatible_bikes",
+#             "description",
+#             "sku",
+#             "price",
+#             "discount_price",
+#             "stock",
+#             "status",
+#             "is_featured",
+#         ]
 
-    def validate_sku(self, value: str) -> str:
-        """SKU uniqueness check, excluding self on update."""
-        value = value.strip().upper()
-        qs = Product.objects.filter(sku=value)
-        if self.instance:
-            qs = qs.exclude(id=self.instance.id)
-        if qs.exists():
-            raise serializers.ValidationError(
-                _("A product with this SKU already exists.")
-            )
-        return value
+#     def validate_sku(self, value: str) -> str:
+#         """SKU uniqueness check, excluding self on update."""
+#         value = value.strip().upper()
+#         qs = Product.objects.filter(sku=value)
+#         if self.instance:
+#             qs = qs.exclude(id=self.instance.id)
+#         if qs.exists():
+#             raise serializers.ValidationError(
+#                 _("A product with this SKU already exists.")
+#             )
+#         return value
 
-    def validate(self, attrs: dict) -> dict:
-        """Discount price must be less than regular price."""
-        price = attrs.get("price", getattr(self.instance, "price", None))
-        discount_price = attrs.get("discount_price")
+#     def validate(self, attrs: dict) -> dict:
+#         """Discount price must be less than regular price."""
+#         price = attrs.get("price", getattr(self.instance, "price", None))
+#         discount_price = attrs.get("discount_price")
 
-        if discount_price is not None and price is not None:
-            if discount_price >= price:
-                raise serializers.ValidationError({
-                    "discount_price": _(
-                        "Discount price must be less than regular price."
-                    )
-                })
-        return attrs
+#         if discount_price is not None and price is not None:
+#             if discount_price >= price:
+#                 raise serializers.ValidationError({
+#                     "discount_price": _(
+#                         "Discount price must be less than regular price."
+#                     )
+#                 })
+#         return attrs
 
-    def create(self, validated_data: dict) -> Product:
-        request = self.context.get("request")
-        validated_data["created_by"] = request.user if request else None
-        product = super().create(validated_data)
-        logger.info("Product created via API: %s (sku=%s)", product.name, product.sku)
-        return product
+#     def create(self, validated_data: dict) -> Product:
+#         request = self.context.get("request")
+#         validated_data["created_by"] = request.user if request else None
+#         product = super().create(validated_data)
+#         logger.info("Product created via API: %s (sku=%s)", product.name, product.sku)
+#         return product
 
 
 # ─── Product Image Upload Serializer ───────────────────────────────────────

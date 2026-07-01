@@ -8,7 +8,6 @@ from .views import (
     BikeModelListAPIView,
     ProductListAPIView,
     ProductDetailAPIView,
-    ProductCreateAPIView,
     ProductImageUploadAPIView,
 )
 
@@ -22,7 +21,6 @@ urlpatterns = [
 
     # ─── Product CRUD ──────────────────────────────────
     path("", ProductListAPIView.as_view(), name="product-list"),
-    path("create/", ProductCreateAPIView.as_view(), name="product-create"),
     path("<slug:slug>/", ProductDetailAPIView.as_view(), name="product-detail"),
 
     # ─── Product Images ────────────────────────────────
