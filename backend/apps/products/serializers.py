@@ -410,29 +410,29 @@ class ProductDetailSerializer(BaseModelSerializer):
 
 # ─── Product Image Upload Serializer ───────────────────────────────────────
 
-class ProductImageUploadSerializer(serializers.Serializer):
-    """Used when admin uploads a new product image."""
+# class ProductImageUploadSerializer(serializers.Serializer):
+#     """Used when admin uploads a new product image."""
 
-    image: serializers.ImageField = serializers.ImageField(
-        error_messages={
-            "invalid_image": _("Upload a valid image file."),
-            "blank": _("No image was submitted."),
-        }
-    )
-    is_primary: serializers.BooleanField = serializers.BooleanField(
-        default=False,
-    )
+#     image: serializers.ImageField = serializers.ImageField(
+#         error_messages={
+#             "invalid_image": _("Upload a valid image file."),
+#             "blank": _("No image was submitted."),
+#         }
+#     )
+#     is_primary: serializers.BooleanField = serializers.BooleanField(
+#         default=False,
+#     )
 
-    def validate_image(self, value):
-        max_size = 3 * 1024 * 1024  # 3MB
-        allowed_types = ["image/jpeg", "image/png", "image/webp"]
+#     def validate_image(self, value):
+#         max_size = 3 * 1024 * 1024  # 3MB
+#         allowed_types = ["image/jpeg", "image/png", "image/webp"]
 
-        if value.size > max_size:
-            raise serializers.ValidationError(
-                _("Image size must not exceed 3MB.")
-            )
-        if value.content_type not in allowed_types:
-            raise serializers.ValidationError(
-                _("Only JPEG, PNG and WebP images are allowed.")
-            )
-        return value
+#         if value.size > max_size:
+#             raise serializers.ValidationError(
+#                 _("Image size must not exceed 3MB.")
+#             )
+#         if value.content_type not in allowed_types:
+#             raise serializers.ValidationError(
+#                 _("Only JPEG, PNG and WebP images are allowed.")
+#             )
+#         return value

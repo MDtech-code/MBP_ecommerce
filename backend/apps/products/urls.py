@@ -8,7 +8,6 @@ from .views import (
     BikeModelListAPIView,
     ProductListAPIView,
     ProductDetailAPIView,
-    ProductImageUploadAPIView,
 )
 
 app_name = "products"
@@ -23,15 +22,5 @@ urlpatterns = [
     path("", ProductListAPIView.as_view(), name="product-list"),
     path("<slug:slug>/", ProductDetailAPIView.as_view(), name="product-detail"),
 
-    # ─── Product Images ────────────────────────────────
-    path(
-        "<slug:slug>/images/",
-        ProductImageUploadAPIView.as_view(),
-        name="product-image-upload",
-    ),
-    path(
-        "<slug:slug>/images/<int:image_id>/",
-        ProductImageUploadAPIView.as_view(),
-        name="product-image-delete",
-    ),
+   
 ]

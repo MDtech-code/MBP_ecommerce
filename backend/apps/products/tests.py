@@ -1770,151 +1770,51 @@ class TestProductImageUpload:
     IMAGE_URL = "/api/products/{}/images/"
     IMAGE_DELETE_URL = "/api/products/{}/images/{}/"
 
-    # ── Permission tests ───────────────────────────────────────────────────
-
-    def test_anonymous_cannot_upload(self, api_client, product):
-        """
-        Why: IsAdminOrReadOnly must block unauthenticated POST.
-        Anonymous users can GET but not POST.
-        """
-        response = api_client.post(
-            self.IMAGE_URL.format(product.slug), data={}
-        )
-        assert response.status_code in (401, 403)
-
-    def test_customer_cannot_upload(self, customer_client, product):
-        """
-        Why: regular authenticated users are not admin.
-        IsAdminOrReadOnly must reject non-staff POST.
-        """
-        response = customer_client.post(
-            self.IMAGE_URL.format(product.slug), data={}
-        )
-        assert response.status_code == 403
-
-    def test_anonymous_cannot_delete(self, api_client, product):
-        img = ProductImage.objects.create(
-            product=product,
-            image="products/2024/01/test.jpg",
-            is_primary=False,
-        )
-        response = api_client.delete(
-            self.IMAGE_DELETE_URL.format(product.slug, img.pk)
-        )
-        assert response.status_code in (401, 403)
-
-    def test_customer_cannot_delete(self, customer_client, product):
-        img = ProductImage.objects.create(
-            product=product,
-            image="products/2024/01/test.jpg",
-            is_primary=False,
-        )
-        response = customer_client.delete(
-            self.IMAGE_DELETE_URL.format(product.slug, img.pk)
-        )
-        assert response.status_code == 403
-
-    # ── Delete success ─────────────────────────────────────────────────────
-
-    def test_admin_can_delete_image(self, admin_client, product):
-        img = ProductImage.objects.create(
-            product=product,
-            image="products/2024/01/test.jpg",
-            is_primary=False,
-        )
-        response = admin_client.delete(
-            self.IMAGE_DELETE_URL.format(product.slug, img.pk)
-        )
-        assert response.status_code == 200
-        assert response.data["success"] is True
-        assert not ProductImage.objects.filter(pk=img.pk).exists()
-
-    def test_delete_nonexistent_image_returns_404(
-        self, admin_client, product
-    ):
-        response = admin_client.delete(
-            self.IMAGE_DELETE_URL.format(product.slug, 99999)
-        )
-        assert response.status_code == 404
-
-    def test_delete_image_from_wrong_product_returns_404(
-        self, admin_client, product, category, brand, admin
-    ):
-        """
-        Why: image belongs to product A — cannot be deleted via product B URL.
-        get_object_or_404(ProductImage, id=X, product__slug=B) must return 404.
-        Prevents cross-product image manipulation.
-        """
-        other = Product.objects.create(
-            name="Other Product",
-            category=category,
-            brand=brand,
-            sku="OTH-IMG-001",
-            price=300,
-            stock=5,
-            created_by=admin,
-        )
-        img = ProductImage.objects.create(
-            product=product,
-            image="products/2024/01/test.jpg",
-            is_primary=False,
-        )
-        response = admin_client.delete(
-            self.IMAGE_DELETE_URL.format(other.slug, img.pk)
-        )
-        assert response.status_code == 404
-        # Image must still exist — wrong product, deletion rejected
-        assert ProductImage.objects.filter(pk=img.pk).exists()
-
+  
     # ── Cache invalidation via image operations ────────────────────────────
 
-    def test_image_delete_invalidates_detail_cache(
-        self, api_client, admin_client, product
+    def test_image_orm_delete_invalidates_detail_cache(
+        self, api_client, product
     ):
         """
-        Why: post_delete on ProductImage fires signal.
-        Signal clears both list and detail cache.
-        After delete, detail must come from DB not stale cache.
+        Why: post_delete signal on ProductImage must fire on ANY deletion.
+        Whether deleted via Django admin, ORM, or anywhere else.
+        Signal clears detail cache — gallery must not show deleted image.
+
+        Why use ORM not API:
+            Image upload API endpoint has been removed.
+            Admin handles image management via Django admin panel.
+            Signal behaviour is the same regardless of deletion method.
         """
         img = ProductImage.objects.create(
             product=product,
-            image="products/2024/01/cache_test.jpg",
+            image="products/2024/01/signal_detail_test.jpg",
             is_primary=True,
         )
-        # Warm detail cache
-        api_client.get(f"/api/products/{product.slug}/")
+        api_client.get(f"/api/products/{product.slug}/")  # warm detail cache
 
-        # Admin deletes image
-        admin_client.delete(
-            self.IMAGE_DELETE_URL.format(product.slug, img.pk)
-        )
+        img.delete()                                    # signal fires via ORM
 
-        # Detail cache must be cleared — fresh DB hit
         response = api_client.get(f"/api/products/{product.slug}/")
         assert response.data["meta"]["source"] == "database"
         assert len(response.data["data"]["images"]) == 0
 
-    def test_image_delete_invalidates_list_cache(
-        self, api_client, admin_client, product
+    def test_image_orm_delete_invalidates_list_cache(
+        self, api_client, product
     ):
         """
         Why: primary_image is in list response.
-        Deleting the primary image → list cards would show broken URL.
-        Signal must clear list cache so next list request re-fetches.
+        Deleting primary image via admin (ORM under the hood) must
+        clear list cache so next request does not serve broken image URL.
         """
         img = ProductImage.objects.create(
             product=product,
-            image="products/2024/01/list_cache_test.jpg",
+            image="products/2024/01/signal_list_test.jpg",
             is_primary=True,
         )
-        # Warm list cache
-        api_client.get("/api/products/")
+        api_client.get("/api/products/")               # warm list cache
 
-        # Admin deletes image
-        admin_client.delete(
-            self.IMAGE_DELETE_URL.format(product.slug, img.pk)
-        )
+        img.delete()                                    # signal fires via ORM
 
-        # List cache must be cleared
         response = api_client.get("/api/products/")
         assert response.data["meta"]["source"] == "database"

@@ -16,15 +16,13 @@ from apps.core.permissions import IsAdminOrReadOnly
 from apps.core.cache import two_level_cache
 from apps.core.pagination import get_pagination_params, build_pagination_meta
 from apps.common.utils.tree import build_tree
-from .models import Category, Brand, BikeModel, Product, ProductImage
+from .models import Category, Brand, BikeModel, Product
 from .serializers import (
     CategoryFlatSerializer,
     BrandSerializer,
     BikeModelSerializer,
     ProductListSerializer,
     ProductDetailSerializer,
-    ProductImageSerializer,
-    ProductImageUploadSerializer,
 )
 
 logger = logging.getLogger("apps.products")
@@ -947,86 +945,86 @@ class ProductDetailAPIView(BaseAPIView):
 
 
 # ─── Product Image Upload View ──────────────────────────────────────────────
-class ProductImageUploadAPIView(BaseAPIView):
-    """
-    POST   /api/products/<slug>/images/
-        Upload a new image for a product.
-        Admin only.
+# class ProductImageUploadAPIView(BaseAPIView):
+#     """
+#     POST   /api/products/<slug>/images/
+#         Upload a new image for a product.
+#         Admin only.
 
-    DELETE /api/products/<slug>/images/<image_id>/
-        Remove an image from a product.
-        Admin only.
+#     DELETE /api/products/<slug>/images/<image_id>/
+#         Remove an image from a product.
+#         Admin only.
 
-    Why slug not pk in URL:
-        Consistent with product detail URL pattern.
-        Slugs are human-readable in admin and API explorer.
-    """
+#     Why slug not pk in URL:
+#         Consistent with product detail URL pattern.
+#         Slugs are human-readable in admin and API explorer.
+#     """
 
-    permission_classes = [IsAdminOrReadOnly]
+#     permission_classes = [IsAdminOrReadOnly]
 
-    def post(self, request: Request, slug: str, *args: Any, **kwargs: Any):
-        product = get_object_or_404(Product, slug=slug)
-        serializer = ProductImageUploadSerializer(data=request.data)
+#     def post(self, request: Request, slug: str, *args: Any, **kwargs: Any):
+#         product = get_object_or_404(Product, slug=slug)
+#         serializer = ProductImageUploadSerializer(data=request.data)
 
-        if not serializer.is_valid():
-            return self.error_response(
-                message="Image upload failed.",
-                errors=serializer.errors,
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+#         if not serializer.is_valid():
+#             return self.error_response(
+#                 message="Image upload failed.",
+#                 errors=serializer.errors,
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#             )
 
-        try:
-            image = ProductImage.objects.create(
-                product=product,
-                image=serializer.validated_data["image"],
-                is_primary=serializer.validated_data.get("is_primary", False),
-            )
-        except Exception as exc:
-            logger.error(
-                "ProductImageUploadAPIView: create failed | slug=%s error=%s",
-                slug, exc,
-                exc_info=True,
-            )
-            return self.error_response(
-                message="Image could not be saved. Please try again.",
-                status_code=503,
-            )
+#         try:
+#             image = ProductImage.objects.create(
+#                 product=product,
+#                 image=serializer.validated_data["image"],
+#                 is_primary=serializer.validated_data.get("is_primary", False),
+#             )
+#         except Exception as exc:
+#             logger.error(
+#                 "ProductImageUploadAPIView: create failed | slug=%s error=%s",
+#                 slug, exc,
+#                 exc_info=True,
+#             )
+#             return self.error_response(
+#                 message="Image could not be saved. Please try again.",
+#                 status_code=503,
+#             )
 
-        logger.info(
-            "ProductImageUploadAPIView: image uploaded | "
-            "product=%s image_id=%s is_primary=%s",
-            product.name,
-            image.pk,
-            image.is_primary,
-        )
+#         logger.info(
+#             "ProductImageUploadAPIView: image uploaded | "
+#             "product=%s image_id=%s is_primary=%s",
+#             product.name,
+#             image.pk,
+#             image.is_primary,
+#         )
 
-        return self.created_response(
-            data=ProductImageSerializer(
-                image, context={"request": request}
-            ).data,
-            message="Image uploaded successfully.",
-        )
+#         return self.created_response(
+#             data=ProductImageSerializer(
+#                 image, context={"request": request}
+#             ).data,
+#             message="Image uploaded successfully.",
+#         )
 
-    def delete(
-        self,
-        request: Request,
-        slug: str,
-        image_id: int,
-        *args: Any,
-        **kwargs: Any,
-    ):
-        image = get_object_or_404(ProductImage, id=image_id, product__slug=slug)
+#     def delete(
+#         self,
+#         request: Request,
+#         slug: str,
+#         image_id: int,
+#         *args: Any,
+#         **kwargs: Any,
+#     ):
+#         image = get_object_or_404(ProductImage, id=image_id, product__slug=slug)
 
-        product_name = image.product.name
-        image.delete()
+#         product_name = image.product.name
+#         image.delete()
 
-        logger.info(
-            "ProductImageUploadAPIView: image deleted | "
-            "product=%s image_id=%s",
-            product_name,
-            image_id,
-        )
+#         logger.info(
+#             "ProductImageUploadAPIView: image deleted | "
+#             "product=%s image_id=%s",
+#             product_name,
+#             image_id,
+#         )
 
-        return self.success_response(
-            message="Image deleted successfully.",
-        )
+#         return self.success_response(
+#             message="Image deleted successfully.",
+#         )
