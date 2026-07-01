@@ -60,75 +60,75 @@ class CategoryFlatSerializer(BaseModelSerializer):
         return obj.parent.name if obj.parent else None
 
 
-class CategoryTreeSerializer(BaseModelSerializer):
-    """
-    Recursive tree representation.
+# class CategoryTreeSerializer(BaseModelSerializer):
+#     """
+#     Recursive tree representation.
 
-    Each root category contains its children, each child contains
-    its children, and so on — to any depth.
+#     Each root category contains its children, each child contains
+#     its children, and so on — to any depth.
 
-    Use cases:
-        - Navigation menus
-        - Category sidebar
-        - Category selection tree (accordion UI)
+#     Use cases:
+#         - Navigation menus
+#         - Category sidebar
+#         - Category selection tree (accordion UI)
 
-    How recursion works:
-        children field calls CategoryTreeSerializer on each child object.
-        DRF handles the recursion — no manual looping needed.
+#     How recursion works:
+#         children field calls CategoryTreeSerializer on each child object.
+#         DRF handles the recursion — no manual looping needed.
 
-    Why 'many=True' on children:
-        Each category can have multiple children — always a list.
+#     Why 'many=True' on children:
+#         Each category can have multiple children — always a list.
 
-    Why read_only=True:
-        This serializer is for GET responses only.
-        Write operations use a dedicated write serializer.
+#     Why read_only=True:
+#         This serializer is for GET responses only.
+#         Write operations use a dedicated write serializer.
 
-    DB cost: ZERO extra queries when queryset uses:
-        .prefetch_related("subcategories__subcategories__subcategories")
-        This covers 3 levels of depth in one prefetch.
-        Adjust depth prefix chain based on your max tree depth.
+#     DB cost: ZERO extra queries when queryset uses:
+#         .prefetch_related("subcategories__subcategories__subcategories")
+#         This covers 3 levels of depth in one prefetch.
+#         Adjust depth prefix chain based on your max tree depth.
 
-    Important — why we do NOT call this serializer on the full queryset:
-        We only pass ROOT categories (parent=None) to this serializer.
-        The serializer then accesses .subcategories.all() on each root,
-        which is served from the prefetch cache — not hitting DB again.
-        Passing all categories would double-render subcategories.
-    """
+#     Important — why we do NOT call this serializer on the full queryset:
+#         We only pass ROOT categories (parent=None) to this serializer.
+#         The serializer then accesses .subcategories.all() on each root,
+#         which is served from the prefetch cache — not hitting DB again.
+#         Passing all categories would double-render subcategories.
+#     """
 
-    children = serializers.SerializerMethodField()
+#     children = serializers.SerializerMethodField()
 
-    class Meta:
-        model = Category
-        fields = [
-            "id",
-            "name",
-            "slug",
-            "is_subcategory",
-            "is_active",
-            "children",
-        ]
+#     class Meta:
+#         model = Category
+#         fields = [
+#             "id",
+#             "name",
+#             "slug",
+#             "is_subcategory",
+#             "is_active",
+#             "children",
+#         ]
 
-    def get_children(self, obj: Category) -> list:
-        """
-        Why SerializerMethodField instead of nested serializer directly:
-            Direct nested serializer = DRF evaluates it even when empty.
-            SerializerMethodField = we control exactly what is passed in,
-            and we can filter (only active children) before serializing.
+#     def get_children(self, obj: Category) -> list:
+#         """
+#         Why SerializerMethodField instead of nested serializer directly:
+#             Direct nested serializer = DRF evaluates it even when empty.
+#             SerializerMethodField = we control exactly what is passed in,
+#             and we can filter (only active children) before serializing.
 
-        Why filter is_active here:
-            prefetch_related fetches ALL subcategories including inactive.
-            We must filter them out here before sending to frontend.
-            We cannot filter inside prefetch_related without a custom Prefetch object
-            (shown in the view below).
-        """
-        # subcategories is the related_name on the Category model
-        # Because we use prefetch_related, .all() hits no DB — uses prefetch cache
-        active_children = [
-            child for child in obj.subcategories.all()
-            if child.is_active
-        ]
-        # Recursive — each child is serialized the same way
-        return CategoryTreeSerializer(active_children, many=True).data
+#         Why filter is_active here:
+#             prefetch_related fetches ALL subcategories including inactive.
+#             We must filter them out here before sending to frontend.
+#             We cannot filter inside prefetch_related without a custom Prefetch object
+#             (shown in the view below).
+#         """
+#         # subcategories is the related_name on the Category model
+#         # Because we use prefetch_related, .all() hits no DB — uses prefetch cache
+#         active_children = [
+#             child for child in obj.subcategories.all()
+#             if child.is_active
+#         ]
+#         # Recursive — each child is serialized the same way
+#         return CategoryTreeSerializer(active_children, many=True).data
 
 # class CategorySerializer(BaseModelSerializer):
 #     """Used for category listing and dropdowns."""

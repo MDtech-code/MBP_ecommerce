@@ -15,10 +15,10 @@ from apps.core.api.views import BaseAPIView
 from apps.core.permissions import IsAdminOrReadOnly
 from apps.core.cache import two_level_cache
 from apps.core.pagination import get_pagination_params, build_pagination_meta
+from apps.common.utils.tree import build_tree
 from .models import Category, Brand, BikeModel, Product, ProductImage
 from .serializers import (
     CategoryFlatSerializer,
-    CategoryTreeSerializer,
     BrandSerializer,
     BikeModelSerializer,
     ProductListSerializer,
@@ -32,46 +32,54 @@ logger = logging.getLogger("apps.products")
 
 
 # ─── Category Views ─────────────────────────────────────────────────────────
-
 CATEGORIES_FLAT_CACHE_KEY = "products_categories_flat"
 CATEGORIES_TREE_CACHE_KEY = "products_categories_tree"
 
-CATEGORIES_L1_TTL = 120    # 2 minutes  — in-process memory
-CATEGORIES_L2_TTL = 600    # 10 minutes — Redis
+CATEGORIES_L1_TTL = 120
+CATEGORIES_L2_TTL = 600
 
 
 class CategoryListAPIView(BaseAPIView):
     """
     GET /api/products/categories/
+    GET /api/products/categories/?view=flat
     GET /api/products/categories/?view=tree
 
-    Query parameter:
-        view=flat  (default) — flat list, best for dropdowns and search
-        view=tree            — nested tree, best for navigation menus
+    Both views are powered by ONE database query.
 
-    Why one endpoint with a query param instead of two endpoints:
-        Both return categories — same resource, different shape.
-        Two endpoints would duplicate URL, permission, and cache logic.
-        Query param cleanly expresses "same data, different presentation".
+    Query strategy:
+        Always fetch all active categories in one flat query.
+        For flat view  → return the list directly.
+        For tree view  → pass the flat list to build_tree() in Python.
+
+    Why one query for both:
+        The previous tree approach used 4 queries (one per depth level).
+        build_tree() converts flat→tree in O(n) Python — much cheaper
+        than extra DB round trips, especially with cache in front.
+
+    DB query breakdown:
+        .filter(is_active=True)                    → only active
+        .select_related("parent")                  → parent_name field, free
+        .annotate(subcategories_count=Count(...))  → count field, zero extra queries
+        .order_by("name")                          → deterministic cache payload
+        Total: 1 query always.
     """
 
     permission_classes = [AllowAny]
 
-    # ── Flat builder ──────────────────────────────────────────────────────────
-
-    def _build_flat_data(self) -> list:
+    def _fetch_flat_data(self) -> list[dict[str, Any]]:
         """
-        Single optimized query for flat list.
+        Single DB query that powers BOTH flat and tree responses.
 
-        Query plan:
-            SELECT category.*, parent.name
-            FROM category
-            LEFT JOIN category parent ON category.parent_id = parent.id
-            WHERE category.is_active = true
-            + one extra query for COUNT annotation (or inline subquery)
-            ORDER BY name
+        Why this is the only DB method:
+            Tree view calls this then passes result to build_tree().
+            Flat view calls this and returns directly.
+            No code duplication, one query for both.
 
-        Result: complete flat list with zero N+1 queries.
+        Why list():
+            DRF returns ReturnList — a custom list subclass.
+            Some cache backends cannot serialize it.
+            list() gives a plain Python list — always serializable.
         """
         queryset = (
             Category.objects
@@ -82,108 +90,54 @@ class CategoryListAPIView(BaseAPIView):
         )
         return list(CategoryFlatSerializer(queryset, many=True).data)
 
-    # ── Tree builder ──────────────────────────────────────────────────────────
-
-    def _build_tree_data(self) -> list:
-        """
-        Optimized query for tree — roots only with prefetched children.
-
-        Why Prefetch with queryset:
-            Default prefetch_related fetches ALL subcategories including inactive.
-            Prefetch(queryset=...) lets us filter to is_active=True at DB level
-            instead of filtering in Python after fetching inactive records.
-
-        Why nested prefetch chain:
-            "subcategories"                         → depth 1 (direct children)
-            "subcategories__subcategories"          → depth 2 (grandchildren)
-            "subcategories__subcategories__subcategories" → depth 3
-
-            Each level is one extra DB query total (not per object).
-            3 levels = 3 extra queries regardless of how many categories exist.
-
-            Adjust depth based on your real data:
-                Engine > Pistons > Piston Rings = 3 levels → current setup fine.
-
-        Why filter parent=None:
-            We only pass root categories to the serializer.
-            Serializer recursively accesses .subcategories.all() from prefetch cache.
-            If we passed all categories, subcategories would be rendered twice
-            (once as a root item, once as a child of their parent).
-
-        DB query count:
-            1 query for roots
-            1 query for depth-1 children   (all roots' children in one query)
-            1 query for depth-2 children   (all grandchildren in one query)
-            1 query for depth-3 children   (all great-grandchildren in one query)
-            Total: 4 queries, fixed, regardless of category count.
-        """
-        active_subcategories_prefetch = Prefetch(
-            "subcategories",
-            queryset=Category.objects.filter(is_active=True).order_by("name"),
-        )
-        active_grandchildren_prefetch = Prefetch(
-            "subcategories__subcategories",
-            queryset=Category.objects.filter(is_active=True).order_by("name"),
-        )
-        active_greatgrandchildren_prefetch = Prefetch(
-            "subcategories__subcategories__subcategories",
-            queryset=Category.objects.filter(is_active=True).order_by("name"),
-        )
-
-        root_categories = (
-            Category.objects
-            .filter(is_active=True, parent=None)
-            .prefetch_related(
-                active_subcategories_prefetch,
-                active_grandchildren_prefetch,
-                active_greatgrandchildren_prefetch,
-            )
-            .order_by("name")
-        )
-
-        return list(CategoryTreeSerializer(root_categories, many=True).data)
-
-    # ── Request handler ───────────────────────────────────────────────────────
-
     def get(self, request: Request, *args: Any, **kwargs: Any):
-        """
-        Dispatches to flat or tree builder based on ?view= query param.
-
-        Flow:
-            1. Read ?view= param (default: flat)
-            2. Select correct cache key and builder
-            3. get_or_set handles cache hit / miss / stampede
-            4. Return standardized response with meta
-        """
         start = time.monotonic()
 
         view_type = request.query_params.get("view", "flat").lower()
 
-        # Why validate view_type:
-        #   Prevents cache pollution from arbitrary query params like ?view=hack
         if view_type not in ("flat", "tree"):
             return self.error_response(
                 message="Invalid view type. Use ?view=flat or ?view=tree.",
                 status_code=400,
             )
 
-        if view_type == "tree":
-            cache_key = CATEGORIES_TREE_CACHE_KEY
-            builder = self._build_tree_data
-        else:
-            cache_key = CATEGORIES_FLAT_CACHE_KEY
-            builder = self._build_flat_data
+        # ── Determine cache key per view type ─────────────────────────────
+        cache_key = (
+            CATEGORIES_TREE_CACHE_KEY
+            if view_type == "tree"
+            else CATEGORIES_FLAT_CACHE_KEY
+        )
 
         try:
-            data, source = two_level_cache.get_or_set(
-                cache_key,
-                builder,
-                l1_timeout=CATEGORIES_L1_TTL,
-                l2_timeout=CATEGORIES_L2_TTL,
-            )
+            if view_type == "flat":
+                # Flat: cache and return the serialized list directly
+                data, source = two_level_cache.get_or_set(
+                    cache_key,
+                    self._fetch_flat_data,
+                    l1_timeout=CATEGORIES_L1_TTL,
+                    l2_timeout=CATEGORIES_L2_TTL,
+                )
+
+            else:
+                # Tree: cache the tree-shaped data
+                # Why cache tree separately:
+                #   build_tree() is fast (O(n) Python) but still CPU work.
+                #   Caching the already-built tree means zero work on cache hit.
+                #   On cache miss: fetch flat → build tree → cache tree.
+                def build_tree_data() -> list[dict[str, Any]]:
+                    flat = self._fetch_flat_data()
+                    return build_tree(flat)
+
+                data, source = two_level_cache.get_or_set(
+                    cache_key,
+                    build_tree_data,
+                    l1_timeout=CATEGORIES_L1_TTL,
+                    l2_timeout=CATEGORIES_L2_TTL,
+                )
+
         except Exception as exc:
             logger.error(
-                "CategoryListAPIView: retrieval failed | view=%s key=%s error=%s",
+                "CategoryListAPIView: failed | view=%s key=%s error=%s",
                 view_type,
                 cache_key,
                 exc,
@@ -217,6 +171,191 @@ class CategoryListAPIView(BaseAPIView):
                 "elapsed_ms": elapsed_ms,
             },
         )
+#! old category 3
+# CATEGORIES_FLAT_CACHE_KEY = "products_categories_flat"
+# CATEGORIES_TREE_CACHE_KEY = "products_categories_tree"
+
+# CATEGORIES_L1_TTL = 120    # 2 minutes  — in-process memory
+# CATEGORIES_L2_TTL = 600    # 10 minutes — Redis
+
+
+# class CategoryListAPIView(BaseAPIView):
+#     """
+#     GET /api/products/categories/
+#     GET /api/products/categories/?view=tree
+
+#     Query parameter:
+#         view=flat  (default) — flat list, best for dropdowns and search
+#         view=tree            — nested tree, best for navigation menus
+
+#     Why one endpoint with a query param instead of two endpoints:
+#         Both return categories — same resource, different shape.
+#         Two endpoints would duplicate URL, permission, and cache logic.
+#         Query param cleanly expresses "same data, different presentation".
+#     """
+
+#     permission_classes = [AllowAny]
+
+#     # ── Flat builder ──────────────────────────────────────────────────────────
+
+#     def _build_flat_data(self) -> list:
+#         """
+#         Single optimized query for flat list.
+
+#         Query plan:
+#             SELECT category.*, parent.name
+#             FROM category
+#             LEFT JOIN category parent ON category.parent_id = parent.id
+#             WHERE category.is_active = true
+#             + one extra query for COUNT annotation (or inline subquery)
+#             ORDER BY name
+
+#         Result: complete flat list with zero N+1 queries.
+#         """
+#         queryset = (
+#             Category.objects
+#             .filter(is_active=True)
+#             .select_related("parent")
+#             .annotate(subcategories_count=Count("subcategories"))
+#             .order_by("name")
+#         )
+#         return list(CategoryFlatSerializer(queryset, many=True).data)
+
+#     # ── Tree builder ──────────────────────────────────────────────────────────
+
+#     def _build_tree_data(self) -> list:
+#         """
+#         Optimized query for tree — roots only with prefetched children.
+
+#         Why Prefetch with queryset:
+#             Default prefetch_related fetches ALL subcategories including inactive.
+#             Prefetch(queryset=...) lets us filter to is_active=True at DB level
+#             instead of filtering in Python after fetching inactive records.
+
+#         Why nested prefetch chain:
+#             "subcategories"                         → depth 1 (direct children)
+#             "subcategories__subcategories"          → depth 2 (grandchildren)
+#             "subcategories__subcategories__subcategories" → depth 3
+
+#             Each level is one extra DB query total (not per object).
+#             3 levels = 3 extra queries regardless of how many categories exist.
+
+#             Adjust depth based on your real data:
+#                 Engine > Pistons > Piston Rings = 3 levels → current setup fine.
+
+#         Why filter parent=None:
+#             We only pass root categories to the serializer.
+#             Serializer recursively accesses .subcategories.all() from prefetch cache.
+#             If we passed all categories, subcategories would be rendered twice
+#             (once as a root item, once as a child of their parent).
+
+#         DB query count:
+#             1 query for roots
+#             1 query for depth-1 children   (all roots' children in one query)
+#             1 query for depth-2 children   (all grandchildren in one query)
+#             1 query for depth-3 children   (all great-grandchildren in one query)
+#             Total: 4 queries, fixed, regardless of category count.
+#         """
+#         active_subcategories_prefetch = Prefetch(
+#             "subcategories",
+#             queryset=Category.objects.filter(is_active=True).order_by("name"),
+#         )
+#         active_grandchildren_prefetch = Prefetch(
+#             "subcategories__subcategories",
+#             queryset=Category.objects.filter(is_active=True).order_by("name"),
+#         )
+#         active_greatgrandchildren_prefetch = Prefetch(
+#             "subcategories__subcategories__subcategories",
+#             queryset=Category.objects.filter(is_active=True).order_by("name"),
+#         )
+
+#         root_categories = (
+#             Category.objects
+#             .filter(is_active=True, parent=None)
+#             .prefetch_related(
+#                 active_subcategories_prefetch,
+#                 active_grandchildren_prefetch,
+#                 active_greatgrandchildren_prefetch,
+#             )
+#             .order_by("name")
+#         )
+
+#         return list(CategoryTreeSerializer(root_categories, many=True).data)
+
+#     # ── Request handler ───────────────────────────────────────────────────────
+
+#     def get(self, request: Request, *args: Any, **kwargs: Any):
+#         """
+#         Dispatches to flat or tree builder based on ?view= query param.
+
+#         Flow:
+#             1. Read ?view= param (default: flat)
+#             2. Select correct cache key and builder
+#             3. get_or_set handles cache hit / miss / stampede
+#             4. Return standardized response with meta
+#         """
+#         start = time.monotonic()
+
+#         view_type = request.query_params.get("view", "flat").lower()
+
+#         # Why validate view_type:
+#         #   Prevents cache pollution from arbitrary query params like ?view=hack
+#         if view_type not in ("flat", "tree"):
+#             return self.error_response(
+#                 message="Invalid view type. Use ?view=flat or ?view=tree.",
+#                 status_code=400,
+#             )
+
+#         if view_type == "tree":
+#             cache_key = CATEGORIES_TREE_CACHE_KEY
+#             builder = self._build_tree_data
+#         else:
+#             cache_key = CATEGORIES_FLAT_CACHE_KEY
+#             builder = self._build_flat_data
+
+#         try:
+#             data, source = two_level_cache.get_or_set(
+#                 cache_key,
+#                 builder,
+#                 l1_timeout=CATEGORIES_L1_TTL,
+#                 l2_timeout=CATEGORIES_L2_TTL,
+#             )
+#         except Exception as exc:
+#             logger.error(
+#                 "CategoryListAPIView: retrieval failed | view=%s key=%s error=%s",
+#                 view_type,
+#                 cache_key,
+#                 exc,
+#                 exc_info=True,
+#             )
+#             return self.error_response(
+#                 message="Unable to retrieve categories. Please try again.",
+#                 status_code=503,
+#             )
+
+#         elapsed_ms = round((time.monotonic() - start) * 1000, 2)
+#         count = len(data) if data else 0
+
+#         logger.info(
+#             "CategoryListAPIView: OK | view=%s source=%s count=%d "
+#             "elapsed_ms=%s request_id=%s",
+#             view_type,
+#             source,
+#             count,
+#             elapsed_ms,
+#             getattr(request, "id", "n/a"),
+#         )
+
+#         return self.success_response(
+#             data=data,
+#             message="Categories retrieved successfully",
+#             meta={
+#                 "view": view_type,
+#                 "source": source,
+#                 "count": count,
+#                 "elapsed_ms": elapsed_ms,
+#             },
+#         )
 
 #! old category 2
 # CATEGORIES_CACHE_KEY = "products_categories_list"
