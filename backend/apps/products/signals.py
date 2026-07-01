@@ -19,6 +19,7 @@ from apps.products.views import (
     CATEGORIES_TREE_CACHE_KEY,
     BRANDS_CACHE_KEY,
     BIKE_MODELS_CACHE_PREFIX,
+    PRODUCTS_LIST_CACHE_PREFIX
 )
 
 # ── Category invalidation ──────────────────────────────────────────────────
@@ -135,47 +136,123 @@ def on_bike_model_saved(sender, instance: BikeModel, created: bool, **kwargs):
 def on_bike_model_deleted(sender, instance: BikeModel, **kwargs):
     _invalidate_bike_model_caches(instance, reason="deleted")
 
+
+
+
+
+
+# ── Product cache invalidation ─────────────────────────────────────────────
+
+def _invalidate_product_list_cache(instance: Product, reason: str) -> None:
+    """
+    Why delete by prefix not exact key:
+        Product list has hundreds of cache variants:
+            products_list_p1_ps12_snewest_cat_br_bk_...
+            products_list_p1_ps12_snewest_catengine-parts_br_...
+            products_list_p2_ps12_sprice_asc_...
+        We cannot know which variants are warm at any time.
+        Deleting by prefix clears ALL variants in one operation.
+
+    Why this is safe:
+        delete_pattern uses Redis SCAN — non-blocking even at scale.
+        L1 clear is cheap — rebuilds on next request.
+    """
+    two_level_cache.delete(PRODUCTS_LIST_CACHE_PREFIX)
+    logger.info(
+        "Product list cache invalidated | reason=%s id=%s name=%s",
+        reason,
+        instance.pk,
+        instance.name,
+    )
+
+
+def _invalidate_product_detail_cache(slug: str, reason: str) -> None:
+    """
+    Why accept slug not instance:
+        post_delete: instance still has slug before deletion.
+        pre_delete: we use post_delete now — slug still available.
+        Accepting slug makes this callable from ProductImage signal too
+        where we have instance.product.slug.
+    """
+    two_level_cache.delete(f"product_detail_{slug}")
+    logger.info(
+        "Product detail cache invalidated | reason=%s slug=%s",
+        reason,
+        slug,
+    )
+
+
 @receiver(post_save, sender=Product)
-def invalidate_product_cache_on_save(
+def on_product_saved(
     sender: type[Product],
     instance: Product,
     created: bool,
     **kwargs,
 ) -> None:
     """
-    Clear product list/detail caches whenever a product is
-    created or updated, so customers always see fresh data.
+    Why post_save not pre_save:
+        We invalidate AFTER DB is updated.
+        pre_save would clear cache before DB write —
+        next request re-caches the OLD data.
+
+    Why invalidate both list AND detail:
+        List cache: shows name, price, discount, image — all can change.
+        Detail cache: full product data — always stale after any save.
     """
     action = "created" if created else "updated"
-    two_level_cache.delete("products_list")
-    two_level_cache.delete(f"product_detail_{instance.slug}")
-    logger.info("Product %s: %s — cache invalidated", action, instance.name)
+    _invalidate_product_list_cache(instance, reason=action)
+    _invalidate_product_detail_cache(instance.slug, reason=action)
 
 
-@receiver(pre_delete, sender=Product)
-def invalidate_product_cache_on_delete(
+@receiver(post_delete, sender=Product)
+def on_product_deleted(
     sender: type[Product],
     instance: Product,
     **kwargs,
 ) -> None:
-    """Clear caches before a product is deleted."""
-    two_level_cache.delete("products_list")
-    two_level_cache.delete(f"product_detail_{instance.slug}")
-    logger.info("Product deleted: %s — cache invalidated", instance.name)
+    """
+    Why post_delete not pre_delete:
+        pre_delete fires before DB deletion.
+        If deletion fails after signal = cache cleared for nothing.
+        Next request re-caches stale data thinking product still exists.
+        post_delete fires only after successful DB deletion — always correct.
+    """
+    _invalidate_product_list_cache(instance, reason="deleted")
+    _invalidate_product_detail_cache(instance.slug, reason="deleted")
 
 
 @receiver(post_save, sender=ProductImage)
-def invalidate_product_cache_on_image_change(
+def on_product_image_saved(
     sender: type[ProductImage],
     instance: ProductImage,
     **kwargs,
 ) -> None:
     """
-    Clear product detail cache when an image is added or updated,
-    since product detail response includes image gallery.
+    Why invalidate list cache:
+        primary_image is in the list serializer.
+        If a new primary image is uploaded, every cached list page
+        still shows the old image URL until TTL expires.
+        Invalidating list cache forces fresh image on next request.
+
+    Why invalidate detail cache:
+        Detail response includes full image gallery.
+        Any image change (add, update, reorder) must refresh detail.
     """
-    two_level_cache.delete(f"product_detail_{instance.product.slug}")
-    logger.debug(
-        "Product image changed for: %s — detail cache invalidated",
-        instance.product.name,
-    )
+    _invalidate_product_list_cache(instance.product, reason="image_saved")
+    _invalidate_product_detail_cache(instance.product.slug, reason="image_saved")
+
+
+@receiver(post_delete, sender=ProductImage)
+def on_product_image_deleted(
+    sender: type[ProductImage],
+    instance: ProductImage,
+    **kwargs,
+) -> None:
+    """
+    Why this was missing in original:
+        Deleting an image = gallery changes.
+        Without this, detail cache shows deleted image until TTL expires.
+        List cache shows deleted primary image as broken URL.
+    """
+    _invalidate_product_list_cache(instance.product, reason="image_deleted")
+    _invalidate_product_detail_cache(instance.product.slug, reason="image_deleted")

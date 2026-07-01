@@ -263,55 +263,321 @@ class BikeModelAdmin(admin.ModelAdmin):
             )
             return
         super().save_model(request, obj, form, change)
+
+
+
+
+
 class ProductImageInline(admin.TabularInline):
     model = ProductImage
     extra = 1
-    fields = ["image", "is_primary", "order"]
+    # Why max_num=10:
+    #   Prevents admin from adding unlimited images accidentally.
+    #   10 is generous for any product gallery.
+    max_num = 10
+    fields = ["image", "image_preview", "is_primary", "order"]
+    readonly_fields = ["image_preview"]
+
+    def image_preview(self, obj: ProductImage):
+        """
+        Why: admin sees a thumbnail instead of a filename string.
+        Makes identifying which image is primary much easier visually.
+        Without this, admin sees "products/2024/01/abc.png" — not helpful.
+        """
+        if obj.image:
+            return format_html(
+                '<img src="{}" style="height:60px; border-radius:4px;" />',
+                obj.image.url,
+            )
+        return "—"
+
+    image_preview.short_description = _("Preview")
 
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
     list_display = [
-        "name", "sku", "category", "brand",
-        "current_price", "stock", "status", "is_featured",
+        "name",
+        "sku",
+        "category",
+        "brand",
+        "display_price",
+        "stock_status",
+        "status",
+        "is_featured",
+        "created_at",
     ]
-    list_filter = ["status", "category", "brand", "is_featured"]
+    list_filter = ["status", "is_featured", "category", "brand"]
     search_fields = ["name", "sku", "description"]
     prepopulated_fields = {"slug": ("name",)}
     autocomplete_fields = ["category", "brand", "compatible_bikes"]
     inlines = [ProductImageInline]
-    readonly_fields = ["created_by"]
     ordering = ["-created_at"]
+
+    # Why status and is_featured in list_editable:
+    #   These are changed frequently by operations team.
+    #   Toggling featured or changing status without opening each product
+    #   saves significant time when managing large catalogs.
+    list_editable = ["status", "is_featured"]
+
+    readonly_fields = [
+        "created_by",
+        "current_price",
+        "has_discount",
+        "discount_percentage",
+        "is_in_stock",
+        "created_at",
+        "updated_at",
+    ]
 
     fieldsets = (
         (None, {
-            "fields": ("name", "slug", "sku", "description")
+            "fields": ("name", "slug", "sku", "description"),
         }),
         (_("Classification"), {
-            "fields": ("category", "brand", "compatible_bikes")
+            "fields": ("category", "brand", "compatible_bikes"),
         }),
         (_("Pricing & Stock"), {
-            "fields": ("price", "discount_price", "stock", "status")
+            "fields": (
+                "price",
+                "discount_price",
+                "current_price",
+                "has_discount",
+                "discount_percentage",
+                "stock",
+                "status",
+                "is_in_stock",
+            ),
         }),
         (_("Visibility"), {
-            "fields": ("is_featured",)
+            "fields": ("is_featured",),
         }),
         (_("Meta"), {
-            "fields": ("created_by",),
+            "fields": ("created_by", "created_at", "updated_at"),
             "classes": ("collapse",),
         }),
     )
 
-    def save_model(self, request, obj: Product, form, change: bool) -> None:
-        """Auto-assign created_by to the logged in admin on creation."""
+    # ── List display methods ───────────────────────────────────────────────
+
+    def display_price(self, obj: Product) -> str:
+        """
+        Why custom method instead of direct current_price property:
+            Model properties are not sortable in admin list view.
+            admin_order_field tells Django which DB column to sort by
+            when the column header is clicked.
+
+        Why show both prices when discount exists:
+            Admin needs to see at a glance whether a product is on sale.
+            "Rs. 850 (was 1000)" is clearer than just "850".
+        """
+        if obj.has_discount:
+            return format_html(
+                'Rs. {} <span style="color:#999; text-decoration:line-through;'
+                'font-size:11px;">Rs. {}</span>',
+                obj.discount_price,
+                obj.price,
+            )
+        return format_html("Rs. {}", obj.price)
+
+    display_price.short_description = _("Price")
+    display_price.admin_order_field = "price"
+
+    def stock_status(self, obj: Product) -> str:
+        """
+        Why visual stock indicator:
+            Operations team needs to spot low-stock products instantly.
+            Color-coded badge is faster to scan than reading numbers.
+
+        Thresholds:
+            0        → red   "Out of Stock"
+            1-5      → orange "Low Stock (N)"
+            6+       → green  "In Stock (N)"
+        """
+        if obj.stock == 0:
+            return format_html(
+                '<span style="color:#dc2626; font-weight:bold;">✕ Out of Stock</span>'
+            )
+        if obj.stock <= 5:
+            return format_html(
+                '<span style="color:#d97706; font-weight:bold;">⚠ Low ({})</span>',
+                obj.stock,
+            )
+        return format_html(
+            '<span style="color:#16a34a;">✓ In Stock ({})</span>',
+            obj.stock,
+        )
+
+    stock_status.short_description = _("Stock")
+    stock_status.admin_order_field = "stock"
+
+    # ── Queryset optimization ──────────────────────────────────────────────
+
+    def get_queryset(self, request: HttpRequest) -> QuerySet:
+        """
+        Why select_related("category", "brand"):
+            list_display includes category and brand columns.
+            Without this, each row fires 2 extra queries.
+            100 products in list = 200 extra queries — classic N+1.
+        """
+        return (
+            super().get_queryset(request)
+            .select_related("category", "brand")
+        )
+
+    # ── Validation ────────────────────────────────────────────────────────
+
+    def save_model(
+        self,
+        request: HttpRequest,
+        obj: Product,
+        form,
+        change: bool,
+    ) -> None:
+        """
+        Validates pricing logic before saving.
+
+        Why validate discount_price < price:
+            DB has no constraint for this.
+            A discount_price >= price is logically wrong —
+            it would show a "discount" that is actually more expensive.
+            discount_percentage would also show 0% or negative.
+
+        Why validate stock vs status:
+            Admin may mark product "available" while stock=0.
+            This creates a bad UX — customer sees "available" but
+            cannot add to cart.
+            Warn admin but allow save — stock may be incoming.
+
+        Why auto-assign created_by:
+            created_by is readonly in the form.
+            On creation, we set it to the logged-in admin automatically.
+            On update, we never overwrite it — preserves original creator.
+        """
+        # ── discount_price validation ──────────────────────────────────────
+        if (
+            obj.discount_price is not None
+            and obj.price is not None
+            and obj.discount_price >= obj.price
+        ):
+            self.message_user(
+                request,
+                _(
+                    f'Discount price (Rs. {obj.discount_price}) must be '
+                    f'less than regular price (Rs. {obj.price}). '
+                    f'Change was not saved.'
+                ),
+                level="error",
+            )
+            return
+
+        # ── Stock vs status warning (non-blocking) ─────────────────────────
+        if obj.status == Product.Status.AVAILABLE and obj.stock == 0:
+            self.message_user(
+                request,
+                _(
+                    f'Warning: "{obj.name}" is marked Available but has 0 stock. '
+                    f'Customers will see it as available but may not be able to order.'
+                ),
+                level="warning",
+            )
+            # Why not return here: warning only — admin may know stock is incoming
+
+        # ── Auto-assign created_by ─────────────────────────────────────────
         if not change:
             obj.created_by = request.user
+
         super().save_model(request, obj, form, change)
 
 
 @admin.register(ProductImage)
 class ProductImageAdmin(admin.ModelAdmin):
-    list_display = ["product", "is_primary", "order", "created_at"]
+    list_display = [
+        "image_preview",
+        "product",
+        "is_primary",
+        "order",
+        "created_at",
+    ]
     list_filter = ["is_primary"]
     search_fields = ["product__name"]
     autocomplete_fields = ["product"]
+    readonly_fields = ["image_preview", "created_at"]
+
+    def image_preview(self, obj: ProductImage):
+        """
+        Why: standalone ProductImage admin also needs preview.
+        Admin managing images outside the product inline
+        needs to see what the image looks like.
+        """
+        if obj.image:
+            return format_html(
+                '<img src="{}" style="height:60px; border-radius:4px;" />',
+                obj.image.url,
+            )
+        return "—"
+
+    image_preview.short_description = _("Preview")
+
+    def get_queryset(self, request: HttpRequest) -> QuerySet:
+        """
+        Why select_related("product"):
+            list_display includes product column.
+            Each row would fire a query to fetch product without this.
+        """
+        return (
+            super().get_queryset(request)
+            .select_related("product")
+        )
+# class ProductImageInline(admin.TabularInline):
+#     model = ProductImage
+#     extra = 1
+#     fields = ["image", "is_primary", "order"]
+
+
+# @admin.register(Product)
+# class ProductAdmin(admin.ModelAdmin):
+#     list_display = [
+#         "name", "sku", "category", "brand",
+#         "current_price", "stock", "status", "is_featured",
+#     ]
+#     list_filter = ["status", "category", "brand", "is_featured"]
+#     search_fields = ["name", "sku", "description"]
+#     prepopulated_fields = {"slug": ("name",)}
+#     autocomplete_fields = ["category", "brand", "compatible_bikes"]
+#     inlines = [ProductImageInline]
+#     readonly_fields = ["created_by"]
+#     ordering = ["-created_at"]
+
+#     fieldsets = (
+#         (None, {
+#             "fields": ("name", "slug", "sku", "description")
+#         }),
+#         (_("Classification"), {
+#             "fields": ("category", "brand", "compatible_bikes")
+#         }),
+#         (_("Pricing & Stock"), {
+#             "fields": ("price", "discount_price", "stock", "status")
+#         }),
+#         (_("Visibility"), {
+#             "fields": ("is_featured",)
+#         }),
+#         (_("Meta"), {
+#             "fields": ("created_by",),
+#             "classes": ("collapse",),
+#         }),
+#     )
+
+#     def save_model(self, request, obj: Product, form, change: bool) -> None:
+#         """Auto-assign created_by to the logged in admin on creation."""
+#         if not change:
+#             obj.created_by = request.user
+#         super().save_model(request, obj, form, change)
+
+
+# @admin.register(ProductImage)
+# class ProductImageAdmin(admin.ModelAdmin):
+#     list_display = ["product", "is_primary", "order", "created_at"]
+#     list_filter = ["is_primary"]
+#     search_fields = ["product__name"]
+#     autocomplete_fields = ["product"]

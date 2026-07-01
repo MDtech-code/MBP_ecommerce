@@ -800,26 +800,187 @@ class BikeModelListAPIView(BaseAPIView):
 
 # ─── Product List / Filter View ─────────────────────────────────────────────
 
+# ── Cache config ───────────────────────────────────────────────────────────────
+PRODUCTS_LIST_CACHE_PREFIX = "products_list"
+# Why shorter TTL than categories/brands:
+#   Products change more often — stock, price, discount updates.
+#   Signal invalidation handles explicit changes.
+#   Short TTL is a safety net for anything that bypasses signals.
+PRODUCTS_LIST_L1_TTL = 60     # 1 minute
+PRODUCTS_LIST_L2_TTL = 180    # 3 minutes
+
+# ── Sorting config ─────────────────────────────────────────────────────────────
+SORT_OPTIONS: dict[str, str] = {
+    "featured":   "-is_featured",
+    "newest":     "-created_at",
+    "price_asc":  "price",
+    "price_desc": "-price",
+    "name_asc":   "name",
+}
+DEFAULT_SORT = "newest"
+
+
 class ProductListAPIView(BaseAPIView):
     """
     GET /api/products/
 
-    Supports filtering by:
-        - category (slug)
-        - brand (slug)
-        - bike_model (id)  ← compatibility filter, the killer feature
-        - min_price / max_price
-        - search (q)
-        - featured (true/false)
+    Product listing with filtering, sorting, and pagination.
+    Cached per unique filter + sort + page combination.
 
-    Cached per unique filter+page combination.
+    Filters:
+        ?category=<slug>        filter by category slug
+        ?brand=<slug>           filter by brand slug
+        ?bike_model=<id>        compatibility filter — the killer feature
+        ?min_price=<decimal>    minimum price
+        ?max_price=<decimal>    maximum price
+        ?q=<string>             search name, description, SKU
+        ?featured=true          featured products only
+
+    Sorting (?sort=):
+        featured    → featured first  (default)
+        newest      → newest first
+        price_asc   → lowest price first
+        price_desc  → highest price first
+        name_asc    → alphabetical
+
+    Pagination:
+        ?page=<int>       page number (default: 1)
+        ?page_size=<int>  items per page (default: 12, max: 48)
+
+    Query optimisations:
+        select_related("category", "brand")    → category_name, brand_name
+        prefetch_related("images")             → primary_image (zero N+1)
+        prefetch_related("compatible_bikes")   → primary_bike (zero N+1)
+        .distinct()                            → M2M join deduplication
     """
+
     permission_classes = [AllowAny]
 
-    def _build_queryset(self, request) -> QuerySet[Product]:
-        queryset = Product.objects.select_related(
-            "category", "brand"
-        ).prefetch_related("images").filter(status=Product.Status.AVAILABLE)
+    # ── Param validation ───────────────────────────────────────────────────
+
+    def _get_pagination_params(
+        self, request: Request
+    ) -> tuple[int, int, bool]:
+        """
+        Returns (page, page_size, is_valid).
+
+        Why max page_size=48:
+            Frontend grid shows 12 per page.
+            Allow up to 48 (4 pages worth) for power users.
+            Unlimited page_size = DB abuse risk.
+
+        Why default page_size=12:
+            Matches frontend grid design (4 columns × 3 rows).
+        """
+        try:
+            page = max(1, int(request.query_params.get("page", 1)))
+        except (ValueError, TypeError):
+            return 1, 12, False
+
+        try:
+            page_size = min(
+                48,
+                max(1, int(request.query_params.get("page_size", 12)))
+            )
+        except (ValueError, TypeError):
+            return 1, 12, False
+
+        return page, page_size, True
+
+    def _get_price_params(
+        self, request: Request
+    ) -> tuple[float | None, float | None, bool]:
+        """
+        Returns (min_price, max_price, is_valid).
+
+        Why validate here:
+            ?min_price=abc passed to queryset.filter(price__gte="abc")
+            causes a Django FieldError / DB error.
+            Must catch before hitting the ORM.
+        """
+        min_price = request.query_params.get("min_price")
+        max_price = request.query_params.get("max_price")
+
+        try:
+            min_price = float(min_price) if min_price else None
+        except (ValueError, TypeError):
+            return None, None, False
+
+        try:
+            max_price = float(max_price) if max_price else None
+        except (ValueError, TypeError):
+            return None, None, False
+
+        if min_price is not None and max_price is not None:
+            if min_price > max_price:
+                return None, None, False
+
+        return min_price, max_price, True
+
+    def _get_bike_model_id(
+        self, request: Request
+    ) -> tuple[int | None, bool]:
+        """Returns (bike_model_id, is_valid)."""
+        param = request.query_params.get("bike_model")
+        if param is None:
+            return None, True
+        try:
+            return int(param), True
+        except (ValueError, TypeError):
+            return None, False
+
+    def _get_sort_param(self, request: Request) -> tuple[str, str]:
+        """
+        Returns (sort_key, order_by_field).
+
+        Why return both:
+            sort_key goes into cache key and meta (what user requested).
+            order_by_field goes into queryset.order_by().
+        """
+        sort_key = request.query_params.get("sort", DEFAULT_SORT).lower()
+        if sort_key not in SORT_OPTIONS:
+            sort_key = DEFAULT_SORT
+        return sort_key, SORT_OPTIONS[sort_key]
+
+    # ── Queryset builder ───────────────────────────────────────────────────
+
+    def _build_queryset(
+        self,
+        request: Request,
+        min_price: float | None,
+        max_price: float | None,
+        bike_model_id: int | None,
+        order_by: str,
+    ) -> QuerySet[Product]:
+        """
+        Builds the filtered, sorted queryset.
+
+        Why all params passed explicitly:
+            Keeps this method pure — no hidden request reads inside.
+            Validated params (not raw strings) passed in — ORM is safe.
+
+        Why .distinct():
+            compatible_bikes is M2M.
+            A product fitting 3 bike models appears 3 times in JOIN result.
+            .distinct() collapses duplicates — critical for correct pagination.
+
+        Why prefetch_related("compatible_bikes"):
+            get_primary_bike() in serializer calls obj.compatible_bikes.all()
+            Without prefetch, one query per product = N+1.
+        """
+        queryset = (
+            Product.objects
+            .filter(status=Product.Status.AVAILABLE)
+            .select_related("category", "brand")
+            .prefetch_related(
+                                "images",
+                                Prefetch(
+                                    "compatible_bikes",
+                                    queryset=BikeModel.objects.select_related("brand"),
+                                ),
+                            )
+            .order_by(order_by)
+        )
 
         category_slug = request.query_params.get("category")
         if category_slug:
@@ -829,19 +990,16 @@ class ProductListAPIView(BaseAPIView):
         if brand_slug:
             queryset = queryset.filter(brand__slug=brand_slug)
 
-        bike_model_id = request.query_params.get("bike_model")
-        if bike_model_id:
+        if bike_model_id is not None:
             queryset = queryset.filter(compatible_bikes__id=bike_model_id)
 
-        min_price = request.query_params.get("min_price")
-        if min_price:
+        if min_price is not None:
             queryset = queryset.filter(price__gte=min_price)
 
-        max_price = request.query_params.get("max_price")
-        if max_price:
+        if max_price is not None:
             queryset = queryset.filter(price__lte=max_price)
 
-        search_query = request.query_params.get("q")
+        search_query = request.query_params.get("q", "").strip()
         if search_query:
             queryset = queryset.filter(
                 Q(name__icontains=search_query)
@@ -849,64 +1007,308 @@ class ProductListAPIView(BaseAPIView):
                 | Q(sku__icontains=search_query)
             )
 
-        featured = request.query_params.get("featured")
-        if featured == "true":
+        if request.query_params.get("featured", "").lower() == "true":
             queryset = queryset.filter(is_featured=True)
 
         return queryset.distinct()
 
-    def _build_cache_key(self, request, page: int, page_size: int) -> str:
+    # ── Cache key builder ──────────────────────────────────────────────────
+
+    def _build_cache_key(
+        self,
+        request: Request,
+        page: int,
+        page_size: int,
+        sort_key: str,
+    ) -> str:
         """
-        Build a cache key that uniquely represents this filter combination.
-        Different filters get different cache entries.
+        Encodes every filter + sort + page into a unique cache key.
+
+        Why include sort in key:
+            Same filters + different sort = different result order.
+            Without sort in key, price_asc and price_desc share one cache entry.
+
+        Why use raw query param strings (not validated values):
+            Empty string '' for unused filters is fine — consistent.
+            Validated values (None vs 0) could collide in edge cases.
         """
-        params = [
-            f"page_{page}",
-            f"size_{page_size}",
-            f"cat_{request.query_params.get('category', '')}",
-            f"brand_{request.query_params.get('brand', '')}",
-            f"bike_{request.query_params.get('bike_model', '')}",
-            f"min_{request.query_params.get('min_price', '')}",
-            f"max_{request.query_params.get('max_price', '')}",
-            f"q_{request.query_params.get('q', '')}",
-            f"feat_{request.query_params.get('featured', '')}",
+        parts = [
+            f"p{page}",
+            f"ps{page_size}",
+            f"s{sort_key}",
+            f"cat{request.query_params.get('category', '')}",
+            f"br{request.query_params.get('brand', '')}",
+            f"bk{request.query_params.get('bike_model', '')}",
+            f"mn{request.query_params.get('min_price', '')}",
+            f"mx{request.query_params.get('max_price', '')}",
+            f"q{request.query_params.get('q', '')}",
+            f"ft{request.query_params.get('featured', '')}",
         ]
-        return "products_list_" + "_".join(params)
+        return "products_list_" + "_".join(parts)
 
-    def get(self, request):
-        page, page_size = get_pagination_params(request)
-        cache_key = self._build_cache_key(request, page, page_size)
+    # ── Request handler ────────────────────────────────────────────────────
 
-        cached_data, source = two_level_cache.get(cache_key)
-        if cached_data:
-            logger.debug("Products served from %s", source)
-            return self.success_response(
-                data=cached_data["data"],
-                message="Products retrieved successfully",
-                meta=build_pagination_meta(
-                    page, page_size, cached_data["total"], source=source
-                ),
+    def get(self, request: Request, *args: Any, **kwargs: Any):
+        start = time.monotonic()
+
+        # ── Validate all params upfront ────────────────────────────────────
+        page, page_size, pagination_valid = self._get_pagination_params(request)
+        if not pagination_valid:
+            return self.error_response(
+                message="Invalid page or page_size parameter.",
+                status_code=400,
             )
 
-        queryset = self._build_queryset(request)
-        total = queryset.count()
-        offset = (page - 1) * page_size
-        products = queryset[offset:offset + page_size]
+        min_price, max_price, price_valid = self._get_price_params(request)
+        if not price_valid:
+            return self.error_response(
+                message="Invalid price range. "
+                        "min_price and max_price must be positive numbers "
+                        "and min_price must not exceed max_price.",
+                status_code=400,
+            )
 
-        serialized = list(
-            ProductListSerializer(
-                products, many=True, context={"request": request}
-            ).data
+        bike_model_id, bike_valid = self._get_bike_model_id(request)
+        if not bike_valid:
+            return self.error_response(
+                message="Invalid bike_model ID. Must be a positive integer.",
+                status_code=400,
+            )
+
+        sort_key, order_by = self._get_sort_param(request)
+        cache_key = self._build_cache_key(request, page, page_size, sort_key)
+
+        # ── Try cache ──────────────────────────────────────────────────────
+        try:
+            cached, source = two_level_cache.get(cache_key)
+            if source != "miss":
+                elapsed_ms = round((time.monotonic() - start) * 1000, 2)
+                logger.info(
+                    "ProductListAPIView: OK (cached) | source=%s page=%d "
+                    "elapsed_ms=%s request_id=%s",
+                    source, page, elapsed_ms,
+                    getattr(request, "id", "n/a"),
+                )
+                return self.success_response(
+                    data=cached["data"],
+                    message="Products retrieved successfully",
+                    meta={
+                        **self._build_pagination_meta(
+                            page, page_size, cached["total"]
+                        ),
+                        "source": source,
+                        "sort": sort_key,
+                        "elapsed_ms": elapsed_ms,
+                    },
+                )
+        except Exception as exc:
+            # Why continue on cache read failure:
+            #   Cache error must not prevent serving data.
+            #   Log and fall through to DB.
+            logger.warning(
+                "ProductListAPIView: cache GET failed | key=%s error=%s",
+                cache_key, exc,
+            )
+
+        # ── Hit DB ─────────────────────────────────────────────────────────
+        try:
+            queryset = self._build_queryset(
+                request, min_price, max_price, bike_model_id, order_by
+            )
+            total = queryset.count()
+            offset = (page - 1) * page_size
+            products = queryset[offset: offset + page_size]
+
+            serialized = list(
+                ProductListSerializer(
+                    products,
+                    many=True,
+                    context={"request": request},
+                ).data
+            )
+        except Exception as exc:
+            logger.error(
+                "ProductListAPIView: DB query failed | key=%s error=%s",
+                cache_key, exc,
+                exc_info=True,
+            )
+            return self.error_response(
+                message="Unable to retrieve products. Please try again.",
+                status_code=503,
+            )
+
+        # ── Write to cache ─────────────────────────────────────────────────
+        try:
+            two_level_cache.set(
+                cache_key,
+                {"data": serialized, "total": total},
+                l1_timeout=PRODUCTS_LIST_L1_TTL,
+                l2_timeout=PRODUCTS_LIST_L2_TTL,
+            )
+        except Exception as exc:
+            # Why not return error here:
+            #   Data was fetched successfully — serve it even if cache write fails.
+            #   Next request will just hit DB again — not a user-facing problem.
+            logger.warning(
+                "ProductListAPIView: cache SET failed | key=%s error=%s",
+                cache_key, exc,
+            )
+
+        elapsed_ms = round((time.monotonic() - start) * 1000, 2)
+
+        logger.info(
+            "ProductListAPIView: OK (database) | total=%d page=%d "
+            "sort=%s elapsed_ms=%s request_id=%s",
+            total, page, sort_key, elapsed_ms,
+            getattr(request, "id", "n/a"),
         )
-
-        two_level_cache.set(cache_key, {"data": serialized, "total": total})
-        logger.debug("Products served from database, cached in L1+L2")
 
         return self.success_response(
             data=serialized,
             message="Products retrieved successfully",
-            meta=build_pagination_meta(page, page_size, total, source="database"),
+            meta={
+                **self._build_pagination_meta(page, page_size, total),
+                "source": "database",
+                "sort": sort_key,
+                "elapsed_ms": elapsed_ms,
+            },
         )
+
+    def _build_pagination_meta(
+        self, page: int, page_size: int, total: int
+    ) -> dict:
+        """
+        Why total_pages uses ceiling division:
+            10 items, page_size=3 → 4 pages (3+3+3+1).
+            Integer division would give 3 — last page lost.
+
+        Why showing_from/showing_to:
+            Frontend shows "Showing 1-12 of 540 products".
+            Backend pre-calculates — frontend renders directly.
+        """
+        total_pages = (total + page_size - 1) // page_size
+        showing_from = ((page - 1) * page_size) + 1 if total > 0 else 0
+        showing_to = min(page * page_size, total)
+
+        return {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": total_pages,
+            "showing_from": showing_from,
+            "showing_to": showing_to,
+            "has_next": page < total_pages,
+            "has_previous": page > 1,
+        }
+
+#! product list view old 
+# class ProductListAPIView(BaseAPIView):
+#     """
+#     GET /api/products/
+
+#     Supports filtering by:
+#         - category (slug)
+#         - brand (slug)
+#         - bike_model (id)  ← compatibility filter, the killer feature
+#         - min_price / max_price
+#         - search (q)
+#         - featured (true/false)
+
+#     Cached per unique filter+page combination.
+#     """
+#     permission_classes = [AllowAny]
+
+#     def _build_queryset(self, request) -> QuerySet[Product]:
+#         queryset = Product.objects.select_related(
+#             "category", "brand"
+#         ).prefetch_related("images").filter(status=Product.Status.AVAILABLE)
+
+#         category_slug = request.query_params.get("category")
+#         if category_slug:
+#             queryset = queryset.filter(category__slug=category_slug)
+
+#         brand_slug = request.query_params.get("brand")
+#         if brand_slug:
+#             queryset = queryset.filter(brand__slug=brand_slug)
+
+#         bike_model_id = request.query_params.get("bike_model")
+#         if bike_model_id:
+#             queryset = queryset.filter(compatible_bikes__id=bike_model_id)
+
+#         min_price = request.query_params.get("min_price")
+#         if min_price:
+#             queryset = queryset.filter(price__gte=min_price)
+
+#         max_price = request.query_params.get("max_price")
+#         if max_price:
+#             queryset = queryset.filter(price__lte=max_price)
+
+#         search_query = request.query_params.get("q")
+#         if search_query:
+#             queryset = queryset.filter(
+#                 Q(name__icontains=search_query)
+#                 | Q(description__icontains=search_query)
+#                 | Q(sku__icontains=search_query)
+#             )
+
+#         featured = request.query_params.get("featured")
+#         if featured == "true":
+#             queryset = queryset.filter(is_featured=True)
+
+#         return queryset.distinct()
+
+#     def _build_cache_key(self, request, page: int, page_size: int) -> str:
+#         """
+#         Build a cache key that uniquely represents this filter combination.
+#         Different filters get different cache entries.
+#         """
+#         params = [
+#             f"page_{page}",
+#             f"size_{page_size}",
+#             f"cat_{request.query_params.get('category', '')}",
+#             f"brand_{request.query_params.get('brand', '')}",
+#             f"bike_{request.query_params.get('bike_model', '')}",
+#             f"min_{request.query_params.get('min_price', '')}",
+#             f"max_{request.query_params.get('max_price', '')}",
+#             f"q_{request.query_params.get('q', '')}",
+#             f"feat_{request.query_params.get('featured', '')}",
+#         ]
+#         return "products_list_" + "_".join(params)
+
+#     def get(self, request):
+#         page, page_size = get_pagination_params(request)
+#         cache_key = self._build_cache_key(request, page, page_size)
+
+#         cached_data, source = two_level_cache.get(cache_key)
+#         if cached_data:
+#             logger.debug("Products served from %s", source)
+#             return self.success_response(
+#                 data=cached_data["data"],
+#                 message="Products retrieved successfully",
+#                 meta=build_pagination_meta(
+#                     page, page_size, cached_data["total"], source=source
+#                 ),
+#             )
+
+#         queryset = self._build_queryset(request)
+#         total = queryset.count()
+#         offset = (page - 1) * page_size
+#         products = queryset[offset:offset + page_size]
+
+#         serialized = list(
+#             ProductListSerializer(
+#                 products, many=True, context={"request": request}
+#             ).data
+#         )
+
+#         two_level_cache.set(cache_key, {"data": serialized, "total": total})
+#         logger.debug("Products served from database, cached in L1+L2")
+
+#         return self.success_response(
+#             data=serialized,
+#             message="Products retrieved successfully",
+#             meta=build_pagination_meta(page, page_size, total, source="database"),
+#         )
 
 
 # ─── Product Detail View ────────────────────────────────────────────────────
@@ -1009,43 +1411,126 @@ class ProductCreateAPIView(BaseAPIView):
 
 
 # ─── Product Image Upload View ──────────────────────────────────────────────
-
 class ProductImageUploadAPIView(BaseAPIView):
     """
-    POST   /api/products/<slug>/images/             → admin only, add image
-    DELETE /api/products/<slug>/images/<image_id>/   → admin only, remove image
+    POST   /api/products/<slug>/images/
+        Upload a new image for a product.
+        Admin only.
+
+    DELETE /api/products/<slug>/images/<image_id>/
+        Remove an image from a product.
+        Admin only.
+
+    Why slug not pk in URL:
+        Consistent with product detail URL pattern.
+        Slugs are human-readable in admin and API explorer.
     """
+
     permission_classes = [IsAdminOrReadOnly]
 
-    def post(self, request, slug: str):
+    def post(self, request: Request, slug: str, *args: Any, **kwargs: Any):
         product = get_object_or_404(Product, slug=slug)
         serializer = ProductImageUploadSerializer(data=request.data)
 
         if not serializer.is_valid():
             return self.error_response(
-                message="Image upload failed",
+                message="Image upload failed.",
                 errors=serializer.errors,
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
-        image = ProductImage.objects.create(
-            product=product,
-            image=serializer.validated_data["image"],
-            is_primary=serializer.validated_data["is_primary"],
+        try:
+            image = ProductImage.objects.create(
+                product=product,
+                image=serializer.validated_data["image"],
+                is_primary=serializer.validated_data.get("is_primary", False),
+            )
+        except Exception as exc:
+            logger.error(
+                "ProductImageUploadAPIView: create failed | slug=%s error=%s",
+                slug, exc,
+                exc_info=True,
+            )
+            return self.error_response(
+                message="Image could not be saved. Please try again.",
+                status_code=503,
+            )
+
+        logger.info(
+            "ProductImageUploadAPIView: image uploaded | "
+            "product=%s image_id=%s is_primary=%s",
+            product.name,
+            image.pk,
+            image.is_primary,
         )
 
-        logger.info("Image uploaded for product: %s", product.name)
         return self.created_response(
             data=ProductImageSerializer(
                 image, context={"request": request}
             ).data,
-            message="Image uploaded successfully",
+            message="Image uploaded successfully.",
         )
 
-    def delete(self, request, slug: str, image_id: int):
+    def delete(
+        self,
+        request: Request,
+        slug: str,
+        image_id: int,
+        *args: Any,
+        **kwargs: Any,
+    ):
         image = get_object_or_404(ProductImage, id=image_id, product__slug=slug)
+
+        product_name = image.product.name
         image.delete()
-        logger.info("Image deleted from product: %s", slug)
-        return self.success_response(
-            message="Image deleted successfully",
+
+        logger.info(
+            "ProductImageUploadAPIView: image deleted | "
+            "product=%s image_id=%s",
+            product_name,
+            image_id,
         )
+
+        return self.success_response(
+            message="Image deleted successfully.",
+        )
+#! old product image upload view 
+# class ProductImageUploadAPIView(BaseAPIView):
+#     """
+#     POST   /api/products/<slug>/images/             → admin only, add image
+#     DELETE /api/products/<slug>/images/<image_id>/   → admin only, remove image
+#     """
+#     permission_classes = [IsAdminOrReadOnly]
+
+#     def post(self, request, slug: str):
+#         product = get_object_or_404(Product, slug=slug)
+#         serializer = ProductImageUploadSerializer(data=request.data)
+
+#         if not serializer.is_valid():
+#             return self.error_response(
+#                 message="Image upload failed",
+#                 errors=serializer.errors,
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#             )
+
+#         image = ProductImage.objects.create(
+#             product=product,
+#             image=serializer.validated_data["image"],
+#             is_primary=serializer.validated_data["is_primary"],
+#         )
+
+#         logger.info("Image uploaded for product: %s", product.name)
+#         return self.created_response(
+#             data=ProductImageSerializer(
+#                 image, context={"request": request}
+#             ).data,
+#             message="Image uploaded successfully",
+#         )
+
+#     def delete(self, request, slug: str, image_id: int):
+#         image = get_object_or_404(ProductImage, id=image_id, product__slug=slug)
+#         image.delete()
+#         logger.info("Image deleted from product: %s", slug)
+#         return self.success_response(
+#             message="Image deleted successfully",
+#         )
