@@ -262,35 +262,6 @@ class BrandListAPIView(BaseAPIView):
             },
         )
 #! old brand view
-# class BrandListAPIView(BaseAPIView):
-#     """
-#     GET /api/products/brands/
-#     List all active brands. Cached — low write frequency.
-#     """
-#     permission_classes = [AllowAny]
-
-#     def get(self, request):
-#         cache_key = "products_brands_list"
-#         cached_data, source = two_level_cache.get(cache_key)
-
-#         if cached_data:
-#             logger.debug("Brands served from %s", source)
-#             return self.success_response(
-#                 data=cached_data,
-#                 message="Brands retrieved successfully",
-#                 meta={"source": source},
-#             )
-
-#         brands = Brand.objects.filter(is_active=True)
-#         serialized = list(BrandSerializer(brands, many=True).data)
-#         two_level_cache.set(cache_key, serialized)
-
-#         logger.debug("Brands served from database, cached in L1+L2")
-#         return self.success_response(
-#             data=serialized,
-#             message="Brands retrieved successfully",
-#             meta={"source": "database"},
-#         )
 
 
 # ─── Bike Model Views ───────────────────────────────────────────────────────
@@ -447,41 +418,6 @@ class BikeModelListAPIView(BaseAPIView):
                 "brand_filter": brand_id,
             },
         )
-#! old bike model
-# class BikeModelListAPIView(BaseAPIView):
-#     """
-#     GET /api/products/bike-models/
-#     GET /api/products/bike-models/?brand=<id>
-#     List bike models for the compatibility filter dropdown.
-#     """
-#     permission_classes = [AllowAny]
-
-#     def get(self, request):
-#         brand_id = request.query_params.get("brand")
-#         cache_key = f"products_bike_models_brand_{brand_id or 'all'}"
-
-#         cached_data, source = two_level_cache.get(cache_key)
-#         if cached_data:
-#             logger.debug("Bike models served from %s", source)
-#             return self.success_response(
-#                 data=cached_data,
-#                 message="Bike models retrieved successfully",
-#                 meta={"source": source},
-#             )
-
-#         queryset = BikeModel.objects.filter(is_active=True).select_related("brand")
-#         if brand_id:
-#             queryset = queryset.filter(brand_id=brand_id)
-
-#         serialized = list(BikeModelSerializer(queryset, many=True).data)
-#         two_level_cache.set(cache_key, serialized)
-
-#         logger.debug("Bike models served from database, cached in L1+L2")
-#         return self.success_response(
-#             data=serialized,
-#             message="Bike models retrieved successfully",
-#             meta={"source": "database"},
-#         )
 
 
 # ─── Product List / Filter View ─────────────────────────────────────────────
@@ -887,114 +823,7 @@ class ProductListAPIView(BaseAPIView):
             "has_previous": page > 1,
         }
 
-#! product list view old 
-# class ProductListAPIView(BaseAPIView):
-#     """
-#     GET /api/products/
 
-#     Supports filtering by:
-#         - category (slug)
-#         - brand (slug)
-#         - bike_model (id)  ← compatibility filter, the killer feature
-#         - min_price / max_price
-#         - search (q)
-#         - featured (true/false)
-
-#     Cached per unique filter+page combination.
-#     """
-#     permission_classes = [AllowAny]
-
-#     def _build_queryset(self, request) -> QuerySet[Product]:
-#         queryset = Product.objects.select_related(
-#             "category", "brand"
-#         ).prefetch_related("images").filter(status=Product.Status.AVAILABLE)
-
-#         category_slug = request.query_params.get("category")
-#         if category_slug:
-#             queryset = queryset.filter(category__slug=category_slug)
-
-#         brand_slug = request.query_params.get("brand")
-#         if brand_slug:
-#             queryset = queryset.filter(brand__slug=brand_slug)
-
-#         bike_model_id = request.query_params.get("bike_model")
-#         if bike_model_id:
-#             queryset = queryset.filter(compatible_bikes__id=bike_model_id)
-
-#         min_price = request.query_params.get("min_price")
-#         if min_price:
-#             queryset = queryset.filter(price__gte=min_price)
-
-#         max_price = request.query_params.get("max_price")
-#         if max_price:
-#             queryset = queryset.filter(price__lte=max_price)
-
-#         search_query = request.query_params.get("q")
-#         if search_query:
-#             queryset = queryset.filter(
-#                 Q(name__icontains=search_query)
-#                 | Q(description__icontains=search_query)
-#                 | Q(sku__icontains=search_query)
-#             )
-
-#         featured = request.query_params.get("featured")
-#         if featured == "true":
-#             queryset = queryset.filter(is_featured=True)
-
-#         return queryset.distinct()
-
-#     def _build_cache_key(self, request, page: int, page_size: int) -> str:
-#         """
-#         Build a cache key that uniquely represents this filter combination.
-#         Different filters get different cache entries.
-#         """
-#         params = [
-#             f"page_{page}",
-#             f"size_{page_size}",
-#             f"cat_{request.query_params.get('category', '')}",
-#             f"brand_{request.query_params.get('brand', '')}",
-#             f"bike_{request.query_params.get('bike_model', '')}",
-#             f"min_{request.query_params.get('min_price', '')}",
-#             f"max_{request.query_params.get('max_price', '')}",
-#             f"q_{request.query_params.get('q', '')}",
-#             f"feat_{request.query_params.get('featured', '')}",
-#         ]
-#         return "products_list_" + "_".join(params)
-
-#     def get(self, request):
-#         page, page_size = get_pagination_params(request)
-#         cache_key = self._build_cache_key(request, page, page_size)
-
-#         cached_data, source = two_level_cache.get(cache_key)
-#         if cached_data:
-#             logger.debug("Products served from %s", source)
-#             return self.success_response(
-#                 data=cached_data["data"],
-#                 message="Products retrieved successfully",
-#                 meta=build_pagination_meta(
-#                     page, page_size, cached_data["total"], source=source
-#                 ),
-#             )
-
-#         queryset = self._build_queryset(request)
-#         total = queryset.count()
-#         offset = (page - 1) * page_size
-#         products = queryset[offset:offset + page_size]
-
-#         serialized = list(
-#             ProductListSerializer(
-#                 products, many=True, context={"request": request}
-#             ).data
-#         )
-
-#         two_level_cache.set(cache_key, {"data": serialized, "total": total})
-#         logger.debug("Products served from database, cached in L1+L2")
-
-#         return self.success_response(
-#             data=serialized,
-#             message="Products retrieved successfully",
-#             meta=build_pagination_meta(page, page_size, total, source="database"),
-#         )
 
 
 # ─── Product Detail View ────────────────────────────────────────────────────
@@ -1096,73 +925,6 @@ class ProductDetailAPIView(BaseAPIView):
         )
 
 
-# class ProductDetailAPIView(BaseAPIView):
-#     """
-#     GET    /api/products/<slug>/   → public detail view
-#     PUT    /api/products/<slug>/   → admin only, update
-#     DELETE /api/products/<slug>/   → admin only, delete
-#     """
-#     permission_classes = [IsAdminOrReadOnly]
-
-#     def get(self, request, slug: str):
-#         cache_key = f"product_detail_{slug}"
-#         cached_data, source = two_level_cache.get(cache_key)
-
-#         if cached_data:
-#             logger.debug("Product detail served from %s", source)
-#             return self.success_response(
-#                 data=cached_data,
-#                 message="Product retrieved successfully",
-#                 meta={"source": source},
-#             )
-
-#         product = get_object_or_404(
-#             Product.objects.select_related("category", "brand")
-#             .prefetch_related("images", "compatible_bikes"),
-#             slug=slug,
-#         )
-#         serialized = ProductDetailSerializer(
-#             product, context={"request": request}
-#         ).data
-#         two_level_cache.set(cache_key, serialized)
-
-#         logger.debug("Product detail served from database, cached in L1+L2")
-#         return self.success_response(
-#             data=serialized,
-#             message="Product retrieved successfully",
-#             meta={"source": "database"},
-#         )
-
-#     def put(self, request, slug: str):
-#         product = get_object_or_404(Product, slug=slug)
-#         serializer = ProductWriteSerializer(
-#             product, data=request.data, partial=True, context={"request": request}
-#         )
-#         if not serializer.is_valid():
-#             return self.error_response(
-#                 message="Product update failed",
-#                 errors=serializer.errors,
-#                 status_code=status.HTTP_400_BAD_REQUEST,
-#             )
-
-#         serializer.save()
-#         logger.info("Product updated: %s (sku=%s)", product.name, product.sku)
-#         return self.success_response(
-#             data=ProductDetailSerializer(
-#                 product, context={"request": request}
-#             ).data,
-#             message="Product updated successfully",
-#         )
-
-#     def delete(self, request, slug: str):
-#         product = get_object_or_404(Product, slug=slug)
-#         name = product.name
-#         product.delete()
-#         logger.info("Product deleted: %s", name)
-#         return self.success_response(
-#             message="Product deleted successfully",
-#         )
-
 
 
 
@@ -1250,43 +1012,3 @@ class ProductImageUploadAPIView(BaseAPIView):
         return self.success_response(
             message="Image deleted successfully.",
         )
-#! old product image upload view 
-# class ProductImageUploadAPIView(BaseAPIView):
-#     """
-#     POST   /api/products/<slug>/images/             → admin only, add image
-#     DELETE /api/products/<slug>/images/<image_id>/   → admin only, remove image
-#     """
-#     permission_classes = [IsAdminOrReadOnly]
-
-#     def post(self, request, slug: str):
-#         product = get_object_or_404(Product, slug=slug)
-#         serializer = ProductImageUploadSerializer(data=request.data)
-
-#         if not serializer.is_valid():
-#             return self.error_response(
-#                 message="Image upload failed",
-#                 errors=serializer.errors,
-#                 status_code=status.HTTP_400_BAD_REQUEST,
-#             )
-
-#         image = ProductImage.objects.create(
-#             product=product,
-#             image=serializer.validated_data["image"],
-#             is_primary=serializer.validated_data["is_primary"],
-#         )
-
-#         logger.info("Image uploaded for product: %s", product.name)
-#         return self.created_response(
-#             data=ProductImageSerializer(
-#                 image, context={"request": request}
-#             ).data,
-#             message="Image uploaded successfully",
-#         )
-
-#     def delete(self, request, slug: str, image_id: int):
-#         image = get_object_or_404(ProductImage, id=image_id, product__slug=slug)
-#         image.delete()
-#         logger.info("Image deleted from product: %s", slug)
-#         return self.success_response(
-#             message="Image deleted successfully",
-#         )

@@ -628,18 +628,6 @@ class TestBrandList:
         assert response.data["meta"]["source"] == "database"
         assert len(response.data["data"]) == 0
 
-# @pytest.mark.django_db
-# class TestBrandList:
-
-#     def test_list_brands_success(self, api_client, brand):
-#         response = api_client.get("/api/products/brands/")
-#         assert response.status_code == 200
-#         assert len(response.data["data"]) == 1
-
-#     def test_brands_cached_on_second_request(self, api_client, brand):
-#         api_client.get("/api/products/brands/")
-#         response = api_client.get("/api/products/brands/")
-#         assert response.data["meta"]["source"] == "l1_memory"
 
 
 # ─── Bike Model Tests ─────────────────────────────────────────────────────────
@@ -841,26 +829,7 @@ class TestBikeModelList:
         assert "Honda" in result
         assert "CB150F" in result
         assert "2018" in result
-# @pytest.mark.django_db
-# class TestBikeModelList:
 
-#     def test_list_bike_models_success(self, api_client, bike_model):
-#         response = api_client.get("/api/products/bike-models/")
-#         assert response.status_code == 200
-#         assert len(response.data["data"]) == 1
-
-#     def test_filter_bike_models_by_brand(self, api_client, bike_model, brand):
-#         response = api_client.get(f"/api/products/bike-models/?brand={brand.id}")
-#         assert response.status_code == 200
-#         assert response.data["data"][0]["brand"] == brand.id
-
-#     def test_filter_bike_models_by_nonexistent_brand(self, api_client, bike_model):
-#         response = api_client.get("/api/products/bike-models/?brand=9999")
-#         assert len(response.data["data"]) == 0
-
-#     def test_display_name_format(self, api_client, bike_model):
-#         response = api_client.get("/api/products/bike-models/")
-#         assert "Honda" in response.data["data"][0]["display_name"]
 
 
 # ─── Product List Tests ───────────────────────────────────────────────────────
@@ -1299,171 +1268,7 @@ class TestProductList:
         response = api_client.get(self.URL)
         assert response.data["meta"]["source"] == "database"
         assert len(response.data["data"]) == 0
-# @pytest.mark.django_db
-# class TestProductList:
 
-#     def test_list_products_success(self, api_client, product):
-#         response = api_client.get("/api/products/")
-#         assert response.status_code == 200
-#         assert response.data["success"] is True
-#         assert len(response.data["data"]) == 1
-
-#     def test_product_list_has_pagination_meta(self, api_client, product):
-#         response = api_client.get("/api/products/")
-#         meta = response.data["meta"]
-#         assert "page" in meta
-#         assert "page_size" in meta
-#         assert "total_items" in meta
-#         assert "total_pages" in meta
-#         assert "source" in meta
-
-#     def test_products_cached_on_second_request(self, api_client, product):
-#         api_client.get("/api/products/")
-#         response = api_client.get("/api/products/")
-#         assert response.data["meta"]["source"] == "l1_memory"
-
-#     def test_out_of_stock_products_excluded_by_default(self, api_client, product):
-#         product.status = Product.Status.OUT_OF_STOCK
-#         product.save()
-#         response = api_client.get("/api/products/")
-#         assert len(response.data["data"]) == 0
-
-#     def test_filter_by_category(self, api_client, product, category):
-#         response = api_client.get(f"/api/products/?category={category.slug}")
-#         assert len(response.data["data"]) == 1
-
-#     def test_filter_by_wrong_category_returns_empty(self, api_client, product):
-#         other_category = Category.objects.create(name="Brakes")
-#         response = api_client.get(f"/api/products/?category={other_category.slug}")
-#         assert len(response.data["data"]) == 0
-
-#     def test_filter_by_brand(self, api_client, product, brand):
-#         response = api_client.get(f"/api/products/?brand={brand.slug}")
-#         assert len(response.data["data"]) == 1
-
-#     def test_filter_by_bike_model_compatibility(self, api_client, product, bike_model):
-#         """The killer feature — filter parts that fit a specific bike."""
-#         response = api_client.get(f"/api/products/?bike_model={bike_model.id}")
-#         assert len(response.data["data"]) == 1
-
-#     def test_filter_by_incompatible_bike_returns_empty(self, api_client, product, brand):
-#         other_bike = BikeModel.objects.create(
-#             brand=brand, name="CG125", year_start=2015,
-#         )
-#         response = api_client.get(f"/api/products/?bike_model={other_bike.id}")
-#         assert len(response.data["data"]) == 0
-
-#     def test_filter_by_price_range(self, api_client, product):
-#         response = api_client.get("/api/products/?min_price=1000&max_price=2000")
-#         assert len(response.data["data"]) == 1
-
-#     def test_filter_by_price_range_excludes_outside(self, api_client, product):
-#         response = api_client.get("/api/products/?min_price=5000")
-#         assert len(response.data["data"]) == 0
-
-#     def test_search_by_name(self, api_client, product):
-#         response = api_client.get("/api/products/?q=Piston")
-#         assert len(response.data["data"]) == 1
-
-#     def test_search_by_sku(self, api_client, product):
-#         response = api_client.get("/api/products/?q=ENG-PIS-001")
-#         assert len(response.data["data"]) == 1
-
-#     def test_search_no_match_returns_empty(self, api_client, product):
-#         response = api_client.get("/api/products/?q=NonexistentPart")
-#         assert len(response.data["data"]) == 0
-
-#     def test_filter_featured_products(self, api_client, product):
-#         product.is_featured = True
-#         product.save()
-#         response = api_client.get("/api/products/?featured=true")
-#         assert len(response.data["data"]) == 1
-
-#     def test_pagination_page_size(self, api_client, category, brand):
-#         for i in range(15):
-#             Product.objects.create(
-#                 name=f"Part {i}", category=category, brand=brand,
-#                 sku=f"SKU-{i}", price=100, stock=5,
-#             )
-#         response = api_client.get("/api/products/?page=1&page_size=5")
-#         assert len(response.data["data"]) == 5
-#         assert response.data["meta"]["total_items"] == 15
-#         assert response.data["meta"]["total_pages"] == 3
-
-#     def test_different_filters_have_separate_cache_keys(
-#         self, api_client, product, category
-#     ):
-#         """Different filter combos must not share cache entries."""
-#         response1 = api_client.get("/api/products/")
-#         response2 = api_client.get(f"/api/products/?category={category.slug}")
-#         assert response1.data["meta"]["source"] == "database"
-#         assert response2.data["meta"]["source"] == "database"
-
-
-# ─── Product Detail Tests ─────────────────────────────────────────────────────
-
-# @pytest.mark.django_db
-# class TestProductDetail:
-
-#     def test_get_product_detail_success(self, api_client, product):
-#         response = api_client.get(f"/api/products/{product.slug}/")
-#         assert response.status_code == 200
-#         assert response.data["data"]["sku"] == product.sku
-
-#     def test_product_detail_includes_compatible_bikes(
-#         self, api_client, product, bike_model
-#     ):
-#         response = api_client.get(f"/api/products/{product.slug}/")
-#         bikes = response.data["data"]["compatible_bikes"]
-#         assert len(bikes) == 1
-#         assert bikes[0]["id"] == bike_model.id
-
-#     def test_product_detail_cached_on_second_request(self, api_client, product):
-#         api_client.get(f"/api/products/{product.slug}/")
-#         response = api_client.get(f"/api/products/{product.slug}/")
-#         assert response.data["meta"]["source"] == "l1_memory"
-
-#     def test_get_nonexistent_product_404(self, api_client):
-#         response = api_client.get("/api/products/does-not-exist/")
-#         assert response.status_code == 404
-
-#     def test_update_product_as_admin_success(self, admin_client, product):
-#         response = admin_client.put(f"/api/products/{product.slug}/", {
-#             "price": 1800,
-#         }, format='json')
-#         assert response.status_code == 200
-#         product.refresh_from_db()
-#         assert product.price == 1800
-
-#     def test_update_product_as_customer_forbidden(self, customer_client, product):
-#         response = customer_client.put(f"/api/products/{product.slug}/", {
-#             "price": 1800,
-#         }, format='json')
-#         assert response.status_code == 403
-
-#     def test_update_product_unauthenticated_forbidden(self, api_client, product):
-#         response = api_client.put(f"/api/products/{product.slug}/", {
-#             "price": 1800,
-#         }, format='json')
-#         assert response.status_code 
-
-#     def test_update_invalidates_cache(self, api_client, admin_client, product):
-#         api_client.get(f"/api/products/{product.slug}/")  # warm cache
-#         admin_client.put(f"/api/products/{product.slug}/", {
-#             "price": 1800,
-#         }, format='json')
-#         response = api_client.get(f"/api/products/{product.slug}/")
-#         assert response.data["meta"]["source"] == "database"
-#         assert response.data["data"]["price"] == "1800.00"
-
-#     def test_delete_product_as_admin_success(self, admin_client, product):
-#         response = admin_client.delete(f"/api/products/{product.slug}/")
-#         assert response.status_code == 200
-#         assert not Product.objects.filter(id=product.id).exists()
-
-#     def test_delete_product_as_customer_forbidden(self, customer_client, product):
-#         response = customer_client.delete(f"/api/products/{product.slug}/")
-#         assert response.status_code == 403
 
 
 
