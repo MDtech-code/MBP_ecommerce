@@ -173,38 +173,7 @@ class CategoryAdmin(admin.ModelAdmin):
             .select_related("parent")
         )
 
-#! old admin
-# @admin.register(Category)
-# class CategoryAdmin(admin.ModelAdmin):
-#     list_display = ["name", "parent", "is_subcategory", "is_active", "created_at"]
-#     list_filter = ["is_active", "parent"]
-#     search_fields = ["name"]
-#     prepopulated_fields = {"slug": ("name",)}
-#     ordering = ["name"]
 
-#     def save_model(self, request, obj, form, change):
-#         """
-#         Validates the hierarchy before saving, 
-#         ensuring no circular loops occur.
-#         """
-#         # 1. Check for self-parenting
-#         if obj.parent and obj.parent == obj:
-#             raise ValidationError("A category cannot be its own parent.")
-
-#         # 2. Check for circular loops
-#         if obj.parent:
-#             parent = obj.parent
-#             while parent:
-#                 if parent == obj:
-#                     raise ValidationError("Creating this parent creates a circular loop.")
-#                 parent = parent.parent
-        
-#         # If valid, proceed with the standard save
-#         super().save_model(request, obj, form, change)
-
-
-# apps/products/admin.py — Brand and BikeModel sections only
-# (Category section unchanged from previous)
 
 @admin.register(Brand)
 class BrandAdmin(admin.ModelAdmin):
