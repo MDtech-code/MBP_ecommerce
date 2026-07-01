@@ -15,10 +15,11 @@ logger = logging.getLogger("apps.products")
 
 class CategorySerializer(BaseModelSerializer):
     """Used for category listing and dropdowns."""
-
+    parent_name = serializers.SerializerMethodField()
     subcategory_count: serializers.IntegerField = serializers.IntegerField(
-        source="subcategories.count",
+        source="subcategories_count",
         read_only=True,
+        default=0,
     )
 
     class Meta:
@@ -28,10 +29,21 @@ class CategorySerializer(BaseModelSerializer):
             "name",
             "slug",
             "parent",
+            "parent_name",
             "is_subcategory",
             "subcategory_count",
             "is_active",
         ]
+    def get_parent_name(self, obj: Category) -> str | None:
+        """
+        Why check obj.parent_id first:
+            Avoids attribute access on None.
+            parent_id is a DB column — always available without extra query.
+            obj.parent is the related object — available free via select_related.
+        """
+        if obj.parent_id is None:
+            return None
+        return obj.parent.name if obj.parent else None
 
 
 # ─── Brand Serializers ─────────────────────────────────────────────────────

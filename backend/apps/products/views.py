@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import logging
-
+import time
+from typing import Any
+from rest_framework.request import Request
+from django.conf import settings
+from django.db.models import Count
 from django.shortcuts import get_object_or_404
 from django.db.models import QuerySet, Q
 from rest_framework import status
@@ -27,36 +31,131 @@ logger = logging.getLogger("apps.products")
 
 
 # ─── Category Views ─────────────────────────────────────────────────────────
+CATEGORIES_CACHE_KEY = "products_categories_list"
+
+# Categories change rarely — use a longer TTL than the global default.
+# Invalidation via post_save/post_delete signals keeps data fresh on writes.
+CATEGORIES_L1_TTL = 3600   # 1 hour   (per-process memory)
+CATEGORIES_L2_TTL = 86400 * 7   # 1 week  (shared Redis)
+
 
 class CategoryListAPIView(BaseAPIView):
     """
     GET /api/products/categories/
-    List all active categories. Cached — low write frequency.
+
+    Returns all active categories, served from a two-level cache.
+
+    Cache strategy:
+        L1 TTL : 120s  (in-process memory, per worker)
+        L2 TTL : 600s  (Redis, shared across all workers)
+        Write  : populated on first miss, lock prevents stampede
+        Purge  : Category post_save / post_delete signals call
+                 two_level_cache.delete(CATEGORIES_CACHE_KEY)
+
+    Query optimisations:
+        select_related("parent")   — avoids N+1 for the parent FK field
+        prefetch_related("subcategories") — avoids N+1 if serializer renders children
+        order_by("name")           — stable ordering so cached payload is deterministic
     """
+
     permission_classes = [AllowAny]
 
-    def get(self, request):
-        cache_key = "products_categories_list"
-        cached_data, source = two_level_cache.get(cache_key)
+    def _build_fresh_data(self) -> list:
+        """
+        Queries the DB and serializes the result.
 
-        if cached_data:
-            logger.debug("Categories served from %s", source)
-            return self.success_response(
-                data=cached_data,
-                message="Categories retrieved successfully",
-                meta={"source": source},
+        Kept as a separate method so it can be:
+            - passed directly to get_or_set() as a callable
+            - unit-tested without going through the HTTP layer
+        """
+        queryset = (
+            Category.objects
+            .filter(is_active=True)
+            .select_related("parent")
+            .prefetch_related("subcategories")
+            .annotate(subcategories_count=Count("subcategories"))
+            .order_by("name")
+        )
+        return list(CategorySerializer(queryset, many=True).data)
+
+    def get(self, request: Request, *args: Any, **kwargs: Any):
+        start = time.monotonic()
+
+        try:
+            data, source = two_level_cache.get_or_set(
+                CATEGORIES_CACHE_KEY,
+                self._build_fresh_data,
+                l1_timeout=CATEGORIES_L1_TTL,
+                l2_timeout=CATEGORIES_L2_TTL,
+            )
+        except Exception as exc:
+            logger.error(
+                "CategoryListAPIView: failed to retrieve categories "
+                "key=%s error=%s",
+                CATEGORIES_CACHE_KEY,
+                exc,
+                exc_info=True,
+            )
+            return self.error_response(
+                message="Unable to retrieve categories. Please try again.",
+                status_code=503,
             )
 
-        categories = Category.objects.filter(is_active=True).select_related("parent")
-        serialized = list(CategorySerializer(categories, many=True).data)
-        two_level_cache.set(cache_key, serialized)
+        elapsed_ms = round((time.monotonic() - start) * 1000, 2)
+        count = len(data) if data else 0
 
-        logger.debug("Categories served from database, cached in L1+L2")
-        return self.success_response(
-            data=serialized,
-            message="Categories retrieved successfully",
-            meta={"source": "database"},
+        logger.info(
+            "CategoryListAPIView: served | source=%s count=%d "
+            "elapsed_ms=%s request_id=%s",
+            source,
+            count,
+            elapsed_ms,
+            getattr(request, "id", "n/a"),
         )
+
+        return self.success_response(
+            data=data,
+            message="Categories retrieved successfully",
+            meta={
+                "source": source,
+                "count": count,
+                "elapsed_ms": elapsed_ms,
+            },
+        )
+# class CategoryListAPIView(BaseAPIView):
+#     """
+#     GET /api/products/categories/
+#     List all active categories. Cached — low write frequency.
+#     """
+#     permission_classes = [AllowAny]
+
+#     def get(self, request):
+#         cache_key = "products_categories_list"
+#         # cached_data, source = two_level_cache.get(cache_key)
+#         if settings.CACHES:
+#             cached_data, source = two_level_cache.get(cache_key)
+#         else:
+#             cached_data, source = None, None
+
+
+#         if cached_data:
+#             logger.debug("Categories served from %s", source)
+#             return self.success_response(
+#                 data=cached_data,
+#                 message="Categories retrieved successfully",
+#                 meta={"source": source},
+#             )
+
+#         categories = Category.objects.filter(is_active=True).select_related("parent").prefetch_related("subcategories").order_by("name")
+#         serialized = list(CategorySerializer(categories, many=True).data)
+#         two_level_cache.set(cache_key, serialized)
+
+#         logger.debug("Categories served from database, cached in L1+L2")
+#         return self.success_response(
+#             data=serialized,
+#             message="Categories retrieved successfully",
+#             meta={"source": "database"},
+#         )
 
 
 # ─── Brand Views ────────────────────────────────────────────────────────────

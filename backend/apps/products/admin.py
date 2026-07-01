@@ -3,7 +3,7 @@ from __future__ import annotations
 from django.contrib import admin
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
-
+from django.core.exceptions import ValidationError
 from .models import Category, Brand, BikeModel, Product, ProductImage
 
 
@@ -14,6 +14,26 @@ class CategoryAdmin(admin.ModelAdmin):
     search_fields = ["name"]
     prepopulated_fields = {"slug": ("name",)}
     ordering = ["name"]
+
+    def save_model(self, request, obj, form, change):
+        """
+        Validates the hierarchy before saving, 
+        ensuring no circular loops occur.
+        """
+        # 1. Check for self-parenting
+        if obj.parent and obj.parent == obj:
+            raise ValidationError("A category cannot be its own parent.")
+
+        # 2. Check for circular loops
+        if obj.parent:
+            parent = obj.parent
+            while parent:
+                if parent == obj:
+                    raise ValidationError("Creating this parent creates a circular loop.")
+                parent = parent.parent
+        
+        # If valid, proceed with the standard save
+        super().save_model(request, obj, form, change)
 
 
 @admin.register(Brand)

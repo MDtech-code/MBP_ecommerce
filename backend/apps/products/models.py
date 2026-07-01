@@ -59,6 +59,8 @@ class Category(TimeStampedModel):
     @property
     def is_subcategory(self) -> bool:
         return self.parent_id is not None
+    
+    
 
 
 class Brand(TimeStampedModel):
