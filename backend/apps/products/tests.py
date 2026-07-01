@@ -523,40 +523,342 @@ class TestCategoryList:
 
 @pytest.mark.django_db
 class TestBrandList:
+    """
+    Tests for GET /api/products/brands/
+    """
 
-    def test_list_brands_success(self, api_client, brand):
-        response = api_client.get("/api/products/brands/")
+    URL = "/api/products/brands/"
+
+    # ── Basic response ─────────────────────────────────────────────────────
+
+    def test_returns_200(self, api_client, brand):
+        response = api_client.get(self.URL)
         assert response.status_code == 200
-        assert len(response.data["data"]) == 1
 
-    def test_brands_cached_on_second_request(self, api_client, brand):
-        api_client.get("/api/products/brands/")
-        response = api_client.get("/api/products/brands/")
+    def test_response_envelope_shape(self, api_client, brand):
+        response = api_client.get(self.URL)
+        assert response.data["success"] is True
+        assert "data" in response.data
+        assert "meta" in response.data
+
+    def test_returns_active_brands(self, api_client, brand):
+        response = api_client.get(self.URL)
+        assert len(response.data["data"]) == 1
+        assert response.data["data"][0]["name"] == "Honda"
+
+    def test_inactive_brand_excluded(self, api_client, brand):
+        brand.is_active = False
+        brand.save()
+        response = api_client.get(self.URL)
+        assert len(response.data["data"]) == 0
+
+    def test_empty_list_returns_200(self, api_client):
+        response = api_client.get(self.URL)
+        assert response.status_code == 200
+        assert response.data["data"] == []
+
+    def test_meta_contains_expected_keys(self, api_client, brand):
+        response = api_client.get(self.URL)
+        meta = response.data["meta"]
+        assert "source" in meta
+        assert "count" in meta
+        assert "elapsed_ms" in meta
+
+    def test_meta_count_matches_data_length(self, api_client, brand):
+        response = api_client.get(self.URL)
+        assert response.data["meta"]["count"] == len(response.data["data"])
+
+    # ── Serializer fields ──────────────────────────────────────────────────
+
+    def test_brand_item_has_required_fields(self, api_client, brand):
+        response = api_client.get(self.URL)
+        item = response.data["data"][0]
+        assert {"id", "name", "slug", "logo", "is_active"}.issubset(set(item.keys()))
+
+    def test_slug_auto_generated(self, api_client, brand):
+        response = api_client.get(self.URL)
+        assert response.data["data"][0]["slug"] == "honda"
+
+    # ── Cache behaviour ────────────────────────────────────────────────────
+
+    def test_first_request_hits_database(self, api_client, brand):
+        response = api_client.get(self.URL)
+        assert response.data["meta"]["source"] == "database"
+
+    def test_second_request_hits_l1(self, api_client, brand):
+        api_client.get(self.URL)
+        response = api_client.get(self.URL)
         assert response.data["meta"]["source"] == "l1_memory"
+
+    def test_empty_list_cached_not_re_fetched(self, api_client):
+        """Sentinel fix — [] must not be treated as cache miss."""
+        api_client.get(self.URL)
+        response = api_client.get(self.URL)
+        assert response.data["meta"]["source"] == "l1_memory"
+
+    def test_cache_invalidated_on_brand_update(self, api_client, brand):
+        api_client.get(self.URL)
+        brand.name = "Honda Updated"
+        brand.save()
+        response = api_client.get(self.URL)
+        assert response.data["meta"]["source"] == "database"
+        assert response.data["data"][0]["name"] == "Honda Updated"
+
+    def test_cache_invalidated_on_brand_delete(self, api_client, brand):
+        api_client.get(self.URL)
+        brand.delete()
+        response = api_client.get(self.URL)
+        assert response.data["meta"]["source"] == "database"
+        assert len(response.data["data"]) == 0
+
+    def test_cache_invalidated_on_new_brand_added(self, api_client, brand):
+        api_client.get(self.URL)
+        Brand.objects.create(name="Yamaha")
+        response = api_client.get(self.URL)
+        assert response.data["meta"]["source"] == "database"
+        assert len(response.data["data"]) == 2
+
+    def test_cache_invalidated_on_deactivation(self, api_client, brand):
+        api_client.get(self.URL)
+        brand.is_active = False
+        brand.save()
+        response = api_client.get(self.URL)
+        assert response.data["meta"]["source"] == "database"
+        assert len(response.data["data"]) == 0
+
+# @pytest.mark.django_db
+# class TestBrandList:
+
+#     def test_list_brands_success(self, api_client, brand):
+#         response = api_client.get("/api/products/brands/")
+#         assert response.status_code == 200
+#         assert len(response.data["data"]) == 1
+
+#     def test_brands_cached_on_second_request(self, api_client, brand):
+#         api_client.get("/api/products/brands/")
+#         response = api_client.get("/api/products/brands/")
+#         assert response.data["meta"]["source"] == "l1_memory"
 
 
 # ─── Bike Model Tests ─────────────────────────────────────────────────────────
 
 @pytest.mark.django_db
 class TestBikeModelList:
+    """
+    Tests for:
+        GET /api/products/bike-models/
+        GET /api/products/bike-models/?brand=<id>
+    """
 
-    def test_list_bike_models_success(self, api_client, bike_model):
-        response = api_client.get("/api/products/bike-models/")
+    URL = "/api/products/bike-models/"
+
+    # ── Basic response ─────────────────────────────────────────────────────
+
+    def test_returns_200(self, api_client, bike_model):
+        response = api_client.get(self.URL)
         assert response.status_code == 200
+
+    def test_response_envelope_shape(self, api_client, bike_model):
+        response = api_client.get(self.URL)
+        assert response.data["success"] is True
+        assert "data" in response.data
+        assert "meta" in response.data
+
+    def test_returns_active_bike_models(self, api_client, bike_model):
+        response = api_client.get(self.URL)
         assert len(response.data["data"]) == 1
 
-    def test_filter_bike_models_by_brand(self, api_client, bike_model, brand):
-        response = api_client.get(f"/api/products/bike-models/?brand={brand.id}")
-        assert response.status_code == 200
-        assert response.data["data"][0]["brand"] == brand.id
-
-    def test_filter_bike_models_by_nonexistent_brand(self, api_client, bike_model):
-        response = api_client.get("/api/products/bike-models/?brand=9999")
+    def test_inactive_bike_model_excluded(self, api_client, bike_model):
+        bike_model.is_active = False
+        bike_model.save()
+        response = api_client.get(self.URL)
         assert len(response.data["data"]) == 0
 
-    def test_display_name_format(self, api_client, bike_model):
-        response = api_client.get("/api/products/bike-models/")
-        assert "Honda" in response.data["data"][0]["display_name"]
+    def test_empty_list_returns_200(self, api_client):
+        response = api_client.get(self.URL)
+        assert response.status_code == 200
+        assert response.data["data"] == []
+
+    def test_meta_contains_expected_keys(self, api_client, bike_model):
+        response = api_client.get(self.URL)
+        meta = response.data["meta"]
+        assert "source" in meta
+        assert "count" in meta
+        assert "elapsed_ms" in meta
+        assert "brand_filter" in meta
+
+    def test_meta_count_matches_data_length(self, api_client, bike_model):
+        response = api_client.get(self.URL)
+        assert response.data["meta"]["count"] == len(response.data["data"])
+
+    # ── Serializer fields ──────────────────────────────────────────────────
+
+    def test_bike_model_item_has_required_fields(self, api_client, bike_model):
+        response = api_client.get(self.URL)
+        item = response.data["data"][0]
+        expected = {
+            "id", "brand", "brand_name", "name",
+            "display_name", "slug", "year_start", "year_end", "is_active",
+        }
+        assert expected.issubset(set(item.keys()))
+
+    def test_brand_name_populated(self, api_client, bike_model):
+        """
+        Why: brand_name comes from select_related.
+        If select_related removed, this becomes N+1 but still passes.
+        This test confirms the value is correct.
+        """
+        response = api_client.get(self.URL)
+        assert response.data["data"][0]["brand_name"] == "Honda"
+
+    def test_display_name_populated(self, api_client, bike_model):
+        response = api_client.get(self.URL)
+        display = response.data["data"][0]["display_name"]
+        assert "Honda" in display
+        assert "CB150F" in display
+
+    # ── Brand filter ───────────────────────────────────────────────────────
+
+    def test_filter_by_brand_returns_correct_models(
+        self, api_client, brand, bike_model
+    ):
+        """
+        Why: ?brand= filter must restrict results to that brand only.
+        Core feature — used by frontend compatibility filter step 1.
+        """
+        other_brand = Brand.objects.create(name="Yamaha")
+        BikeModel.objects.create(
+            brand=other_brand,
+            name="YBR125",
+            year_start=2015,
+        )
+        response = api_client.get(self.URL, {"brand": brand.pk})
+        assert len(response.data["data"]) == 1
+        assert response.data["data"][0]["brand_name"] == "Honda"
+
+    def test_filter_by_nonexistent_brand_returns_empty(self, api_client):
+        response = api_client.get(self.URL, {"brand": 99999})
+        assert response.status_code == 200
+        assert response.data["data"] == []
+
+    def test_invalid_brand_param_returns_400(self, api_client):
+        """
+        Why: ?brand=abc must return 400, not a DB error.
+        int("abc") raises ValueError — must be caught and handled.
+        """
+        response = api_client.get(self.URL, {"brand": "abc"})
+        assert response.status_code == 400
+
+    def test_brand_filter_none_shows_all(self, api_client, bike_model):
+        """No ?brand= param → all active bike models returned."""
+        response = api_client.get(self.URL)
+        assert len(response.data["data"]) >= 1
+
+    def test_meta_brand_filter_is_none_when_no_param(self, api_client, bike_model):
+        response = api_client.get(self.URL)
+        assert response.data["meta"]["brand_filter"] is None
+
+    def test_meta_brand_filter_reflects_param(self, api_client, brand, bike_model):
+        response = api_client.get(self.URL, {"brand": brand.pk})
+        assert response.data["meta"]["brand_filter"] == brand.pk
+
+    # ── Cache behaviour ────────────────────────────────────────────────────
+
+    def test_first_request_hits_database(self, api_client, bike_model):
+        response = api_client.get(self.URL)
+        assert response.data["meta"]["source"] == "database"
+
+    def test_second_request_hits_l1(self, api_client, bike_model):
+        api_client.get(self.URL)
+        response = api_client.get(self.URL)
+        assert response.data["meta"]["source"] == "l1_memory"
+
+    def test_filtered_and_unfiltered_caches_independent(
+        self, api_client, brand, bike_model
+    ):
+        """
+        Why: ?brand=1 and no filter use separate cache keys.
+        Warming one must not affect the other.
+        """
+        api_client.get(self.URL)                          # warm "all"
+        response = api_client.get(self.URL, {"brand": brand.pk})
+        assert response.data["meta"]["source"] == "database"
+
+    def test_cache_invalidated_on_bike_model_update(
+        self, api_client, bike_model
+    ):
+        api_client.get(self.URL)
+        bike_model.name = "CB150F Updated"
+        bike_model.save()
+        response = api_client.get(self.URL)
+        assert response.data["meta"]["source"] == "database"
+
+    def test_cache_invalidated_on_bike_model_delete(
+        self, api_client, bike_model
+    ):
+        api_client.get(self.URL)
+        bike_model.delete()
+        response = api_client.get(self.URL)
+        assert response.data["meta"]["source"] == "database"
+        assert len(response.data["data"]) == 0
+
+    def test_cache_invalidated_on_new_bike_model_added(
+        self, api_client, brand, bike_model
+    ):
+        api_client.get(self.URL)
+        BikeModel.objects.create(
+            brand=brand,
+            name="CB300R",
+            year_start=2019,
+        )
+        response = api_client.get(self.URL)
+        assert response.data["meta"]["source"] == "database"
+        assert len(response.data["data"]) == 2
+
+    # ── Model integrity ────────────────────────────────────────────────────
+
+    def test_covers_year_within_range(self, bike_model):
+        """bike_model: year_start=2018, year_end=2023"""
+        assert bike_model.covers_year(2020) is True
+
+    def test_covers_year_before_start(self, bike_model):
+        assert bike_model.covers_year(2017) is False
+
+    def test_covers_year_after_end(self, bike_model):
+        assert bike_model.covers_year(2024) is False
+
+    def test_covers_year_still_in_production(self, db, brand):
+        """year_end=None means still in production — any year >= start matches."""
+        model = BikeModel.objects.create(
+            brand=brand, name="CB500F", year_start=2013
+        )
+        assert model.covers_year(2099) is True
+
+    def test_str_representation(self, bike_model):
+        result = str(bike_model)
+        assert "Honda" in result
+        assert "CB150F" in result
+        assert "2018" in result
+# @pytest.mark.django_db
+# class TestBikeModelList:
+
+#     def test_list_bike_models_success(self, api_client, bike_model):
+#         response = api_client.get("/api/products/bike-models/")
+#         assert response.status_code == 200
+#         assert len(response.data["data"]) == 1
+
+#     def test_filter_bike_models_by_brand(self, api_client, bike_model, brand):
+#         response = api_client.get(f"/api/products/bike-models/?brand={brand.id}")
+#         assert response.status_code == 200
+#         assert response.data["data"][0]["brand"] == brand.id
+
+#     def test_filter_bike_models_by_nonexistent_brand(self, api_client, bike_model):
+#         response = api_client.get("/api/products/bike-models/?brand=9999")
+#         assert len(response.data["data"]) == 0
+
+#     def test_display_name_format(self, api_client, bike_model):
+#         response = api_client.get("/api/products/bike-models/")
+#         assert "Honda" in response.data["data"][0]["display_name"]
 
 
 # ─── Product List Tests ───────────────────────────────────────────────────────

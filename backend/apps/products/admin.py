@@ -203,33 +203,66 @@ class CategoryAdmin(admin.ModelAdmin):
 #         super().save_model(request, obj, form, change)
 
 
+# apps/products/admin.py — Brand and BikeModel sections only
+# (Category section unchanged from previous)
+
 @admin.register(Brand)
 class BrandAdmin(admin.ModelAdmin):
-    list_display = ["name", "logo_preview", "is_active", "created_at"]
+    list_display = ["name", "slug", "is_active", "created_at"]
     list_filter = ["is_active"]
+    list_editable = ["is_active"]
     search_fields = ["name"]
     prepopulated_fields = {"slug": ("name",)}
     ordering = ["name"]
 
-    def logo_preview(self, obj: Brand) -> str:
-        if obj.logo:
-            return format_html(
-                '<img src="{}" style="height: 30px;" />', obj.logo.url
-            )
-        return "—"
-    logo_preview.short_description = _("Logo")
+    def get_queryset(self, request):
+        return super().get_queryset(request)
 
 
 @admin.register(BikeModel)
 class BikeModelAdmin(admin.ModelAdmin):
-    list_display = ["display_name", "brand", "year_start", "year_end", "is_active"]
-    list_filter = ["brand", "is_active"]
+    list_display = [
+        "display_name",
+        "brand",
+        "year_start",
+        "year_end",
+        "is_active",
+        "created_at",
+    ]
+    list_filter = ["is_active", "brand"]
+    list_editable = ["is_active"]
     search_fields = ["name", "brand__name"]
     prepopulated_fields = {"slug": ("name",)}
     ordering = ["brand__name", "name"]
     autocomplete_fields = ["brand"]
 
+    def get_queryset(self, request):
+        """
+        Why select_related("brand"):
+            list_display includes brand and display_name (which accesses brand.name).
+            Without select_related, each row = one extra query for brand.
+        """
+        return (
+            super().get_queryset(request)
+            .select_related("brand")
+        )
 
+    def save_model(self, request, obj, form, change):
+        """
+        Why validate year range:
+            year_end must be >= year_start if provided.
+            DB has no constraint for this — admin is the validation point.
+            Same message_user pattern as CategoryAdmin — no 500 errors.
+        """
+        if obj.year_end is not None and obj.year_end < obj.year_start:
+            self.message_user(
+                request,
+                f"Production end year ({obj.year_end}) cannot be before "
+                f"start year ({obj.year_start}). Change was not saved.",
+                level="error",
+            )
+            return
+        super().save_model(request, obj, form, change)
 class ProductImageInline(admin.TabularInline):
     model = ProductImage
     extra = 1

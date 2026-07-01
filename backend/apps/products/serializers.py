@@ -163,10 +163,23 @@ class CategoryFlatSerializer(BaseModelSerializer):
 #         return obj.parent.name if obj.parent else None
 
 
+
+
+
 # ─── Brand Serializers ─────────────────────────────────────────────────────
 
 class BrandSerializer(BaseModelSerializer):
-    """Used for brand listing and filters."""
+    """
+    Flat serializer for brand listing and filter dropdowns.
+
+    Why logo field kept:
+        Frontend brand filter shows logo next to brand name.
+        ImageField serializes to full URL via request context.
+
+    Why no extra fields needed:
+        Brands are simple — name, slug, logo, is_active.
+        No self-referencing FK, no annotations needed.
+    """
 
     class Meta:
         model = Brand
@@ -182,7 +195,27 @@ class BrandSerializer(BaseModelSerializer):
 # ─── Bike Model Serializers ────────────────────────────────────────────────
 
 class BikeModelSerializer(BaseModelSerializer):
-    """Used for bike compatibility filter dropdown."""
+    """
+    Serializer for bike compatibility filter dropdown.
+
+    Why brand_name:
+        Frontend dropdown shows "Honda CB150F" not just "CB150F".
+        Without brand_name, frontend needs extra call to resolve brand.
+        Free via select_related("brand") on the queryset.
+
+    Why display_name:
+        Model property combining brand + name + year range.
+        Pre-built string for frontend label — no string formatting needed.
+
+    Why year_start and year_end both included:
+        Frontend compatibility filter may show year range.
+        "Honda CB150F (2018 - 2023)" needs both values.
+
+    Why covers_year not included:
+        It is a method, not a field.
+        Frontend sends year filter as query param — backend filters queryset.
+        No need to expose the method in the API response.
+    """
 
     brand_name: serializers.CharField = serializers.CharField(
         source="brand.name",
@@ -205,6 +238,49 @@ class BikeModelSerializer(BaseModelSerializer):
             "year_end",
             "is_active",
         ]
+#! old brand and bike model 
+# # ─── Brand Serializers ─────────────────────────────────────────────────────
+
+# class BrandSerializer(BaseModelSerializer):
+#     """Used for brand listing and filters."""
+
+#     class Meta:
+#         model = Brand
+#         fields = [
+#             "id",
+#             "name",
+#             "slug",
+#             "logo",
+#             "is_active",
+#         ]
+
+
+# # ─── Bike Model Serializers ────────────────────────────────────────────────
+
+# class BikeModelSerializer(BaseModelSerializer):
+#     """Used for bike compatibility filter dropdown."""
+
+#     brand_name: serializers.CharField = serializers.CharField(
+#         source="brand.name",
+#         read_only=True,
+#     )
+#     display_name: serializers.CharField = serializers.CharField(
+#         read_only=True,
+#     )
+
+#     class Meta:
+#         model = BikeModel
+#         fields = [
+#             "id",
+#             "brand",
+#             "brand_name",
+#             "name",
+#             "display_name",
+#             "slug",
+#             "year_start",
+#             "year_end",
+#             "is_active",
+#         ]
 
 
 # ─── Product Image Serializers ─────────────────────────────────────────────
