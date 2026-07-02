@@ -7,7 +7,7 @@ import pytest
 from django.core.cache import caches
 from rest_framework.test import APIClient
 from unittest.mock import patch
-from .models import EmailVerificationToken, User, UserProfile
+from .models import EmailVerificationToken, User, UserProfile,PasswordResetToken
 from apps.common.choices.role import Role
 
 # ─── Password constant ────────────────────────────────────────────────────────
@@ -71,19 +71,39 @@ def admin_user(db) -> User:
         password=STRONG_PASSWORD,
     )
 
-
 @pytest.fixture
-def auth_client(api_client: APIClient, user: User) -> APIClient:
+def auth_client(user: User) -> APIClient:
     """
     Authenticated API client using force_authenticate.
 
-    CHANGED FROM: hitting /api/accounts/login/ directly.
-    REASON: Login-based auth in registration tests is fragile —
-    if login breaks, every registration test fails for the wrong reason.
-    force_authenticate() isolates registration tests completely.
+    Creates its own internal APIClient — does NOT share the api_client
+    fixture instance. This is intentional:
+
+    If this fixture accepted api_client as a parameter and mutated it,
+    any test requesting both auth_client and api_client would receive
+    the same authenticated instance for both, causing IsNotAuthenticated
+    endpoints to incorrectly return 403.
+
+    Usage:
+        def test_something(self, auth_client, api_client):
+            # auth_client → authenticated as `user`
+            # api_client  → completely unauthenticated, separate instance
     """
-    api_client.force_authenticate(user=user)
-    return api_client
+    client = APIClient()
+    client.force_authenticate(user=user)
+    return client
+# @pytest.fixture
+# def auth_client(api_client: APIClient, user: User) -> APIClient:
+#     """
+#     Authenticated API client using force_authenticate.
+
+#     CHANGED FROM: hitting /api/accounts/login/ directly.
+#     REASON: Login-based auth in registration tests is fragile —
+#     if login breaks, every registration test fails for the wrong reason.
+#     force_authenticate() isolates registration tests completely.
+#     """
+#     api_client.force_authenticate(user=user)
+#     return api_client
 
 
 @pytest.fixture
@@ -1135,6 +1155,643 @@ class TestResendVerification:
         )
         assert response.status_code == 400
         assert "email" in response.data["errors"]
+
+
+
+# apps/accounts/tests.py
+# ─── add these constants near the top ────────────────────────────────────────
+
+PASSWORD_RESET_URL         = "/api/accounts/password-reset/"
+PASSWORD_RESET_CONFIRM_URL = "/api/accounts/password-reset/confirm/"
+CHANGE_PASSWORD_URL        = "/api/accounts/change-password/"
+
+# New strong password used when testing password change/reset
+NEW_STRONG_PASSWORD = "N3w!P@ssXq92"
+
+
+# ─── Password Reset Request Tests ────────────────────────────────────────────
+
+@pytest.mark.django_db
+@patch("apps.accounts.views.send_password_reset_email_task.delay")
+class TestPasswordResetRequest:
+    """
+    Tests for POST /api/accounts/password-reset/
+
+    Coverage:
+        - Happy path (token created, task dispatched)
+        - Response shape conformance
+        - Unregistered email returns same 200 (enumeration prevention)
+        - Inactive user returns same 200
+        - Task called with correct args
+        - Invalid email format returns 400
+        - Missing email returns 400
+        - Unregistered and registered return identical message
+    """
+
+    # ── Happy Path ────────────────────────────────────────────────────────────
+
+    def test_reset_request_returns_200(self, mock_task, api_client, user):
+        """Valid registered email must return 200."""
+        response = api_client.post(
+            PASSWORD_RESET_URL,
+            {"email": user.email},
+            format="json",
+        )
+        assert response.status_code == 200
+        assert response.data["success"] is True
+
+    def test_reset_request_response_shape(self, mock_task, api_client, user):
+        """Response must conform to standardized envelope."""
+        response = api_client.post(
+            PASSWORD_RESET_URL,
+            {"email": user.email},
+            format="json",
+        )
+        data = response.data
+        assert "success" in data
+        assert "message" in data
+        assert "errors" in data
+        assert "meta" in data
+
+    def test_reset_request_creates_token(self, mock_task, api_client, user):
+        """A PasswordResetToken must exist after a valid request."""
+        api_client.post(
+            PASSWORD_RESET_URL,
+            {"email": user.email},
+            format="json",
+        )
+        assert PasswordResetToken.objects.filter(user=user).exists()
+
+    def test_reset_request_dispatches_task(self, mock_task, api_client, user):
+        """Task must be dispatched exactly once with correct args."""
+        api_client.post(
+            PASSWORD_RESET_URL,
+            {"email": user.email},
+            format="json",
+        )
+        assert mock_task.called
+        assert mock_task.call_count == 1
+        assert mock_task.call_args[0][0] == user.id
+
+    def test_reset_request_email_case_insensitive(
+        self, mock_task, api_client, user
+    ):
+        """Email lookup must be case-insensitive."""
+        response = api_client.post(
+            PASSWORD_RESET_URL,
+            {"email": user.email.upper()},
+            format="json",
+        )
+        assert response.status_code == 200
+        assert mock_task.called
+
+    # ── Enumeration Prevention ────────────────────────────────────────────────
+
+    def test_reset_request_unregistered_email_returns_200(
+        self, mock_task, api_client
+    ):
+        """
+        Unregistered email must return same 200 as registered email.
+        Different responses would allow email enumeration.
+        """
+        response = api_client.post(
+            PASSWORD_RESET_URL,
+            {"email": "nobody@example.com"},
+            format="json",
+        )
+        assert response.status_code == 200
+
+    def test_reset_request_unregistered_email_does_not_dispatch_task(
+        self, mock_task, api_client
+    ):
+        """No task must be dispatched for an unregistered email."""
+        api_client.post(
+            PASSWORD_RESET_URL,
+            {"email": "nobody@example.com"},
+            format="json",
+        )
+        assert not mock_task.called
+
+    def test_reset_request_inactive_user_returns_200(
+        self, mock_task, api_client, user
+    ):
+        """Inactive user must return same 200 — cannot reveal account state."""
+        user.is_active = False
+        user.save()
+        response = api_client.post(
+            PASSWORD_RESET_URL,
+            {"email": user.email},
+            format="json",
+        )
+        assert response.status_code == 200
+
+    def test_reset_request_inactive_user_does_not_dispatch_task(
+        self, mock_task, api_client, user
+    ):
+        """No task must be dispatched for inactive user."""
+        user.is_active = False
+        user.save()
+        api_client.post(
+            PASSWORD_RESET_URL,
+            {"email": user.email},
+            format="json",
+        )
+        assert not mock_task.called
+
+    def test_reset_request_all_responses_have_identical_message(
+        self, mock_task, api_client, user
+    ):
+        """
+        Registered, unregistered, and inactive responses must be identical.
+        Message divergence would enable enumeration.
+        """
+        registered = api_client.post(
+            PASSWORD_RESET_URL,
+            {"email": user.email},
+            format="json",
+        )
+        unregistered = api_client.post(
+            PASSWORD_RESET_URL,
+            {"email": "nobody@example.com"},
+            format="json",
+        )
+        assert registered.data["message"] == unregistered.data["message"]
+
+    # ── Validation Failures ───────────────────────────────────────────────────
+
+    def test_reset_request_invalid_email_returns_400(
+        self, mock_task, api_client
+    ):
+        """Malformed email must be rejected with 400."""
+        response = api_client.post(
+            PASSWORD_RESET_URL,
+            {"email": "not-an-email"},
+            format="json",
+        )
+        assert response.status_code == 400
+        assert "email" in response.data["errors"]
+
+    def test_reset_request_missing_email_returns_400(
+        self, mock_task, api_client
+    ):
+        """Missing email field must return 400."""
+        response = api_client.post(PASSWORD_RESET_URL, {}, format="json")
+        assert response.status_code == 400
+        assert "email" in response.data["errors"]
+
+
+# ─── Password Reset Confirm Tests ─────────────────────────────────────────────
+
+@pytest.mark.django_db
+class TestPasswordResetConfirm:
+    """
+    Tests for POST /api/accounts/password-reset/confirm/
+
+    Coverage:
+        - Happy path (password changed, token marked used)
+        - Response shape conformance
+        - Token not found returns 400
+        - Expired token returns 400
+        - Already used token returns 400
+        - Mismatched passwords returns 400 on correct field
+        - Weak password returns 400
+        - Old password no longer works after reset
+        - User can login with new password after reset
+        - Token is single-use
+    """
+
+    def _make_token(self, user) -> PasswordResetToken:
+        """Create a fresh password reset token for a user."""
+        return PasswordResetToken.create_for_user(user)
+
+    # ── Happy Path ────────────────────────────────────────────────────────────
+
+    def test_reset_confirm_returns_200(self, api_client, user):
+        """Valid token + valid password must return 200."""
+        token_obj = self._make_token(user)
+        response = api_client.post(
+            PASSWORD_RESET_CONFIRM_URL,
+            {
+                "token": str(token_obj.token),
+                "password": NEW_STRONG_PASSWORD,
+                "confirm_password": NEW_STRONG_PASSWORD,
+            },
+            format="json",
+        )
+        assert response.status_code == 200
+        assert response.data["success"] is True
+
+    def test_reset_confirm_response_shape(self, api_client, user):
+        """Response must conform to standardized envelope."""
+        token_obj = self._make_token(user)
+        response = api_client.post(
+            PASSWORD_RESET_CONFIRM_URL,
+            {
+                "token": str(token_obj.token),
+                "password": NEW_STRONG_PASSWORD,
+                "confirm_password": NEW_STRONG_PASSWORD,
+            },
+            format="json",
+        )
+        data = response.data
+        assert "success" in data
+        assert "message" in data
+        assert "errors" in data
+        assert "meta" in data
+
+    def test_reset_confirm_changes_password(self, api_client, user):
+        """User password must be updated in DB after reset."""
+        token_obj = self._make_token(user)
+        api_client.post(
+            PASSWORD_RESET_CONFIRM_URL,
+            {
+                "token": str(token_obj.token),
+                "password": NEW_STRONG_PASSWORD,
+                "confirm_password": NEW_STRONG_PASSWORD,
+            },
+            format="json",
+        )
+        user.refresh_from_db()
+        assert user.check_password(NEW_STRONG_PASSWORD)
+
+    def test_reset_confirm_old_password_no_longer_works(self, api_client, user):
+        """Old password must be invalid after reset."""
+        token_obj = self._make_token(user)
+        api_client.post(
+            PASSWORD_RESET_CONFIRM_URL,
+            {
+                "token": str(token_obj.token),
+                "password": NEW_STRONG_PASSWORD,
+                "confirm_password": NEW_STRONG_PASSWORD,
+            },
+            format="json",
+        )
+        user.refresh_from_db()
+        assert not user.check_password(STRONG_PASSWORD)
+
+    def test_reset_confirm_marks_token_as_used(self, api_client, user):
+        """Token must be marked as used after successful reset."""
+        token_obj = self._make_token(user)
+        api_client.post(
+            PASSWORD_RESET_CONFIRM_URL,
+            {
+                "token": str(token_obj.token),
+                "password": NEW_STRONG_PASSWORD,
+                "confirm_password": NEW_STRONG_PASSWORD,
+            },
+            format="json",
+        )
+        token_obj.refresh_from_db()
+        assert token_obj.is_used is True
+
+    def test_reset_confirm_user_can_login_with_new_password(
+        self, api_client, user
+    ):
+        """End-to-end: user must be able to log in with new password."""
+        token_obj = self._make_token(user)
+        api_client.post(
+            PASSWORD_RESET_CONFIRM_URL,
+            {
+                "token": str(token_obj.token),
+                "password": NEW_STRONG_PASSWORD,
+                "confirm_password": NEW_STRONG_PASSWORD,
+            },
+            format="json",
+        )
+        login_response = api_client.post(
+            LOGIN_URL,
+            {"email": user.email, "password": NEW_STRONG_PASSWORD},
+            format="json",
+        )
+        assert login_response.status_code == 200
+
+    # ── Token Not Found ───────────────────────────────────────────────────────
+
+    def test_reset_confirm_invalid_token_returns_400(self, api_client):
+        """Non-existent token UUID must return 400."""
+        import uuid
+        response = api_client.post(
+            PASSWORD_RESET_CONFIRM_URL,
+            {
+                "token": str(uuid.uuid4()),
+                "password": NEW_STRONG_PASSWORD,
+                "confirm_password": NEW_STRONG_PASSWORD,
+            },
+            format="json",
+        )
+        assert response.status_code == 400
+        assert response.data["success"] is False
+
+    def test_reset_confirm_invalid_token_format_returns_400(self, api_client):
+        """Non-UUID token string must fail serializer validation."""
+        response = api_client.post(
+            PASSWORD_RESET_CONFIRM_URL,
+            {
+                "token": "not-a-uuid",
+                "password": NEW_STRONG_PASSWORD,
+                "confirm_password": NEW_STRONG_PASSWORD,
+            },
+            format="json",
+        )
+        assert response.status_code == 400
+        assert "token" in response.data["errors"]
+
+    # ── Expired Token ─────────────────────────────────────────────────────────
+
+    def test_reset_confirm_expired_token_returns_400(self, api_client, user):
+        """Expired token must return 400 — backdating expires_at field."""
+        from datetime import timedelta
+        from django.utils import timezone
+
+        token_obj = self._make_token(user)
+        PasswordResetToken.objects.filter(pk=token_obj.pk).update(
+            expires_at=timezone.now() - timedelta(hours=2)
+        )
+        response = api_client.post(
+            PASSWORD_RESET_CONFIRM_URL,
+            {
+                "token": str(token_obj.token),
+                "password": NEW_STRONG_PASSWORD,
+                "confirm_password": NEW_STRONG_PASSWORD,
+            },
+            format="json",
+        )
+        assert response.status_code == 400
+
+    def test_reset_confirm_expired_token_does_not_change_password(
+        self, api_client, user
+    ):
+        """Expired token must not change the user's password."""
+        from datetime import timedelta
+        from django.utils import timezone
+
+        token_obj = self._make_token(user)
+        PasswordResetToken.objects.filter(pk=token_obj.pk).update(
+            expires_at=timezone.now() - timedelta(hours=2)
+        )
+        api_client.post(
+            PASSWORD_RESET_CONFIRM_URL,
+            {
+                "token": str(token_obj.token),
+                "password": NEW_STRONG_PASSWORD,
+                "confirm_password": NEW_STRONG_PASSWORD,
+            },
+            format="json",
+        )
+        user.refresh_from_db()
+        assert not user.check_password(NEW_STRONG_PASSWORD)
+
+    # ── Single Use ────────────────────────────────────────────────────────────
+
+    def test_reset_confirm_token_is_single_use(self, api_client, user):
+        """
+        Second use of same token must return 400.
+        Prevents replay attacks.
+        """
+        token_obj = self._make_token(user)
+        payload = {
+            "token": str(token_obj.token),
+            "password": NEW_STRONG_PASSWORD,
+            "confirm_password": NEW_STRONG_PASSWORD,
+        }
+        api_client.post(PASSWORD_RESET_CONFIRM_URL, payload, format="json")
+        second_response = api_client.post(
+            PASSWORD_RESET_CONFIRM_URL, payload, format="json"
+        )
+        assert second_response.status_code == 400
+
+    # ── Password Validation ───────────────────────────────────────────────────
+
+    def test_reset_confirm_password_mismatch_returns_400(self, api_client, user):
+        """Mismatched passwords must return error on confirm_password field."""
+        token_obj = self._make_token(user)
+        response = api_client.post(
+            PASSWORD_RESET_CONFIRM_URL,
+            {
+                "token": str(token_obj.token),
+                "password": NEW_STRONG_PASSWORD,
+                "confirm_password": "DifferentPass999!",
+            },
+            format="json",
+        )
+        assert response.status_code == 400
+        assert "confirm_password" in response.data["errors"]
+
+    def test_reset_confirm_weak_password_returns_400(self, api_client, user):
+        """Weak password must be rejected."""
+        token_obj = self._make_token(user)
+        response = api_client.post(
+            PASSWORD_RESET_CONFIRM_URL,
+            {
+                "token": str(token_obj.token),
+                "password": "123",
+                "confirm_password": "123",
+            },
+            format="json",
+        )
+        assert response.status_code == 400
+
+
+# ─── Change Password Tests ────────────────────────────────────────────────────
+
+@pytest.mark.django_db
+class TestChangePassword:
+    """
+    Tests for POST /api/accounts/change-password/
+
+    Coverage:
+        - Happy path (password changed)
+        - Response shape conformance
+        - Unauthenticated request blocked
+        - Incorrect current password returns 400 on correct field
+        - Mismatched new passwords returns 400 on correct field
+        - Weak new password returns 400
+        - Old password no longer works after change
+        - New password can be used to log in
+        - Same password as current rejected by Django validators
+    """
+
+    # ── Happy Path ────────────────────────────────────────────────────────────
+
+    def test_change_password_returns_200(self, auth_client):
+        """Valid current password + valid new password must return 200."""
+        response = auth_client.post(
+            CHANGE_PASSWORD_URL,
+            {
+                "current_password": STRONG_PASSWORD,
+                "new_password": NEW_STRONG_PASSWORD,
+                "confirm_new_password": NEW_STRONG_PASSWORD,
+            },
+            format="json",
+        )
+        assert response.status_code == 200
+        assert response.data["success"] is True
+
+    def test_change_password_response_shape(self, auth_client):
+        """Response must conform to standardized envelope."""
+        response = auth_client.post(
+            CHANGE_PASSWORD_URL,
+            {
+                "current_password": STRONG_PASSWORD,
+                "new_password": NEW_STRONG_PASSWORD,
+                "confirm_new_password": NEW_STRONG_PASSWORD,
+            },
+            format="json",
+        )
+        data = response.data
+        assert "success" in data
+        assert "message" in data
+        assert "errors" in data
+        assert "meta" in data
+
+    def test_change_password_updates_db(self, auth_client, user):
+        """Password must be updated in DB after change."""
+        auth_client.post(
+            CHANGE_PASSWORD_URL,
+            {
+                "current_password": STRONG_PASSWORD,
+                "new_password": NEW_STRONG_PASSWORD,
+                "confirm_new_password": NEW_STRONG_PASSWORD,
+            },
+            format="json",
+        )
+        user.refresh_from_db()
+        assert user.check_password(NEW_STRONG_PASSWORD)
+
+    def test_change_password_old_password_no_longer_works(
+        self, auth_client, user
+    ):
+        """Old password must be invalid after change."""
+        auth_client.post(
+            CHANGE_PASSWORD_URL,
+            {
+                "current_password": STRONG_PASSWORD,
+                "new_password": NEW_STRONG_PASSWORD,
+                "confirm_new_password": NEW_STRONG_PASSWORD,
+            },
+            format="json",
+        )
+        user.refresh_from_db()
+        assert not user.check_password(STRONG_PASSWORD)
+
+    def test_change_password_new_password_works_for_login(
+        self, auth_client, user, api_client
+    ):
+        """End-to-end: user must be able to log in with new password."""
+        auth_client.post(
+            CHANGE_PASSWORD_URL,
+            {
+                "current_password": STRONG_PASSWORD,
+                "new_password": NEW_STRONG_PASSWORD,
+                "confirm_new_password": NEW_STRONG_PASSWORD,
+            },
+            format="json",
+        )
+        login_response = api_client.post(
+            LOGIN_URL,
+            {"email": user.email, "password": NEW_STRONG_PASSWORD},
+            format="json",
+        )
+        assert login_response.status_code == 200
+
+    # ── Auth State ────────────────────────────────────────────────────────────
+
+    def test_change_password_unauthenticated_returns_401(self, api_client):
+        """IsAuthenticated must block unauthenticated requests."""
+        response = api_client.post(
+            CHANGE_PASSWORD_URL,
+            {
+                "current_password": STRONG_PASSWORD,
+                "new_password": NEW_STRONG_PASSWORD,
+                "confirm_new_password": NEW_STRONG_PASSWORD,
+            },
+            format="json",
+        )
+        assert response.status_code == 401
+
+    # ── Current Password Validation ───────────────────────────────────────────
+
+    def test_change_password_wrong_current_password_returns_400(
+        self, auth_client
+    ):
+        """Incorrect current password must return 400."""
+        response = auth_client.post(
+            CHANGE_PASSWORD_URL,
+            {
+                "current_password": "WrongPassword!99",
+                "new_password": NEW_STRONG_PASSWORD,
+                "confirm_new_password": NEW_STRONG_PASSWORD,
+            },
+            format="json",
+        )
+        assert response.status_code == 400
+
+    def test_change_password_wrong_current_password_error_on_field(
+        self, auth_client
+    ):
+        """Incorrect current password error must be on current_password field."""
+        response = auth_client.post(
+            CHANGE_PASSWORD_URL,
+            {
+                "current_password": "WrongPassword!99",
+                "new_password": NEW_STRONG_PASSWORD,
+                "confirm_new_password": NEW_STRONG_PASSWORD,
+            },
+            format="json",
+        )
+        assert "current_password" in response.data["errors"]
+
+    # ── New Password Validation ───────────────────────────────────────────────
+
+    def test_change_password_mismatch_returns_400(self, auth_client):
+        """Mismatched new passwords must return error on confirm_new_password."""
+        response = auth_client.post(
+            CHANGE_PASSWORD_URL,
+            {
+                "current_password": STRONG_PASSWORD,
+                "new_password": NEW_STRONG_PASSWORD,
+                "confirm_new_password": "DifferentPass999!",
+            },
+            format="json",
+        )
+        assert response.status_code == 400
+        assert "confirm_new_password" in response.data["errors"]
+
+    def test_change_password_weak_new_password_returns_400(self, auth_client):
+        """Weak new password must be rejected."""
+        response = auth_client.post(
+            CHANGE_PASSWORD_URL,
+            {
+                "current_password": STRONG_PASSWORD,
+                "new_password": "123",
+                "confirm_new_password": "123",
+            },
+            format="json",
+        )
+        assert response.status_code == 400
+
+    # ── Missing Fields ────────────────────────────────────────────────────────
+
+    @pytest.mark.parametrize("missing_field", [
+        "current_password",
+        "new_password",
+        "confirm_new_password",
+    ])
+    def test_change_password_missing_field_returns_400(
+        self, auth_client, missing_field
+    ):
+        """Every required field must individually cause 400 when omitted."""
+        payload = {
+            "current_password": STRONG_PASSWORD,
+            "new_password": NEW_STRONG_PASSWORD,
+            "confirm_new_password": NEW_STRONG_PASSWORD,
+        }
+        payload.pop(missing_field)
+        response = auth_client.post(
+            CHANGE_PASSWORD_URL, payload, format="json"
+        )
+        assert response.status_code == 400
+        assert missing_field in response.data["errors"]
 '''
 # ─── Email Verification Tests ───────────────────────────────────────────────
 

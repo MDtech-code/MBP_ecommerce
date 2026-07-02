@@ -13,6 +13,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle
 from django.contrib.auth import get_user_model
+from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
 
 from apps.core.api.views import BaseAPIView
 from apps.core.permissions import IsNotAuthenticated, IsVerified
@@ -914,18 +915,75 @@ class TokenRefreshView(BaseAPIView):
 
 
 # ─── Password Reset Request ───────────────────────────────────────────────────
+# ─── Internal Helpers ─────────────────────────────────────────────────────────
+
+def _blacklist_all_tokens_for_user(user: User) -> None:
+    """
+    Blacklist all outstanding JWT refresh tokens for a given user.
+
+    Called after password reset and password change to invalidate
+    any existing sessions across all devices.
+
+    Args:
+        user: The ``User`` whose tokens should be blacklisted.
+
+    Note:
+        Requires ``rest_framework_simplejwt.token_blacklist`` in
+        ``INSTALLED_APPS``. This is already present in your project
+        (confirmed by token_blacklist migrations in test output).
+    """
+    outstanding_tokens = OutstandingToken.objects.filter(user=user)
+    for token in outstanding_tokens:
+        try:
+            refresh = RefreshToken(token.token)
+            refresh.blacklist()
+        except Exception:
+            # Individual token blacklist failure — log and continue.
+            # We want to blacklist as many as possible, not stop on first failure.
+            logger.warning(
+                "Failed to blacklist individual token during bulk invalidation",
+                extra={"user_id": user.id, "token_id": token.id},
+            )
+# ─── Password Reset Request ───────────────────────────────────────────────────
 
 class PasswordResetRequestView(BaseAPIView):
     """
     POST /api/accounts/password-reset/
-    Send password reset email.
+
+    Send a password reset email to the given address.
+
+    Security design:
+        Always returns the same 200 response regardless of whether
+        the email is registered or the account is active.
+        This prevents email enumeration attacks.
+
+    Flow:
+        1. Validate email format.
+        2. Look up active user — silently no-op if not found.
+        3. Create reset token (invalidates previous tokens).
+        4. Dispatch reset email async via Celery.
+        5. Always return success message.
+
+    Permissions:
+        AllowAny — unauthenticated users need this to recover access.
+
+    Success (200):
+        Always returned — see security note above.
     """
+
     permission_classes = [AllowAny]
-    serializer_class=PasswordResetRequestSerializer
-    def post(self, request):
+    serializer_class = PasswordResetRequestSerializer
+
+    def post(self, request: Request) -> Response:
+        log_context = {"request_id": request.id}
+
         serializer = self.serializer_class(data=request.data)
-          
+
         if not serializer.is_valid():
+            logger.warning(
+                "Password reset request failed — invalid data",
+                extra={**log_context, "errors": serializer.errors},
+            )
             return self.error_response(
                 message=_("Invalid request."),
                 errors=serializer.errors,
@@ -934,14 +992,36 @@ class PasswordResetRequestView(BaseAPIView):
 
         email = serializer.validated_data["email"]
 
-        # Always return success — prevent email enumeration
+        # ── User lookup ───────────────────────────────────────────────────────
         try:
             user = User.objects.get(email=email, is_active=True)
+        except User.DoesNotExist:
+            # Do not reveal that this email is not registered.
+            logger.debug(
+                "Password reset requested for unregistered or inactive email",
+                extra={**log_context},
+            )
+            return self.success_response(
+                message=_(
+                    "If this email is registered, "
+                    "a password reset link has been sent."
+                ),
+            )
+
+        # ── Token creation + email dispatch ──────────────────────────────────
+        try:
             token_obj = PasswordResetToken.create_for_user(user)
             send_password_reset_email_task.delay(user.id, str(token_obj.token))
-            logger.info("Password reset requested for: %s", email)
-        except User.DoesNotExist:
-            pass
+            logger.info(
+                "Password reset email dispatched",
+                extra={**log_context, "user_id": user.id},
+            )
+        except Exception:
+            # Log but still return success — do not reveal failure to client.
+            logger.exception(
+                "Failed to create reset token or dispatch email",
+                extra={**log_context, "user_id": user.id},
+            )
 
         return self.success_response(
             message=_(
@@ -956,14 +1036,49 @@ class PasswordResetRequestView(BaseAPIView):
 class PasswordResetConfirmView(BaseAPIView):
     """
     POST /api/accounts/password-reset/confirm/
-    Reset password using token from email.
+
+    Complete a password reset using the token from the reset email.
+
+    Operation order (critical for security):
+        1. Validate token format and fields.
+        2. Look up token — 400 if not found.
+        3. Check is_valid (not expired, not used) — 400 if invalid.
+        4. Mark token as used FIRST — prevents replay attacks even if
+           the subsequent password save fails.
+        5. Set and save new password.
+        6. Blacklist all outstanding JWT tokens — forces re-login
+           on all devices with stolen sessions.
+
+    Why mark_used before set_password:
+        If set_password fails after mark_used, the token is consumed
+        and the user must request a new reset — safe behaviour.
+        If mark_used ran after set_password and failed, the token
+        would remain valid for replay — dangerous behaviour.
+
+    Permissions:
+        AllowAny — token itself is the authentication mechanism.
+
+    Success (200):
+        Password updated. All existing sessions invalidated.
+
+    Errors:
+        400 — Invalid format, token not found, token expired or used.
+        500 — Unexpected DB failure (logged, sanitized).
     """
+
     permission_classes = [AllowAny]
-    serializer_class=PasswordResetConfirmSerializer
-    def post(self, request):
+    serializer_class = PasswordResetConfirmSerializer
+
+    def post(self, request: Request) -> Response:
+        log_context = {"request_id": request.id}
+
         serializer = self.serializer_class(data=request.data)
-          
+
         if not serializer.is_valid():
+            logger.warning(
+                "Password reset confirm failed — validation error",
+                extra={**log_context, "errors": serializer.errors},
+            )
             return self.error_response(
                 message=_("Password reset failed."),
                 errors=serializer.errors,
@@ -973,46 +1088,123 @@ class PasswordResetConfirmView(BaseAPIView):
         token_value = serializer.validated_data["token"]
         new_password = serializer.validated_data["password"]
 
+        # ── Token lookup ──────────────────────────────────────────────────────
         try:
             token_obj = PasswordResetToken.objects.select_related("user").get(
                 token=token_value
             )
         except PasswordResetToken.DoesNotExist:
+            logger.warning(
+                "Password reset confirm failed — token not found",
+                extra={**log_context, "token": str(token_value)},
+            )
             return self.error_response(
                 message=_("Invalid or expired reset token."),
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
+        # ── Validity check (expiry + used) ────────────────────────────────────
         if not token_obj.is_valid:
+            logger.warning(
+                "Password reset confirm failed — token expired or already used",
+                extra={**log_context, "user_id": token_obj.user.id},
+            )
             return self.error_response(
-                message=_("Reset token has expired or already been used."),
+                message=_("Reset token has expired or has already been used."),
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
         user = token_obj.user
-        user.set_password(new_password)
-        user.save(update_fields=["password"])
-        token_obj.mark_used()
 
-        logger.info("Password reset completed for: %s", user.email)
+        # ── Mark used FIRST, then change password ─────────────────────────────
+        # Order is critical — see class docstring for explanation.
+        try:
+            token_obj.mark_used()
+            user.set_password(new_password)
+            user.save(update_fields=["password"])
+        except Exception:
+            logger.exception(
+                "Unexpected error during password reset save",
+                extra={**log_context, "user_id": user.id},
+            )
+            return self.error_response(
+                message=_("An unexpected error occurred. Please try again later."),
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        logger.info(
+            "Password reset completed successfully",
+            extra={**log_context, "user_id": user.id},
+        )
+
+        # ── Blacklist all outstanding JWT tokens ──────────────────────────────
+        # Forces re-login on all devices — invalidates any stolen sessions.
+        # Non-fatal — password is already changed if this fails.
+        try:
+            _blacklist_all_tokens_for_user(user)
+            logger.info(
+                "All JWT tokens blacklisted after password reset",
+                extra={**log_context, "user_id": user.id},
+            )
+        except Exception:
+            logger.exception(
+                "Failed to blacklist JWT tokens after password reset — "
+                "password was changed but existing sessions may remain active.",
+                extra={**log_context, "user_id": user.id},
+            )
 
         return self.success_response(
             message=_("Password reset successfully. You can now log in."),
         )
+
 
 # ─── Change Password ──────────────────────────────────────────────────────────
 
 class ChangePasswordView(BaseAPIView):
     """
     POST /api/accounts/change-password/
-    Change password for authenticated user.
+
+    Allow an authenticated user to change their own password.
+
+    Flow:
+        1. Validate new password fields.
+        2. Verify current password against stored hash.
+        3. Set and save new password.
+        4. Blacklist all outstanding JWT tokens — forces re-login
+           on all other devices with potentially stolen sessions.
+
+    Why blacklist tokens after change:
+        If an attacker had a valid refresh token (e.g. from a stolen
+        session), changing the password should invalidate it.
+        Without this, the attacker retains access until token expiry.
+
+    Permissions:
+        IsAuthenticated — must be logged in to change password.
+
+    Success (200):
+        Password updated. All existing sessions invalidated.
+
+    Errors:
+        400 — Validation failure, incorrect current password.
+        500 — Unexpected DB failure (logged, sanitized).
     """
+
     permission_classes = [IsAuthenticated]
-    serializer_class=ChangePasswordSerializer
-    def post(self, request):
+    serializer_class = ChangePasswordSerializer
+
+    def post(self, request: Request) -> Response:
+        log_context = {
+            "request_id": request.id,
+            "user_id": request.user.id,
+        }
+
         serializer = self.serializer_class(data=request.data)
-              
+
         if not serializer.is_valid():
+            logger.warning(
+                "Password change failed — validation error",
+                extra={**log_context, "errors": serializer.errors},
+            )
             return self.error_response(
                 message=_("Password change failed."),
                 errors=serializer.errors,
@@ -1023,21 +1215,182 @@ class ChangePasswordView(BaseAPIView):
         current_password = serializer.validated_data["current_password"]
         new_password = serializer.validated_data["new_password"]
 
+        # ── Verify current password ───────────────────────────────────────────
         if not user.check_password(current_password):
+            logger.warning(
+                "Password change failed — incorrect current password",
+                extra=log_context,
+            )
             return self.error_response(
                 message=_("Current password is incorrect."),
                 errors={"current_password": _("Incorrect password.")},
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
-        user.set_password(new_password)
-        user.save(update_fields=["password"])
+        # ── Save new password ─────────────────────────────────────────────────
+        try:
+            user.set_password(new_password)
+            user.save(update_fields=["password"])
+        except Exception:
+            logger.exception(
+                "Unexpected error during password change save",
+                extra=log_context,
+            )
+            return self.error_response(
+                message=_("An unexpected error occurred. Please try again later."),
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
-        logger.info("Password changed for user: %s", user.email)
+        logger.info(
+            "Password changed successfully",
+            extra=log_context,
+        )
+
+        # ── Blacklist all outstanding JWT tokens ──────────────────────────────
+        # Forces re-login on all devices — invalidates stolen sessions.
+        # Non-fatal — password is already changed if this fails.
+        try:
+            _blacklist_all_tokens_for_user(user)
+            logger.info(
+                "All JWT tokens blacklisted after password change",
+                extra=log_context,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to blacklist JWT tokens after password change — "
+                "password was changed but existing sessions may remain active.",
+                extra=log_context,
+            )
 
         return self.success_response(
             message=_("Password changed successfully. Please log in again."),
         )
+
+
+
+# class PasswordResetRequestView(BaseAPIView):
+#     """
+#     POST /api/accounts/password-reset/
+#     Send password reset email.
+#     """
+#     permission_classes = [AllowAny]
+#     serializer_class=PasswordResetRequestSerializer
+#     def post(self, request):
+#         serializer = self.serializer_class(data=request.data)
+          
+#         if not serializer.is_valid():
+#             return self.error_response(
+#                 message=_("Invalid request."),
+#                 errors=serializer.errors,
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#             )
+
+#         email = serializer.validated_data["email"]
+
+#         # Always return success — prevent email enumeration
+#         try:
+#             user = User.objects.get(email=email, is_active=True)
+#             token_obj = PasswordResetToken.create_for_user(user)
+#             send_password_reset_email_task.delay(user.id, str(token_obj.token))
+#             logger.info("Password reset requested for: %s", email)
+#         except User.DoesNotExist:
+#             pass
+
+#         return self.success_response(
+#             message=_(
+#                 "If this email is registered, "
+#                 "a password reset link has been sent."
+#             ),
+#         )
+
+
+# # ─── Password Reset Confirm ───────────────────────────────────────────────────
+
+# class PasswordResetConfirmView(BaseAPIView):
+#     """
+#     POST /api/accounts/password-reset/confirm/
+#     Reset password using token from email.
+#     """
+#     permission_classes = [AllowAny]
+#     serializer_class=PasswordResetConfirmSerializer
+#     def post(self, request):
+#         serializer = self.serializer_class(data=request.data)
+          
+#         if not serializer.is_valid():
+#             return self.error_response(
+#                 message=_("Password reset failed."),
+#                 errors=serializer.errors,
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#             )
+
+#         token_value = serializer.validated_data["token"]
+#         new_password = serializer.validated_data["password"]
+
+#         try:
+#             token_obj = PasswordResetToken.objects.select_related("user").get(
+#                 token=token_value
+#             )
+#         except PasswordResetToken.DoesNotExist:
+#             return self.error_response(
+#                 message=_("Invalid or expired reset token."),
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#             )
+
+#         if not token_obj.is_valid:
+#             return self.error_response(
+#                 message=_("Reset token has expired or already been used."),
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#             )
+
+#         user = token_obj.user
+#         user.set_password(new_password)
+#         user.save(update_fields=["password"])
+#         token_obj.mark_used()
+
+#         logger.info("Password reset completed for: %s", user.email)
+
+#         return self.success_response(
+#             message=_("Password reset successfully. You can now log in."),
+#         )
+
+# # ─── Change Password ──────────────────────────────────────────────────────────
+
+# class ChangePasswordView(BaseAPIView):
+#     """
+#     POST /api/accounts/change-password/
+#     Change password for authenticated user.
+#     """
+#     permission_classes = [IsAuthenticated]
+#     serializer_class=ChangePasswordSerializer
+#     def post(self, request):
+#         serializer = self.serializer_class(data=request.data)
+              
+#         if not serializer.is_valid():
+#             return self.error_response(
+#                 message=_("Password change failed."),
+#                 errors=serializer.errors,
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#             )
+
+#         user = request.user
+#         current_password = serializer.validated_data["current_password"]
+#         new_password = serializer.validated_data["new_password"]
+
+#         if not user.check_password(current_password):
+#             return self.error_response(
+#                 message=_("Current password is incorrect."),
+#                 errors={"current_password": _("Incorrect password.")},
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#             )
+
+#         user.set_password(new_password)
+#         user.save(update_fields=["password"])
+
+#         logger.info("Password changed for user: %s", user.email)
+
+#         return self.success_response(
+#             message=_("Password changed successfully. Please log in again."),
+#         )
 
 # ─── Profile ──────────────────────────────────────────────────────────────────
 
