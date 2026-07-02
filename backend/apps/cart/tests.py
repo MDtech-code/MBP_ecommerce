@@ -2,15 +2,12 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from unittest.mock import patch
 
 import pytest
-from django.urls import reverse
-from rest_framework import status
 from rest_framework.test import APIClient
 
 from apps.accounts.models import User
-from apps.products.models import Product
+from apps.products.models import Product,Category
 from .models import Cart, CartItem
 
 # ─── Constants ────────────────────────────────────────────────────────────────
@@ -86,15 +83,20 @@ def another_cart(another_user: User) -> Cart:
 
 
 @pytest.fixture
-def product(db) -> Product:
-    """
-    Available product with stock for cart testing.
-
-    Adjust field names to match your actual Product model.
-    """
+def category(db) -> Category:
+    """Category required for product creation (non-null FK)."""
+    return Category.objects.create(
+        name="Brake Parts",
+        slug="brake-parts",
+    )
+@pytest.fixture
+def product(db, category: Category) -> Product:
+    """Available product with stock=10 for cart testing."""
     return Product.objects.create(
         name="Test Brake Pad",
         slug="test-brake-pad",
+        sku="BRK-TEST-001",
+        category=category,
         price=Decimal("500.00"),
         stock=10,
         status=Product.Status.AVAILABLE,
@@ -102,11 +104,13 @@ def product(db) -> Product:
 
 
 @pytest.fixture
-def out_of_stock_product(db) -> Product:
+def out_of_stock_product(db, category: Category) -> Product:
     """Product with zero stock — used for stock validation tests."""
     return Product.objects.create(
         name="Out Of Stock Part",
         slug="out-of-stock-part",
+        sku="OOS-TEST-001",
+        category=category,
         price=Decimal("200.00"),
         stock=0,
         status=Product.Status.AVAILABLE,
@@ -114,20 +118,22 @@ def out_of_stock_product(db) -> Product:
 
 
 @pytest.fixture
-def unavailable_product(db) -> Product:
-    """Product with UNAVAILABLE status — cannot be added to cart."""
+def unavailable_product(db, category: Category) -> Product:
+    """Product with non-available status — cannot be added to cart."""
     return Product.objects.create(
         name="Unavailable Part",
         slug="unavailable-part",
+        sku="UNA-TEST-001",
+        category=category,
         price=Decimal("300.00"),
         stock=5,
-        status=Product.Status.UNAVAILABLE,
+        status=Product.Status.DISCONTINUED,
     )
 
 
 @pytest.fixture
 def cart_item(cart: Cart, product: Product) -> CartItem:
-    """A CartItem already in the user's cart."""
+    """A CartItem already in the user's cart with quantity=2."""
     return CartItem.objects.create(
         cart=cart,
         product=product,
@@ -146,6 +152,7 @@ class TestCartSignal:
         - Cart created automatically on user creation
         - Cart is empty on creation
         - Second save does not create duplicate cart
+        - Each user gets their own cart
     """
 
     def test_cart_created_on_user_creation(self, user: User):
@@ -186,7 +193,7 @@ class TestCartModel:
 
     Coverage:
         - total_items sums quantities correctly
-        - total_price computes correctly
+        - total_price computes correctly as Decimal
         - is_empty reflects item state
         - subtotal is Decimal not float
         - CartItem clean() blocks quantity > stock
@@ -244,12 +251,14 @@ class TestCartModel:
 
     def test_cartitem_unique_together(self, cart: Cart, product: Product):
         """Same product cannot appear twice in the same cart."""
-        from django.db import IntegrityError
+        from django.core.exceptions import ValidationError
+
         CartItem.objects.create(cart=cart, product=product, quantity=1)
-        with pytest.raises(IntegrityError):
-            CartItem.objects.create(cart=cart, product=product, quantity=1)
 
-
+        with pytest.raises(ValidationError):
+         CartItem.objects.create(cart=cart, product=product, quantity=1)
+ 
+ 
 # ─── Cart Detail Tests ────────────────────────────────────────────────────────
 
 @pytest.mark.django_db
@@ -313,7 +322,7 @@ class TestAddToCart:
     Tests for POST /api/cart/items/
 
     Coverage:
-        - Happy path (item added, cart returned)
+        - Happy path (item added, 201 returned)
         - Response shape conformance
         - Adding same product increases quantity (upsert)
         - Quantity defaults to 1 if not provided
@@ -321,9 +330,12 @@ class TestAddToCart:
         - Unavailable product returns 400
         - Quantity exceeds stock returns 400 on correct field
         - Upsert exceeding stock returns 400
-        - Unauthenticated request blocked
+        - Zero quantity returns 400 (min_value=1 for add)
         - Missing product_id returns 400
+        - Unauthenticated request blocked
     """
+
+    # ── Happy Path ────────────────────────────────────────────────────────────
 
     def test_add_to_cart_returns_201(
         self, auth_client: APIClient, product: Product
@@ -461,7 +473,11 @@ class TestAddToCart:
     def test_add_zero_quantity_returns_400(
         self, auth_client: APIClient, product: Product
     ):
-        """Quantity=0 must return 400 — min_value=1 enforced."""
+        """
+        Quantity=0 on ADD must return 400.
+        min_value=1 enforced on AddToCartSerializer.
+        Note: quantity=0 on UPDATE auto-deletes (different behaviour).
+        """
         response = auth_client.post(
             CART_ITEMS_URL,
             {"product_id": product.id, "quantity": 0},
@@ -485,7 +501,7 @@ class TestAddToCart:
     ):
         """
         If existing quantity + new quantity > stock, must return 400.
-        product stock = 10. existing = 8. adding 5 = 13 > 10.
+        product stock=10. existing=8. adding 5 = 13 > 10.
         """
         CartItem.objects.create(cart=cart, product=product, quantity=8)
         response = auth_client.post(
@@ -514,16 +530,28 @@ class TestUpdateCartItem:
     """
     Tests for PATCH /api/cart/items/<item_id>/
 
+    Behaviour summary:
+        quantity > 0  → set absolute quantity (replaces current value)
+        quantity = 0  → auto-delete the item (frontend − button on qty=1)
+        quantity < 0  → 400 (invalid)
+        quantity > stock → 400 (stock exceeded)
+
     Coverage:
         - Happy path (quantity updated, cart returned)
         - Response shape conformance
         - PUT also accepted (alias)
+        - Quantity set is absolute not delta
+        - quantity=0 auto-deletes item and returns 200
+        - quantity=0 returns empty cart
+        - Negative quantity returns 400
         - Quantity exceeds stock returns 400
-        - Zero quantity returns 400
+        - Missing quantity returns 400
         - Item not found returns 404
-        - User cannot update another user's cart item (ownership)
+        - Ownership isolation (user B cannot update user A's item)
         - Unauthenticated request blocked
     """
+
+    # ── Happy Path ────────────────────────────────────────────────────────────
 
     def test_update_item_returns_200(
         self, auth_client: APIClient, cart_item: CartItem
@@ -564,10 +592,26 @@ class TestUpdateCartItem:
         cart_item.refresh_from_db()
         assert cart_item.quantity == 5
 
+    def test_update_item_sets_absolute_not_delta(
+        self, auth_client: APIClient, cart_item: CartItem
+    ):
+        """
+        PATCH sets absolute quantity — not a delta increment.
+        cart_item starts at quantity=2. Sending 4 sets it to 4, not 6.
+        Frontend calculates the desired final value before sending.
+        """
+        auth_client.patch(
+            cart_item_url(cart_item.id),
+            {"quantity": 4},
+            format="json",
+        )
+        cart_item.refresh_from_db()
+        assert cart_item.quantity == 4  # absolute set, not 2+4=6
+
     def test_update_item_response_reflects_new_quantity(
         self, auth_client: APIClient, cart_item: CartItem
     ):
-        """Response cart data must reflect updated quantity."""
+        """Response cart data must contain the updated quantity."""
         response = auth_client.patch(
             cart_item_url(cart_item.id),
             {"quantity": 4},
@@ -588,27 +632,67 @@ class TestUpdateCartItem:
         )
         assert response.status_code == 200
 
-    # ── Validation Failures ───────────────────────────────────────────────────
+    # ── quantity=0 Auto-Delete ────────────────────────────────────────────────
 
-    def test_update_item_exceeds_stock_returns_400(
+    def test_update_item_zero_quantity_auto_deletes_item(
         self, auth_client: APIClient, cart_item: CartItem
     ):
-        """quantity > stock must return 400 on quantity field."""
+        """
+        quantity=0 must auto-delete the item and return 200.
+
+        This supports the frontend − button on quantity=1 use case.
+        Rather than returning a 400 error, the item is cleanly removed.
+        """
+        item_id = cart_item.id
+        response = auth_client.patch(
+            cart_item_url(item_id),
+            {"quantity": 0},
+            format="json",
+        )
+        assert response.status_code == 200
+        assert response.data["success"] is True
+        assert not CartItem.objects.filter(id=item_id).exists()
+
+    def test_update_item_zero_quantity_returns_empty_cart(
+        self, auth_client: APIClient, cart_item: CartItem
+    ):
+        """
+        After quantity=0 auto-delete, response must show empty cart.
+        cart_item is the only item — cart becomes empty after delete.
+        """
         response = auth_client.patch(
             cart_item_url(cart_item.id),
-            {"quantity": 999},
+            {"quantity": 0},
+            format="json",
+        )
+        assert response.data["data"]["is_empty"] is True
+        assert response.data["data"]["total_items"] == 0
+        assert response.data["data"]["items"] == []
+
+    # ── Validation Failures ───────────────────────────────────────────────────
+
+    def test_update_item_negative_quantity_returns_400(
+        self, auth_client: APIClient, cart_item: CartItem
+    ):
+        """
+        Negative quantity must return 400.
+        min_value=0 is enforced — only 0 is valid as special auto-delete.
+        """
+        response = auth_client.patch(
+            cart_item_url(cart_item.id),
+            {"quantity": -1},
             format="json",
         )
         assert response.status_code == 400
         assert "quantity" in response.data["errors"]
 
-    def test_update_item_zero_quantity_returns_400(
+    def test_update_item_exceeds_stock_returns_400(
         self, auth_client: APIClient, cart_item: CartItem
     ):
-        """quantity=0 must return 400 — min_value=1."""
+        """quantity > stock (10) must return 400 on quantity field."""
         response = auth_client.patch(
             cart_item_url(cart_item.id),
-            {"quantity": 0},
+            {"quantity": 999},
             format="json",
         )
         assert response.status_code == 400
@@ -646,7 +730,7 @@ class TestUpdateCartItem:
     ):
         """
         User B must not be able to update User A's cart item.
-        Ownership enforced via cart__user=request.user filter.
+        Returns 404 — not 403 — to avoid exposing item existence.
         """
         response = another_auth_client.patch(
             cart_item_url(cart_item.id),
@@ -679,7 +763,7 @@ class TestRemoveCartItem:
         - Item removed from DB
         - Cart totals updated after removal
         - Item not found returns 404
-        - User cannot remove another user's cart item
+        - Ownership isolation (user B cannot remove user A's item)
         - Unauthenticated request blocked
     """
 
@@ -743,7 +827,7 @@ class TestRemoveCartItem:
     ):
         """
         User B must not be able to delete User A's cart item.
-        Must return 404 — not 403 — to avoid exposing item existence.
+        Returns 404 — not 403 — to avoid exposing item existence.
         """
         response = another_auth_client.delete(
             cart_item_url(cart_item.id),
@@ -774,8 +858,8 @@ class TestClearCart:
         - Response shape conformance
         - All items deleted from DB
         - Clearing already-empty cart returns 200 (idempotent)
-        - Unauthenticated request blocked
         - Does not affect other users' carts
+        - Unauthenticated request blocked
     """
 
     def test_clear_cart_returns_200(
