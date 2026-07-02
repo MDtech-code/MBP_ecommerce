@@ -227,9 +227,30 @@ class RegisterSerializer(serializers.Serializer):
 
 
 # ─── Login Serializer ─────────────────────────────────────────────────────────
+# apps/accounts/serializers.py  (Login section — add after RegisterSerializer)
 
 class LoginSerializer(serializers.Serializer):
-    """Validates login credentials."""
+    """
+    Validate login credentials and return authenticated user.
+
+    Checks (in order):
+        1. Email + password match a real user (via Django authenticate).
+        2. Account is active (not deactivated by admin).
+        3. Email is verified (user completed registration flow).
+
+    On success, attaches the ``User`` instance to ``attrs["user"]``
+    for the view to consume.
+
+    Error codes exposed to client:
+        - ``invalid_credentials``: email/password mismatch.
+        - ``account_inactive``:    account deactivated by admin.
+        - ``email_not_verified``:  registration email not confirmed yet.
+
+    Note:
+        Invalid credentials message is intentionally vague — we never
+        confirm whether an email address exists in the system.
+        This prevents user enumeration attacks.
+    """
 
     email = serializers.EmailField(
         error_messages={"blank": _("Email address is required.")}
@@ -249,26 +270,85 @@ class LoginSerializer(serializers.Serializer):
             password=password,
         )
 
+        # ── Credential check ──────────────────────────────────────────────────
+        # Deliberately vague — do not confirm whether email exists.
+        # Prevents user enumeration attacks.
         if not user:
             raise serializers.ValidationError(
-                {"error": _("Invalid email or password.")},
+                {"non_field_errors": _("Invalid email or password.")},
                 code="invalid_credentials",
             )
 
+        # ── Account active check ──────────────────────────────────────────────
         if not user.is_active:
             raise serializers.ValidationError(
-                {"error": _("Your account has been deactivated. Contact support.")},
+                {"non_field_errors": _(
+                    "Your account has been deactivated. Please contact support."
+                )},
                 code="account_inactive",
+            )
+
+        # ── Email verified check ──────────────────────────────────────────────
+        # Distinct code so frontend can offer "resend verification" option.
+        if not user.is_verified:
+            raise serializers.ValidationError(
+                {"non_field_errors": _(
+                    "Please verify your email address before logging in."
+                )},
+                code="email_not_verified",
             )
 
         attrs["user"] = user
         return attrs
+# class LoginSerializer(serializers.Serializer):
+#     """Validates login credentials."""
+
+#     email = serializers.EmailField(
+#         error_messages={"blank": _("Email address is required.")}
+#     )
+#     password = serializers.CharField(
+#         write_only=True,
+#         error_messages={"blank": _("Password is required.")}
+#     )
+
+#     def validate(self, attrs: dict) -> dict:
+#         email = attrs["email"].lower().strip()
+#         password = attrs["password"]
+
+#         user = authenticate(
+#             request=self.context.get("request"),
+#             username=email,
+#             password=password,
+#         )
+
+#         if not user:
+#             raise serializers.ValidationError(
+#                 {"error": _("Invalid email or password.")},
+#                 code="invalid_credentials",
+#             )
+
+#         if not user.is_active:
+#             raise serializers.ValidationError(
+#                 {"error": _("Your account has been deactivated. Contact support.")},
+#                 code="account_inactive",
+#             )
+
+#         attrs["user"] = user
+#         return attrs
 
 
 # ─── Email Verification Serializer ───────────────────────────────────────────
 
 class EmailVerificationSerializer(serializers.Serializer):
-    """Accepts email verification token."""
+    """
+    Accept and validate an email verification token.
+
+    The token is a UUID submitted by the user after clicking
+    the verification link sent to their email address.
+
+    Fields:
+        token: UUID string from the verification email link.
+    """
 
     token = serializers.UUIDField(
         error_messages={
@@ -277,18 +357,28 @@ class EmailVerificationSerializer(serializers.Serializer):
         }
     )
 
-
 # ─── Resend Verification Serializer ──────────────────────────────────────────
 
 class ResendVerificationSerializer(serializers.Serializer):
-    """Accepts email to resend verification."""
+    """
+    Accept an email address for verification resend requests.
+
+    Intentionally minimal — we normalize the email and return it.
+    Existence and verification state checks happen in the view,
+    not here, to prevent serializer-level email enumeration.
+
+    Fields:
+        email: Email address to resend verification to.
+    """
 
     email = serializers.EmailField(
         error_messages={"blank": _("Email address is required.")}
     )
 
     def validate_email(self, value: str) -> str:
+        """Normalize email to lowercase and strip whitespace."""
         return value.lower().strip()
+
 
 
 # ─── Password Reset Request Serializer ───────────────────────────────────────

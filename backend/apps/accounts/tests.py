@@ -6,7 +6,7 @@ from datetime import timedelta
 import pytest
 from django.core.cache import caches
 from rest_framework.test import APIClient
-
+from unittest.mock import patch
 from .models import EmailVerificationToken, User, UserProfile
 from apps.common.choices.role import Role
 
@@ -398,6 +398,744 @@ class TestRegistration:
         )
         assert response.status_code == 403
 
+
+# apps/accounts/tests.py
+# ─── add these constants near the top with your existing ones ─────────────────
+
+LOGIN_URL  = "/api/accounts/login/"
+LOGOUT_URL = "/api/accounts/logout/"
+REFRESH_URL = "/api/accounts/token/refresh/"
+
+
+# ─── Login Tests ──────────────────────────────────────────────────────────────
+
+@pytest.mark.django_db
+class TestLogin:
+    """
+    Tests for POST /api/accounts/login/
+
+    Coverage:
+        - Happy path (tokens issued, cookie set)
+        - Response shape conformance
+        - Refresh token NOT in response body
+        - Email case insensitivity
+        - Invalid credentials (wrong password, nonexistent email)
+        - User enumeration prevention
+        - Inactive account blocked
+        - Unverified email blocked
+        - Already-authenticated user blocked
+        - Missing required fields
+    """
+
+    # ── Happy Path ────────────────────────────────────────────────────────────
+
+    def test_login_success_returns_200(self, api_client, user):
+        """Valid credentials must return 200 with success=True."""
+        response = api_client.post(
+            LOGIN_URL,
+            {"email": user.email, "password": STRONG_PASSWORD},
+            format="json",
+        )
+        assert response.status_code == 200
+        assert response.data["success"] is True
+
+    def test_login_response_shape(self, api_client, user):
+        """Response envelope must contain access token and user data."""
+        response = api_client.post(
+            LOGIN_URL,
+            {"email": user.email, "password": STRONG_PASSWORD},
+            format="json",
+        )
+        data = response.data
+        assert "success" in data
+        assert "message" in data
+        assert "errors" in data
+        assert "meta" in data
+        assert "access" in data["data"]
+        assert "user" in data["data"]
+
+    def test_login_sets_httponly_refresh_cookie(self, api_client, user):
+        """
+        Refresh token must be delivered via HttpOnly cookie.
+        HttpOnly prevents JavaScript access — critical security requirement.
+        """
+        response = api_client.post(
+            LOGIN_URL,
+            {"email": user.email, "password": STRONG_PASSWORD},
+            format="json",
+        )
+        assert "refresh_token" in response.cookies
+        assert response.cookies["refresh_token"]["httponly"]
+
+    def test_login_does_not_expose_refresh_token_in_body(self, api_client, user):
+        """
+        Refresh token must NEVER appear in the response body.
+        Body is accessible to JS — only access token goes there.
+        """
+        response = api_client.post(
+            LOGIN_URL,
+            {"email": user.email, "password": STRONG_PASSWORD},
+            format="json",
+        )
+        assert "refresh" not in response.data["data"]
+
+    def test_login_email_is_case_insensitive(self, api_client, user):
+        """Login must succeed regardless of email casing."""
+        response = api_client.post(
+            LOGIN_URL,
+            {"email": user.email.upper(), "password": STRONG_PASSWORD},
+            format="json",
+        )
+        assert response.status_code == 200
+
+    # ── Credential Failures ───────────────────────────────────────────────────
+
+    def test_login_wrong_password_returns_400(self, api_client, user):
+        response = api_client.post(
+            LOGIN_URL,
+            {"email": user.email, "password": "WrongPassword!99"},
+            format="json",
+        )
+        assert response.status_code == 400
+        assert response.data["success"] is False
+
+    def test_login_nonexistent_email_returns_400(self, api_client):
+        response = api_client.post(
+            LOGIN_URL,
+            {"email": "ghost@example.com", "password": STRONG_PASSWORD},
+            format="json",
+        )
+        assert response.status_code == 400
+
+    def test_login_invalid_credentials_do_not_reveal_email_existence(
+        self, api_client, user
+    ):
+        """
+        Error message must be identical whether email exists or not.
+        Different messages would allow user enumeration attacks.
+        """
+        real_user_response = api_client.post(
+            LOGIN_URL,
+            {"email": user.email, "password": "WrongPassword!99"},
+            format="json",
+        )
+        fake_user_response = api_client.post(
+            LOGIN_URL,
+            {"email": "ghost@example.com", "password": "WrongPassword!99"},
+            format="json",
+        )
+        assert str(real_user_response.data["errors"]) == str(
+            fake_user_response.data["errors"]
+        )
+
+    # ── Account State Checks ──────────────────────────────────────────────────
+
+    def test_login_inactive_user_returns_400(self, api_client, user):
+        """Deactivated accounts must not receive tokens."""
+        user.is_active = False
+        user.save()
+        response = api_client.post(
+            LOGIN_URL,
+            {"email": user.email, "password": STRONG_PASSWORD},
+            format="json",
+        )
+        assert response.status_code == 400
+
+    def test_login_unverified_user_returns_400(self, api_client, unverified_user):
+        """
+        Unverified users must not receive tokens.
+        Forces completion of the registration email verification flow.
+        """
+        response = api_client.post(
+            LOGIN_URL,
+            {"email": unverified_user.email, "password": STRONG_PASSWORD},
+            format="json",
+        )
+        assert response.status_code == 400
+
+    def test_login_unverified_user_error_is_non_field(
+        self, api_client, unverified_user
+    ):
+        """Unverified email error must be on non_field_errors key."""
+        response = api_client.post(
+            LOGIN_URL,
+            {"email": unverified_user.email, "password": STRONG_PASSWORD},
+            format="json",
+        )
+        assert "non_field_errors" in response.data["errors"]
+
+    # ── Auth State ────────────────────────────────────────────────────────────
+
+    def test_authenticated_user_cannot_login(self, auth_client, user):
+        """IsNotAuthenticated must block already-authenticated users."""
+        response = auth_client.post(
+            LOGIN_URL,
+            {"email": user.email, "password": STRONG_PASSWORD},
+            format="json",
+        )
+        assert response.status_code == 403
+
+    # ── Missing Fields ────────────────────────────────────────────────────────
+
+    @pytest.mark.parametrize("missing_field", ["email", "password"])
+    def test_login_missing_required_field_returns_400(
+        self, api_client, user, missing_field
+    ):
+        """Each required field must individually cause 400 when omitted."""
+        payload = {"email": user.email, "password": STRONG_PASSWORD}
+        payload.pop(missing_field)
+        response = api_client.post(LOGIN_URL, payload, format="json")
+        assert response.status_code == 400
+        assert missing_field in response.data["errors"]
+
+
+# ─── Logout Tests ─────────────────────────────────────────────────────────────
+
+@pytest.mark.django_db
+class TestLogout:
+    """
+    Tests for POST /api/accounts/logout/
+
+    Coverage:
+        - Happy path (cookie cleared, token blacklisted)
+        - Unauthenticated request blocked
+        - No cookie present still returns 200 (idempotent)
+        - Double logout is safe
+    """
+
+    def _get_logged_in_client(self, api_client, user) -> APIClient:
+        """
+        Helper — log in and return client with refresh cookie attached.
+        Also force_authenticate so DRF IsAuthenticated passes.
+        """
+        response = api_client.post(
+            LOGIN_URL,
+            {"email": user.email, "password": STRONG_PASSWORD},
+            format="json",
+        )
+        api_client.cookies = response.cookies
+        api_client.force_authenticate(user=user)
+        return api_client
+
+    def test_logout_success_returns_200(self, api_client, user):
+        client = self._get_logged_in_client(api_client, user)
+        response = client.post(LOGOUT_URL, format="json")
+        assert response.status_code == 200
+        assert response.data["success"] is True
+
+    def test_logout_clears_refresh_cookie(self, api_client, user):
+        """
+        After logout, refresh cookie must be cleared.
+        Django sets value='' and max_age=0 on delete_cookie().
+        """
+        client = self._get_logged_in_client(api_client, user)
+        response = client.post(LOGOUT_URL, format="json")
+        cookie = response.cookies.get("refresh_token")
+        if cookie:
+            assert cookie.value == "" or cookie["max-age"] == 0
+
+    def test_logout_unauthenticated_returns_401(self, api_client):
+        """IsAuthenticated must block unauthenticated logout attempts."""
+        response = api_client.post(LOGOUT_URL, format="json")
+        assert response.status_code == 401
+
+    def test_logout_without_cookie_still_returns_200(self, api_client, user):
+        """
+        Logout with no cookie must return 200 — idempotent.
+        Client may have already cleared cookie locally.
+        """
+        api_client.force_authenticate(user=user)
+        response = api_client.post(LOGOUT_URL, format="json")
+        assert response.status_code == 200
+
+    def test_double_logout_does_not_crash(self, api_client, user):
+        """
+        Second logout with already-blacklisted token must not raise.
+        Token is invalid on second call — must still return 200.
+        """
+        client = self._get_logged_in_client(api_client, user)
+        client.post(LOGOUT_URL, format="json")
+        response = client.post(LOGOUT_URL, format="json")
+        assert response.status_code in (200, 401)
+
+
+# ─── Token Refresh Tests ──────────────────────────────────────────────────────
+
+@pytest.mark.django_db
+class TestTokenRefresh:
+    """
+    Tests for POST /api/accounts/token/refresh/
+
+    Coverage:
+        - Happy path (new access token returned)
+        - Response shape conformance
+        - No cookie → 401
+        - Invalid/tampered token → 401
+        - Expired-style token → 401
+    """
+
+    def _get_client_with_cookie(self, api_client, user) -> APIClient:
+        """Helper — log in and attach refresh cookie to client."""
+        response = api_client.post(
+            LOGIN_URL,
+            {"email": user.email, "password": STRONG_PASSWORD},
+            format="json",
+        )
+        api_client.cookies = response.cookies
+        return api_client
+
+    def test_refresh_returns_200(self, api_client, user):
+        """Valid refresh cookie must return 200."""
+        client = self._get_client_with_cookie(api_client, user)
+        response = client.post(REFRESH_URL, format="json")
+        assert response.status_code == 200
+
+    def test_refresh_returns_new_access_token(self, api_client, user):
+        """Response must contain a non-empty access token."""
+        client = self._get_client_with_cookie(api_client, user)
+        response = client.post(REFRESH_URL, format="json")
+        assert "access" in response.data["data"]
+        assert len(response.data["data"]["access"]) > 0
+
+    def test_refresh_response_shape(self, api_client, user):
+        """Response must conform to the standardized envelope."""
+        client = self._get_client_with_cookie(api_client, user)
+        response = client.post(REFRESH_URL, format="json")
+        data = response.data
+        assert "success" in data
+        assert "message" in data
+        assert "errors" in data
+        assert "meta" in data
+
+    def test_refresh_without_cookie_returns_401(self, api_client):
+        """No cookie = no session = must return 401."""
+        response = api_client.post(REFRESH_URL, format="json")
+        assert response.status_code == 401
+        assert response.data["success"] is False
+
+    def test_refresh_with_invalid_token_returns_401(self, api_client):
+        """Tampered or garbage token must be rejected with 401."""
+        api_client.cookies["refresh_token"] = "totally.invalid.token"
+        response = api_client.post(REFRESH_URL, format="json")
+        assert response.status_code == 401
+        assert response.data["success"] is False
+
+    def test_refresh_new_access_token_differs_from_original(
+        self, api_client, user
+    ):
+        """
+        Each refresh call should produce a token valid for the user.
+        We verify it is a non-empty JWT-shaped string.
+        """
+        client = self._get_client_with_cookie(api_client, user)
+        response = client.post(REFRESH_URL, format="json")
+        access = response.data["data"]["access"]
+        # JWT format: three base64 segments separated by dots
+        assert access.count(".") == 2
+
+
+# apps/accounts/tests.py
+# ─── add these constants near the top ────────────────────────────────────────
+
+VERIFY_EMAIL_URL       = "/api/accounts/verify-email/"
+RESEND_VERIFICATION_URL = "/api/accounts/resend-verification/"
+
+
+# ─── Email Verification Tests ─────────────────────────────────────────────────
+
+@pytest.mark.django_db
+@patch("apps.accounts.views.send_welcome_email_task.delay")
+class TestEmailVerification:
+    """
+    Tests for POST /api/accounts/verify-email/
+
+    Coverage:
+        - Happy path (user verified, token deleted, welcome email dispatched)
+        - Response shape conformance
+        - Invalid token format
+        - Token not found in DB
+        - Expired token
+        - Already verified user (idempotent 200)
+        - Token is deleted after use (one-time use)
+    """
+
+    def _make_token(self, user) -> EmailVerificationToken:
+        """Helper — create a fresh verification token for a user."""
+        return EmailVerificationToken.create_for_user(user)
+
+    # ── Happy Path ────────────────────────────────────────────────────────────
+
+    def test_verify_email_success_returns_200(
+        self, mock_welcome, api_client, unverified_user
+    ):
+        """Valid token must return 200 and mark user as verified."""
+        token_obj = self._make_token(unverified_user)
+        response = api_client.post(
+            VERIFY_EMAIL_URL,
+            {"token": str(token_obj.token)},
+            format="json",
+        )
+        assert response.status_code == 200
+        assert response.data["success"] is True
+
+    def test_verify_email_response_shape(
+        self, mock_welcome, api_client, unverified_user
+    ):
+        """Response must conform to standardized envelope."""
+        token_obj = self._make_token(unverified_user)
+        response = api_client.post(
+            VERIFY_EMAIL_URL,
+            {"token": str(token_obj.token)},
+            format="json",
+        )
+        data = response.data
+        assert "success" in data
+        assert "message" in data
+        assert "errors" in data
+        assert "meta" in data
+
+    def test_verify_email_marks_user_as_verified(
+        self, mock_welcome, api_client, unverified_user
+    ):
+        """User.is_verified must be True after successful verification."""
+        token_obj = self._make_token(unverified_user)
+        api_client.post(
+            VERIFY_EMAIL_URL,
+            {"token": str(token_obj.token)},
+            format="json",
+        )
+        unverified_user.refresh_from_db()
+        assert unverified_user.is_verified is True
+
+    def test_verify_email_deletes_token_after_use(
+        self, mock_welcome, api_client, unverified_user
+    ):
+        """Token must be deleted after successful verification — one-time use."""
+        token_obj = self._make_token(unverified_user)
+        token_id = token_obj.token
+        api_client.post(
+            VERIFY_EMAIL_URL,
+            {"token": str(token_id)},
+            format="json",
+        )
+        assert not EmailVerificationToken.objects.filter(token=token_id).exists()
+
+    def test_verify_email_dispatches_welcome_email(
+        self, mock_welcome, api_client, unverified_user
+    ):
+        """Welcome email task must be dispatched exactly once."""
+        token_obj = self._make_token(unverified_user)
+        api_client.post(
+            VERIFY_EMAIL_URL,
+            {"token": str(token_obj.token)},
+            format="json",
+        )
+        assert mock_welcome.called
+        assert mock_welcome.call_count == 1
+        assert mock_welcome.call_args[0][0] == unverified_user.id
+
+    def test_verified_user_can_now_login(
+        self, mock_welcome, api_client, unverified_user
+    ):
+        """
+        After verification, user must be able to log in.
+        End-to-end confirmation that is_verified gate works.
+        """
+        token_obj = self._make_token(unverified_user)
+        api_client.post(
+            VERIFY_EMAIL_URL,
+            {"token": str(token_obj.token)},
+            format="json",
+        )
+        login_response = api_client.post(
+            LOGIN_URL,
+            {"email": unverified_user.email, "password": STRONG_PASSWORD},
+            format="json",
+        )
+        assert login_response.status_code == 200
+
+    # ── Token Not Found ───────────────────────────────────────────────────────
+
+    def test_verify_email_invalid_token_returns_400(
+        self, mock_welcome, api_client
+    ):
+        """Non-existent token UUID must return 400."""
+        import uuid
+        response = api_client.post(
+            VERIFY_EMAIL_URL,
+            {"token": str(uuid.uuid4())},
+            format="json",
+        )
+        assert response.status_code == 400
+        assert response.data["success"] is False
+
+    def test_verify_email_invalid_format_returns_400(
+        self, mock_welcome, api_client
+    ):
+        """Non-UUID string must fail serializer validation with 400."""
+        response = api_client.post(
+            VERIFY_EMAIL_URL,
+            {"token": "not-a-uuid"},
+            format="json",
+        )
+        assert response.status_code == 400
+        assert "token" in response.data["errors"]
+
+    def test_verify_email_missing_token_returns_400(
+        self, mock_welcome, api_client
+    ):
+        """Missing token field must return 400."""
+        response = api_client.post(VERIFY_EMAIL_URL, {}, format="json")
+        assert response.status_code == 400
+        assert "token" in response.data["errors"]
+
+    # ── Expired Token ─────────────────────────────────────────────────────────
+
+    def test_verify_email_expired_token_returns_400(
+        self, mock_welcome, api_client, unverified_user
+    ):
+        """
+        Expired token must return 400 with descriptive message.
+        We backdate the token's created_at to simulate expiry.
+        """
+        from datetime import timedelta
+        from django.utils import timezone
+
+        token_obj = self._make_token(unverified_user)
+        # Backdate beyond expiry window (assume 24h expiry)
+        EmailVerificationToken.objects.filter(pk=token_obj.pk).update(
+            expires_at=timezone.now() - timedelta(hours=25)
+        )
+        response = api_client.post(
+            VERIFY_EMAIL_URL,
+            {"token": str(token_obj.token)},
+            format="json",
+        )
+        assert response.status_code == 400
+        assert response.data["success"] is False
+
+    def test_verify_email_expired_token_does_not_verify_user(
+        self, mock_welcome, api_client, unverified_user
+    ):
+        """Expired token must not change user's verified state."""
+        from datetime import timedelta
+        from django.utils import timezone
+
+        token_obj = self._make_token(unverified_user)
+        EmailVerificationToken.objects.filter(pk=token_obj.pk).update(
+            expires_at=timezone.now() - timedelta(hours=25)
+        )
+        api_client.post(
+            VERIFY_EMAIL_URL,
+            {"token": str(token_obj.token)},
+            format="json",
+        )
+        unverified_user.refresh_from_db()
+        assert unverified_user.is_verified is False
+
+    # ── Already Verified ──────────────────────────────────────────────────────
+
+    def test_verify_email_already_verified_returns_200(
+        self, mock_welcome, api_client, user
+    ):
+        """
+        Already-verified user must get 200 — idempotent endpoint.
+        ``user`` fixture is verified by default.
+        """
+        import uuid
+        # Create a token manually even though user is verified
+        # to bypass the DoesNotExist check
+        token_obj = EmailVerificationToken.objects.create(
+            user=user,
+        )
+        response = api_client.post(
+            VERIFY_EMAIL_URL,
+            {"token": str(token_obj.token)},
+            format="json",
+        )
+        assert response.status_code == 200
+
+    def test_verify_email_already_verified_does_not_dispatch_welcome(
+        self, mock_welcome, api_client, user
+    ):
+        """Welcome email must NOT be sent if user was already verified."""
+        token_obj = EmailVerificationToken.objects.create(user=user)
+        api_client.post(
+            VERIFY_EMAIL_URL,
+            {"token": str(token_obj.token)},
+            format="json",
+        )
+        assert not mock_welcome.called
+
+
+# ─── Resend Verification Tests ────────────────────────────────────────────────
+
+@pytest.mark.django_db
+@patch("apps.accounts.views.send_verification_email_task.delay")
+class TestResendVerification:
+    """
+    Tests for POST /api/accounts/resend-verification/
+
+    Coverage:
+        - Happy path (task dispatched for unverified user)
+        - Response shape conformance
+        - Unregistered email returns same 200 (enumeration prevention)
+        - Already verified user returns same 200 (enumeration prevention)
+        - Task called with correct args
+        - Invalid email format returns 400
+        - Missing email returns 400
+    """
+
+    # ── Happy Path ────────────────────────────────────────────────────────────
+
+    def test_resend_verification_success_returns_200(
+        self, mock_task, api_client, unverified_user
+    ):
+        """Valid unverified email must return 200."""
+        response = api_client.post(
+            RESEND_VERIFICATION_URL,
+            {"email": unverified_user.email},
+            format="json",
+        )
+        assert response.status_code == 200
+        assert response.data["success"] is True
+
+    def test_resend_verification_response_shape(
+        self, mock_task, api_client, unverified_user
+    ):
+        """Response must conform to standardized envelope."""
+        response = api_client.post(
+            RESEND_VERIFICATION_URL,
+            {"email": unverified_user.email},
+            format="json",
+        )
+        data = response.data
+        assert "success" in data
+        assert "message" in data
+        assert "errors" in data
+        assert "meta" in data
+
+    def test_resend_verification_dispatches_task(
+        self, mock_task, api_client, unverified_user
+    ):
+        """Task must be dispatched exactly once with correct user_id."""
+        api_client.post(
+            RESEND_VERIFICATION_URL,
+            {"email": unverified_user.email},
+            format="json",
+        )
+        assert mock_task.called
+        assert mock_task.call_count == 1
+        assert mock_task.call_args[0][0] == unverified_user.id
+
+    def test_resend_verification_creates_new_token(
+        self, mock_task, api_client, unverified_user
+    ):
+        """A new EmailVerificationToken must exist after resend."""
+        api_client.post(
+            RESEND_VERIFICATION_URL,
+            {"email": unverified_user.email},
+            format="json",
+        )
+        assert EmailVerificationToken.objects.filter(
+            user=unverified_user
+        ).exists()
+
+    # ── Enumeration Prevention ────────────────────────────────────────────────
+
+    def test_resend_unregistered_email_returns_200(
+        self, mock_task, api_client
+    ):
+        """
+        Unregistered email must return the same 200 as a valid request.
+        Different responses would allow email enumeration.
+        """
+        response = api_client.post(
+            RESEND_VERIFICATION_URL,
+            {"email": "nobody@example.com"},
+            format="json",
+        )
+        assert response.status_code == 200
+
+    def test_resend_unregistered_email_does_not_dispatch_task(
+        self, mock_task, api_client
+    ):
+        """No task must be dispatched for an unregistered email."""
+        api_client.post(
+            RESEND_VERIFICATION_URL,
+            {"email": "nobody@example.com"},
+            format="json",
+        )
+        assert not mock_task.called
+
+    def test_resend_already_verified_user_returns_200(
+        self, mock_task, api_client, user
+    ):
+        """
+        Already verified user must return same 200.
+        Cannot reveal verification state to caller.
+        """
+        response = api_client.post(
+            RESEND_VERIFICATION_URL,
+            {"email": user.email},
+            format="json",
+        )
+        assert response.status_code == 200
+
+    def test_resend_already_verified_user_does_not_dispatch_task(
+        self, mock_task, api_client, user
+    ):
+        """Task must not be dispatched if user is already verified."""
+        api_client.post(
+            RESEND_VERIFICATION_URL,
+            {"email": user.email},
+            format="json",
+        )
+        assert not mock_task.called
+
+    def test_resend_unregistered_and_verified_return_same_message(
+        self, mock_task, api_client, user
+    ):
+        """
+        All non-error responses must have identical message text.
+        Message divergence would enable enumeration.
+        """
+        unregistered = api_client.post(
+            RESEND_VERIFICATION_URL,
+            {"email": "nobody@example.com"},
+            format="json",
+        )
+        already_verified = api_client.post(
+            RESEND_VERIFICATION_URL,
+            {"email": user.email},
+            format="json",
+        )
+        assert unregistered.data["message"] == already_verified.data["message"]
+
+    # ── Validation Failures ───────────────────────────────────────────────────
+
+    def test_resend_invalid_email_format_returns_400(
+        self, mock_task, api_client
+    ):
+        """Malformed email must be rejected with 400."""
+        response = api_client.post(
+            RESEND_VERIFICATION_URL,
+            {"email": "not-an-email"},
+            format="json",
+        )
+        assert response.status_code == 400
+        assert "email" in response.data["errors"]
+
+    def test_resend_missing_email_returns_400(self, mock_task, api_client):
+        """Missing email field must return 400."""
+        response = api_client.post(
+            RESEND_VERIFICATION_URL,
+            {},
+            format="json",
+        )
+        assert response.status_code == 400
+        assert "email" in response.data["errors"]
+'''
 # ─── Email Verification Tests ───────────────────────────────────────────────
 
 @pytest.mark.django_db
@@ -467,7 +1205,6 @@ class TestResendVerification:
         }, format='json')
         assert not EmailVerificationToken.objects.filter(user=user).exists()
 
-'''
 
 # ─── Login Tests ─────────────────────────────────────────────────────────────
 

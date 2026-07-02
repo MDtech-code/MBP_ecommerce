@@ -12,6 +12,7 @@ from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle
+from django.contrib.auth import get_user_model
 
 from apps.core.api.views import BaseAPIView
 from apps.core.permissions import IsNotAuthenticated, IsVerified
@@ -195,19 +196,47 @@ class RegisterView(BaseAPIView):
 
 
 # ─── Email Verification ───────────────────────────────────────────────────────
-
 class VerifyEmailView(BaseAPIView):
     """
     POST /api/accounts/verify-email/
-    Verify email address using token from email link.
-    """
-    permission_classes = [AllowAny]
-    serializer_class=EmailVerificationSerializer
 
-    def post(self, request):
+    Verify a user's email address using the token from their verification email.
+
+    Flow:
+        1. Validate token UUID format.
+        2. Look up token in DB — 400 if not found.
+        3. Check expiry — 400 if expired.
+        4. Check if already verified — 200 early return (idempotent).
+        5. Mark user as verified, delete token, dispatch welcome email.
+
+    Permissions:
+        AllowAny — token itself is the authentication mechanism.
+
+    Success (200):
+        Email marked as verified. Welcome email dispatched async.
+
+    Errors:
+        400 — Invalid format, token not found, token expired.
+        500 — Unexpected DB or task failure (logged, sanitized).
+
+    Security note:
+        Token is deleted immediately on successful verification —
+        one-time use enforced at the application layer.
+    """
+
+    permission_classes = [AllowAny]
+    serializer_class = EmailVerificationSerializer
+
+    def post(self, request: Request) -> Response:
+        log_context = {"request_id": request.id}
+
         serializer = self.serializer_class(data=request.data)
-          
+
         if not serializer.is_valid():
+            logger.warning(
+                "Email verification failed — invalid token format",
+                extra={**log_context, "errors": serializer.errors},
+            )
             return self.error_response(
                 message=_("Invalid token."),
                 errors=serializer.errors,
@@ -216,55 +245,181 @@ class VerifyEmailView(BaseAPIView):
 
         token_value = serializer.validated_data["token"]
 
+        # ── Token lookup ──────────────────────────────────────────────────────
         try:
             token_obj = EmailVerificationToken.objects.select_related("user").get(
                 token=token_value
             )
         except EmailVerificationToken.DoesNotExist:
+            logger.warning(
+                "Email verification failed — token not found",
+                extra={**log_context, "token": str(token_value)},
+            )
             return self.error_response(
                 message=_("Invalid or expired verification token."),
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
+        # ── Expiry check ──────────────────────────────────────────────────────
         if token_obj.is_expired:
+            logger.warning(
+                "Email verification failed — token expired",
+                extra={**log_context, "user_id": token_obj.user.id},
+            )
             return self.error_response(
-                message=_("Verification token has expired. Request a new one."),
+                message=_("Verification token has expired. Please request a new one."),
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
         user = token_obj.user
+
+        # ── Already verified — idempotent success ─────────────────────────────
+        # Log as warning — repeated calls may indicate a confused client
+        # or a replay attempt. Not an error, but worth tracking.
         if user.is_verified:
+            logger.warning(
+                "Email verification called for already-verified user",
+                extra={**log_context, "user_id": user.id, "email": user.email},
+            )
             return self.success_response(
                 message=_("Email already verified. You can log in."),
             )
 
-        user.is_verified = True
-        user.save(update_fields=["is_verified"])
-        token_obj.delete()
+        # ── Mark verified + cleanup ───────────────────────────────────────────
+        # Both operations in one try block — they are one atomic unit.
+        # If save() fails, token is NOT deleted (consistent state preserved).
+        try:
+            user.is_verified = True
+            user.save(update_fields=["is_verified"])
+            token_obj.delete()
+        except Exception:
+            logger.exception(
+                "Unexpected error while marking user as verified",
+                extra={**log_context, "user_id": user.id, "email": user.email},
+            )
+            return self.error_response(
+                message=_("An unexpected error occurred. Please try again later."),
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
-        # send welcome email async
-        send_welcome_email_task.delay(user.id)
+        logger.info(
+            "Email verified successfully",
+            extra={**log_context, "user_id": user.id, "email": user.email},
+        )
 
-        logger.info("Email verified for user: %s", user.email)
+        # ── Welcome email dispatch ────────────────────────────────────────────
+        # Isolated from verification logic — failure here must NOT
+        # roll back the verified state or return an error to the user.
+        try:
+            send_welcome_email_task.delay(user.id)
+        except Exception:
+            logger.exception(
+                "Failed to dispatch welcome email after verification — "
+                "user is verified but welcome email was not sent.",
+                extra={**log_context, "user_id": user.id, "email": user.email},
+            )
 
         return self.success_response(
             message=_("Email verified successfully. You can now log in."),
         )
 
+# class VerifyEmailView(BaseAPIView):
+#     """
+#     POST /api/accounts/verify-email/
+#     Verify email address using token from email link.
+#     """
+#     permission_classes = [AllowAny]
+#     serializer_class=EmailVerificationSerializer
+
+#     def post(self, request):
+#         serializer = self.serializer_class(data=request.data)
+          
+#         if not serializer.is_valid():
+#             return self.error_response(
+#                 message=_("Invalid token."),
+#                 errors=serializer.errors,
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#             )
+
+#         token_value = serializer.validated_data["token"]
+
+#         try:
+#             token_obj = EmailVerificationToken.objects.select_related("user").get(
+#                 token=token_value
+#             )
+#         except EmailVerificationToken.DoesNotExist:
+#             return self.error_response(
+#                 message=_("Invalid or expired verification token."),
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#             )
+
+#         if token_obj.is_expired:
+#             return self.error_response(
+#                 message=_("Verification token has expired. Request a new one."),
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#             )
+
+#         user = token_obj.user
+#         if user.is_verified:
+#             return self.success_response(
+#                 message=_("Email already verified. You can log in."),
+#             )
+
+#         user.is_verified = True
+#         user.save(update_fields=["is_verified"])
+#         token_obj.delete()
+
+#         # send welcome email async
+#         send_welcome_email_task.delay(user.id)
+
+#         logger.info("Email verified for user: %s", user.email)
+
+#         return self.success_response(
+#             message=_("Email verified successfully. You can now log in."),
+#         )
+
 
 # ─── Resend Verification ──────────────────────────────────────────────────────
-
 class ResendVerificationView(BaseAPIView):
     """
     POST /api/accounts/resend-verification/
-    Resend verification email if previous token expired.
+
+    Resend a verification email if the previous token expired or was lost.
+
+    Security design:
+        Always returns the same 200 response regardless of whether the email
+        exists or is already verified. This prevents email enumeration attacks —
+        an attacker cannot determine which emails are registered by probing
+        this endpoint.
+
+    Flow:
+        1. Validate email format.
+        2. Look up user — silently no-op if not found.
+        3. If found and unverified → create new token, dispatch email async.
+        4. If found and already verified → silently no-op.
+        5. Always return the same success message.
+
+    Permissions:
+        AllowAny — unauthenticated users need this to recover from
+        lost/expired verification emails.
+
+    Success (200):
+        Always returned — see security note above.
     """
+
     permission_classes = [AllowAny]
-    serializer_class=ResendVerificationSerializer
-    def post(self, request):
+    serializer_class = ResendVerificationSerializer
+
+    def post(self, request: Request) -> Response:
+        log_context = {"request_id": request.id}
+
         serializer = self.serializer_class(data=request.data)
-          
+
         if not serializer.is_valid():
+            logger.warning(
+                "Resend verification failed — invalid request data",
+                extra={**log_context, "errors": serializer.errors},
+            )
             return self.error_response(
                 message=_("Invalid request."),
                 errors=serializer.errors,
@@ -273,15 +428,54 @@ class ResendVerificationView(BaseAPIView):
 
         email = serializer.validated_data["email"]
 
-        # Always return success to prevent email enumeration
+        # ── User lookup ───────────────────────────────────────────────────────
         try:
             user = User.objects.get(email=email)
-            if not user.is_verified:
-                token_obj = EmailVerificationToken.create_for_user(user)
-                send_verification_email_task.delay(user.id, str(token_obj.token))
-                logger.info("Verification email resent to: %s", email)
         except User.DoesNotExist:
-            pass  # don't reveal if email exists
+            # Do not reveal that this email is not registered.
+            # Log at DEBUG only — this is expected and frequent.
+            logger.debug(
+                "Resend verification requested for unregistered email",
+                extra={**log_context},
+                # Intentionally not logging the email itself in production
+                # to avoid PII in logs. Log user_id where possible instead.
+            )
+            return self.success_response(
+                message=_(
+                    "If this email is registered and unverified, "
+                    "a new verification link has been sent."
+                ),
+            )
+
+        # ── Already verified — silent no-op ───────────────────────────────────
+        if user.is_verified:
+            logger.info(
+                "Resend verification requested for already-verified user",
+                extra={**log_context, "user_id": user.id},
+            )
+            return self.success_response(
+                message=_(
+                    "If this email is registered and unverified, "
+                    "a new verification link has been sent."
+                ),
+            )
+
+        # ── Create token + dispatch email ─────────────────────────────────────
+        try:
+            token_obj = EmailVerificationToken.create_for_user(user)
+            send_verification_email_task.delay(user.id, str(token_obj.token))
+            logger.info(
+                "Verification email resent",
+                extra={**log_context, "user_id": user.id},
+            )
+        except Exception:
+            # Log but still return success — do not reveal failure to client.
+            # This prevents an attacker from using error responses to
+            # determine whether an email is registered.
+            logger.exception(
+                "Failed to create token or dispatch verification email on resend",
+                extra={**log_context, "user_id": user.id},
+            )
 
         return self.success_response(
             message=_(
@@ -290,23 +484,87 @@ class ResendVerificationView(BaseAPIView):
             ),
         )
 
+# class ResendVerificationView(BaseAPIView):
+#     """
+#     POST /api/accounts/resend-verification/
+#     Resend verification email if previous token expired.
+#     """
+#     permission_classes = [AllowAny]
+#     serializer_class=ResendVerificationSerializer
+#     def post(self, request):
+#         serializer = self.serializer_class(data=request.data)
+          
+#         if not serializer.is_valid():
+#             return self.error_response(
+#                 message=_("Invalid request."),
+#                 errors=serializer.errors,
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#             )
+
+#         email = serializer.validated_data["email"]
+
+#         # Always return success to prevent email enumeration
+#         try:
+#             user = User.objects.get(email=email)
+#             if not user.is_verified:
+#                 token_obj = EmailVerificationToken.create_for_user(user)
+#                 send_verification_email_task.delay(user.id, str(token_obj.token))
+#                 logger.info("Verification email resent to: %s", email)
+#         except User.DoesNotExist:
+#             pass  # don't reveal if email exists
+
+#         return self.success_response(
+#             message=_(
+#                 "If this email is registered and unverified, "
+#                 "a new verification link has been sent."
+#             ),
+#         )
+
 
 # ─── Login ────────────────────────────────────────────────────────────────────
 
 class LoginView(BaseAPIView):
     """
     POST /api/accounts/login/
-    Authenticate user and return JWT tokens.
-    Access token in response body.
-    Refresh token in HttpOnly cookie.
+
+    Authenticate user and issue JWT tokens.
+
+    Token delivery:
+        - Access token:  returned in response body (short-lived).
+        - Refresh token: set in HttpOnly, Secure, SameSite=Lax cookie
+          scoped to ``/api/accounts/token/`` (never accessible to JS).
+
+    Permissions:
+        IsNotAuthenticated — already-authenticated users are blocked.
+
+    Success (200):
+        Returns access token + serialized user data.
+
+    Errors:
+        400 — Invalid credentials, inactive account, unverified email.
+        403 — Already authenticated.
+        500 — Unexpected token generation failure (logged, sanitized).
     """
+
     permission_classes = [IsNotAuthenticated]
-    serializer_class=LoginSerializer
-    def post(self, request):
-      
-        serializer = self.serializer_class(data=request.data,context={"request":request})
-          
+    serializer_class = LoginSerializer
+
+    def post(self, request: Request) -> Response:
+        log_context = {"request_id": request.id}
+
+        serializer = self.serializer_class(
+            data=request.data,
+            context={"request": request},
+        )
+
         if not serializer.is_valid():
+            logger.warning(
+                "Login validation failed",
+                extra={
+                    **log_context,
+                    "errors": serializer.errors,
+                },
+            )
             return self.error_response(
                 message=_("Login failed."),
                 errors=serializer.errors,
@@ -314,7 +572,30 @@ class LoginView(BaseAPIView):
             )
 
         user = serializer.validated_data["user"]
-        refresh = RefreshToken.for_user(user)
+
+        # ── Token generation ──────────────────────────────────────────────────
+        # Isolated in try/except — DB or JWT config failures must not
+        # surface raw exceptions to the client.
+        try:
+            refresh = RefreshToken.for_user(user)
+        except Exception:
+            logger.exception(
+                "Failed to generate JWT token during login",
+                extra={**log_context, "user_id": user.id},
+            )
+            return self.error_response(
+                message=_("An unexpected error occurred. Please try again later."),
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        logger.info(
+            "User logged in successfully",
+            extra={
+                **log_context,
+                "user_id": user.id,
+                "email": user.email,
+            },
+        )
 
         response = self.success_response(
             data={
@@ -325,8 +606,41 @@ class LoginView(BaseAPIView):
         )
 
         set_refresh_cookie(response, refresh)
-        logger.info("User logged in: %s", user.email)
         return response
+# class LoginView(BaseAPIView):
+#     """
+#     POST /api/accounts/login/
+#     Authenticate user and return JWT tokens.
+#     Access token in response body.
+#     Refresh token in HttpOnly cookie.
+#     """
+#     permission_classes = [IsNotAuthenticated]
+#     serializer_class=LoginSerializer
+#     def post(self, request):
+      
+#         serializer = self.serializer_class(data=request.data,context={"request":request})
+          
+#         if not serializer.is_valid():
+#             return self.error_response(
+#                 message=_("Login failed."),
+#                 errors=serializer.errors,
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#             )
+
+#         user = serializer.validated_data["user"]
+#         refresh = RefreshToken.for_user(user)
+
+#         response = self.success_response(
+#             data={
+#                 "access": str(refresh.access_token),
+#                 "user": UserSerializer(user).data,
+#             },
+#             message=_("Login successful."),
+#         )
+
+#         set_refresh_cookie(response, refresh)
+#         logger.info("User logged in: %s", user.email)
+#         return response
 
 
 # ─── Logout ───────────────────────────────────────────────────────────────────
@@ -334,81 +648,269 @@ class LoginView(BaseAPIView):
 class LogoutView(BaseAPIView):
     """
     POST /api/accounts/logout/
-    Blacklist refresh token and clear cookie.
+
+    Blacklist the refresh token and clear the HttpOnly cookie.
+
+    Behaviour:
+        - Valid refresh token cookie present → blacklisted + cookie cleared.
+        - Token already invalid/expired     → cookie still cleared.
+        - No cookie present                 → cookie clear attempted, 200 returned.
+        - Either way → 200 response (idempotent from client perspective).
+
+    Permissions:
+        IsAuthenticated — must be logged in to log out.
+
+    Success (200):
+        Cookie cleared, token blacklisted if present and valid.
     """
+
     permission_classes = [IsAuthenticated]
 
-    def post(self, request):
+    def post(self, request: Request) -> Response:
+        log_context = {
+            "request_id": request.id,
+            "user_id": request.user.id,
+        }
+
         refresh_token = request.COOKIES.get(REFRESH_COOKIE_NAME)
 
-        if refresh_token:
+        if not refresh_token:
+            # No cookie present — still return success.
+            # Client may have already cleared it locally or
+            # this is a retry after a previous successful logout.
+            logger.warning(
+                "Logout called with no refresh token cookie present",
+                extra=log_context,
+            )
+        else:
             try:
                 token = RefreshToken(refresh_token)
                 token.blacklist()
-                logger.info("User logged out: %s", request.user.email)
+                logger.info(
+                    "User logged out — refresh token blacklisted",
+                    extra=log_context,
+                )
             except TokenError:
-                pass  # token already invalid — still clear cookie
+                # Token already expired or invalid — not an error condition.
+                # Still clear the cookie so client state is clean.
+                logger.warning(
+                    "Logout called with already-invalid refresh token — "
+                    "cookie will still be cleared",
+                    extra=log_context,
+                )
+            except Exception:
+                # Unexpected failure (e.g. DB unreachable for blacklist write).
+                # Log it but still clear the cookie — partial logout is
+                # better than leaving the client in a broken auth state.
+                logger.exception(
+                    "Unexpected error during token blacklist on logout",
+                    extra=log_context,
+                )
 
         response = self.success_response(
             message=_("Logged out successfully."),
         )
         clear_refresh_cookie(response)
         return response
+# class LogoutView(BaseAPIView):
+#     """
+#     POST /api/accounts/logout/
+#     Blacklist refresh token and clear cookie.
+#     """
+#     permission_classes = [IsAuthenticated]
+
+#     def post(self, request):
+#         refresh_token = request.COOKIES.get(REFRESH_COOKIE_NAME)
+
+#         if refresh_token:
+#             try:
+#                 token = RefreshToken(refresh_token)
+#                 token.blacklist()
+#                 logger.info("User logged out: %s", request.user.email)
+#             except TokenError:
+#                 pass  # token already invalid — still clear cookie
+
+#         response = self.success_response(
+#             message=_("Logged out successfully."),
+#         )
+#         clear_refresh_cookie(response)
+#         return response
 
 
 # ─── Token Refresh ────────────────────────────────────────────────────────────
-from django.views.decorators.csrf import ensure_csrf_cookie
-from django.utils.decorators import method_decorator
-from rest_framework import serializers
-
-class EmptySerializer(serializers.Serializer):
-    pass
-@method_decorator(ensure_csrf_cookie, name="dispatch")  
 class TokenRefreshView(BaseAPIView):
     """
     POST /api/accounts/token/refresh/
-    Issue new access token using refresh token from cookie.
-    """
-    permission_classes = [AllowAny]
-    serializer_class=EmptySerializer
 
-    def post(self, request):
+    Issue a new access token using the refresh token from the HttpOnly cookie.
+
+    Rotation behaviour (controlled by ``SIMPLE_JWT.ROTATE_REFRESH_TOKENS``):
+        - If enabled:  old refresh token blacklisted, new one set in cookie.
+        - If disabled: same refresh token remains valid until natural expiry.
+
+    Why no CSRF decorator:
+        CSRF protection for HttpOnly cookie-based JWT is provided by the
+        cookie's ``SameSite=Lax`` attribute — not Django's CSRF middleware.
+        Adding ``ensure_csrf_cookie`` to a stateless JWT API is incorrect
+        and introduces unnecessary coupling to session-based auth patterns.
+
+    Permissions:
+        AllowAny — authentication state is determined by the cookie itself,
+        not by the DRF auth classes.
+
+    Success (200):
+        Returns new access token in response body.
+
+    Errors:
+        401 — No cookie present, token invalid, token expired, user deleted.
+        500 — Unexpected server error during rotation (logged, sanitized).
+    """
+
+    permission_classes = [AllowAny]
+
+    def post(self, request: Request) -> Response:
+        log_context = {"request_id": request.id}
+
         refresh_token = request.COOKIES.get(REFRESH_COOKIE_NAME)
 
         if not refresh_token:
+            logger.warning(
+                "Token refresh attempted with no refresh cookie",
+                extra=log_context,
+            )
             return self.error_response(
                 message=_("Refresh token not found."),
                 status_code=status.HTTP_401_UNAUTHORIZED,
             )
 
+        # ── Validate incoming refresh token ───────────────────────────────────
         try:
             token = RefreshToken(refresh_token)
             new_access = str(token.access_token)
 
-            response = self.success_response(
-                data={"access": new_access},
-                message=_("Token refreshed successfully."),
+        except TokenError as exc:
+            logger.warning(
+                "Token refresh failed — invalid or expired token",
+                extra={**log_context, "reason": str(exc)},
+            )
+            return self.error_response(
+                message=_("Session expired. Please log in again."),
+                status_code=status.HTTP_401_UNAUTHORIZED,
             )
 
-            # rotate refresh token
-            if settings.SIMPLE_JWT.get("ROTATE_REFRESH_TOKENS"):
-                token.blacklist()
-                from django.contrib.auth import get_user_model
-                User = get_user_model()
+        except Exception:
+            logger.exception(
+                "Unexpected error during token validation on refresh",
+                extra=log_context,
+            )
+            return self.error_response(
+                message=_("An unexpected error occurred. Please try again later."),
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
+        # ── Build response with new access token ──────────────────────────────
+        response = self.success_response(
+            data={"access": new_access},
+            message=_("Token refreshed successfully."),
+        )
+
+        # ── Refresh token rotation (optional) ─────────────────────────────────
+        if settings.SIMPLE_JWT.get("ROTATE_REFRESH_TOKENS"):
+            try:
                 user_id = token["user_id"]
-                user = User.objects.get(id=user_id)
+                UserModel = get_user_model()
+                user = UserModel.objects.get(id=user_id)
+
+                token.blacklist()
                 new_refresh = RefreshToken.for_user(user)
                 set_refresh_cookie(response, new_refresh)
 
-            return response
+                logger.info(
+                    "Refresh token rotated successfully",
+                    extra={**log_context, "user_id": user_id},
+                )
 
-        except TokenError as e:
-            return self.error_response(
-                message=_("Invalid or expired refresh token."),
-                errors=str(e),
-                status_code=status.HTTP_401_UNAUTHORIZED,
-            )
+            except UserModel.DoesNotExist:
+                # Token references a deleted user — treat as invalid session.
+                # Clear cookie and force re-login.
+                logger.error(
+                    "Token rotation failed — user not found for token claim",
+                    extra={
+                        **log_context,
+                        "user_id": token.get("user_id"),
+                    },
+                )
+                clear_refresh_cookie(response)
+                return self.error_response(
+                    message=_("Session is no longer valid. Please log in again."),
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                )
+
+            except Exception:
+                # Rotation failed but new access token was already generated.
+                # Client can continue until next refresh cycle.
+                # Log for investigation but do not fail the request.
+                logger.exception(
+                    "Unexpected error during refresh token rotation",
+                    extra={
+                        **log_context,
+                        "user_id": token.get("user_id"),
+                    },
+                )
+
+        return response
+# from django.views.decorators.csrf import ensure_csrf_cookie
+# from django.utils.decorators import method_decorator
+# from rest_framework import serializers
+
+# class EmptySerializer(serializers.Serializer):
+#     pass
+# @method_decorator(ensure_csrf_cookie, name="dispatch")  
+# class TokenRefreshView(BaseAPIView):
+#     """
+#     POST /api/accounts/token/refresh/
+#     Issue new access token using refresh token from cookie.
+#     """
+#     permission_classes = [AllowAny]
+#     serializer_class=EmptySerializer
+
+#     def post(self, request):
+#         refresh_token = request.COOKIES.get(REFRESH_COOKIE_NAME)
+
+#         if not refresh_token:
+#             return self.error_response(
+#                 message=_("Refresh token not found."),
+#                 status_code=status.HTTP_401_UNAUTHORIZED,
+#             )
+
+#         try:
+#             token = RefreshToken(refresh_token)
+#             new_access = str(token.access_token)
+
+#             response = self.success_response(
+#                 data={"access": new_access},
+#                 message=_("Token refreshed successfully."),
+#             )
+
+#             # rotate refresh token
+#             if settings.SIMPLE_JWT.get("ROTATE_REFRESH_TOKENS"):
+#                 token.blacklist()
+#                 from django.contrib.auth import get_user_model
+#                 User = get_user_model()
+
+#                 user_id = token["user_id"]
+#                 user = User.objects.get(id=user_id)
+#                 new_refresh = RefreshToken.for_user(user)
+#                 set_refresh_cookie(response, new_refresh)
+
+#             return response
+
+#         except TokenError as e:
+#             return self.error_response(
+#                 message=_("Invalid or expired refresh token."),
+#                 errors=str(e),
+#                 status_code=status.HTTP_401_UNAUTHORIZED,
+#             )
 
 
 # ─── Password Reset Request ───────────────────────────────────────────────────
@@ -498,6 +1000,44 @@ class PasswordResetConfirmView(BaseAPIView):
             message=_("Password reset successfully. You can now log in."),
         )
 
+# ─── Change Password ──────────────────────────────────────────────────────────
+
+class ChangePasswordView(BaseAPIView):
+    """
+    POST /api/accounts/change-password/
+    Change password for authenticated user.
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class=ChangePasswordSerializer
+    def post(self, request):
+        serializer = self.serializer_class(data=request.data)
+              
+        if not serializer.is_valid():
+            return self.error_response(
+                message=_("Password change failed."),
+                errors=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user = request.user
+        current_password = serializer.validated_data["current_password"]
+        new_password = serializer.validated_data["new_password"]
+
+        if not user.check_password(current_password):
+            return self.error_response(
+                message=_("Current password is incorrect."),
+                errors={"current_password": _("Incorrect password.")},
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user.set_password(new_password)
+        user.save(update_fields=["password"])
+
+        logger.info("Password changed for user: %s", user.email)
+
+        return self.success_response(
+            message=_("Password changed successfully. Please log in again."),
+        )
 
 # ─── Profile ──────────────────────────────────────────────────────────────────
 
@@ -544,44 +1084,6 @@ class ProfileView(BaseAPIView):
         )
 
 
-# ─── Change Password ──────────────────────────────────────────────────────────
-
-class ChangePasswordView(BaseAPIView):
-    """
-    POST /api/accounts/change-password/
-    Change password for authenticated user.
-    """
-    permission_classes = [IsAuthenticated]
-    serializer_class=ChangePasswordSerializer
-    def post(self, request):
-        serializer = self.serializer_class(data=request.data)
-              
-        if not serializer.is_valid():
-            return self.error_response(
-                message=_("Password change failed."),
-                errors=serializer.errors,
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
-
-        user = request.user
-        current_password = serializer.validated_data["current_password"]
-        new_password = serializer.validated_data["new_password"]
-
-        if not user.check_password(current_password):
-            return self.error_response(
-                message=_("Current password is incorrect."),
-                errors={"current_password": _("Incorrect password.")},
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
-
-        user.set_password(new_password)
-        user.save(update_fields=["password"])
-
-        logger.info("Password changed for user: %s", user.email)
-
-        return self.success_response(
-            message=_("Password changed successfully. Please log in again."),
-        )
 
 
 # ─── Avatar Upload ────────────────────────────────────────────────────────────
