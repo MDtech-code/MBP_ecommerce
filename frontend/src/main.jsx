@@ -11,7 +11,25 @@ import { initAuthSync } from "./api/authSync";
 
 initAuthSync();
 setupInterceptors();
-const queryClient = new QueryClient() 
+// const queryClient = new QueryClient() 
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: (failureCount, error) => {
+        if (error?.response?.status === 401) return false;
+        return failureCount < 2;
+      },
+      refetchOnWindowFocus: false,
+      staleTime: 1000 * 60 * 5,
+      gcTime: 1000 * 60 * 30,
+    },
+    mutations: {
+      retry: 1,
+    },
+  },
+});
+
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
   <QueryClientProvider client={queryClient}>
