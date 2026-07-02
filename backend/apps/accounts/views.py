@@ -9,6 +9,9 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework.request import Request
+from rest_framework.response import Response
+from rest_framework.throttling import AnonRateThrottle
 
 from apps.core.api.views import BaseAPIView
 from apps.core.permissions import IsNotAuthenticated, IsVerified
@@ -61,30 +64,94 @@ def clear_refresh_cookie(response) -> None:
 
 
 # ─── Register ─────────────────────────────────────────────────────────────────
-
 class RegisterView(BaseAPIView):
     """
     POST /api/accounts/register/
-    Create new user account and send verification email.
+
+    Create a new user account and dispatch a verification email asynchronously.
+
+    Permissions:
+        IsNotAuthenticated — authenticated users are redirected away.
+
+    Throttling:
+        AnonRateThrottle — guards against registration spam/abuse.
+
+    Success (201):
+        Returns the registered email address.
+        Verification email is dispatched via Celery.
+
+    Errors:
+        400 — Validation failure (invalid fields, duplicate email, etc.).
+        403 — Already authenticated.
+        500 — Unexpected server error (logged, sanitized response returned).
+
+    Notes:
+        - If token creation or task dispatch fails after the user is saved,
+          the user account is NOT rolled back. The verification email can be
+          resent separately. This is logged at ERROR level for investigation.
     """
+
     permission_classes = [IsNotAuthenticated]
+    throttle_classes = [AnonRateThrottle]
     serializer_class = RegisterSerializer
 
-    def post(self, request):
-        serializer= self.serializer_class(data=request.data)
-        
+    def post(self, request: Request) -> Response:
+        log_context = {"request_id": request.id}
+
+        serializer = self.serializer_class(data=request.data)
+
         if not serializer.is_valid():
+            logger.warning(
+                "Registration validation failed",
+                extra={**log_context, "errors": serializer.errors},
+            )
             return self.error_response(
                 message=_("Registration failed."),
                 errors=serializer.errors,
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
-        user = serializer.save()
+        # ── Phase 1: Persist the user ─────────────────────────────────────
+        try:
+            user = serializer.save()
+        except Exception:
+            logger.exception(
+                "Unexpected error during user creation",
+                extra=log_context,
+            )
+            return self.error_response(
+                message=_("An unexpected error occurred. Please try again later."),
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
-        # create verification token and send email async
-        token_obj = EmailVerificationToken.create_for_user(user)
-        send_verification_email_task.delay(user.id, str(token_obj.token))
+        logger.info(
+            "New user registered successfully",
+            extra={
+                **log_context,
+                "user_id": user.id,
+                "email": user.email,
+            },
+        )
+
+        # ── Phase 2: Token creation + async email dispatch ────────────────
+        # Isolated from Phase 1 — user already exists at this point.
+        # Failure here does NOT roll back the account.
+        # The user can request a new verification email via a separate endpoint.
+        try:
+            token_obj = EmailVerificationToken.create_for_user(user)
+            send_verification_email_task.delay(user.id, str(token_obj.token))
+            logger.info(
+                "Verification email task dispatched",
+                extra={**log_context, "user_id": user.id},
+            )
+        except Exception:
+            logger.exception(
+                "Failed to dispatch verification email after registration — "
+                "user account created but email not sent. Manual follow-up required.",
+                extra={**log_context, "user_id": user.id, "email": user.email},
+            )
+            # Still return success — user was created.
+            # Front-end can surface a "resend verification" option.
 
         return self.created_response(
             data={"email": user.email},
@@ -93,6 +160,38 @@ class RegisterView(BaseAPIView):
                 "Please check your email to verify your account."
             ),
         )
+
+# class RegisterView(BaseAPIView):
+#     """
+#     POST /api/accounts/register/
+#     Create new user account and send verification email.
+#     """
+#     permission_classes = [IsNotAuthenticated]
+#     serializer_class = RegisterSerializer
+
+#     def post(self, request):
+#         serializer= self.serializer_class(data=request.data)
+        
+#         if not serializer.is_valid():
+#             return self.error_response(
+#                 message=_("Registration failed."),
+#                 errors=serializer.errors,
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#             )
+
+#         user = serializer.save()
+
+#         # create verification token and send email async
+#         token_obj = EmailVerificationToken.create_for_user(user)
+#         send_verification_email_task.delay(user.id, str(token_obj.token))
+
+#         return self.created_response(
+#             data={"email": user.email},
+#             message=_(
+#                 "Account created successfully. "
+#                 "Please check your email to verify your account."
+#             ),
+#         )
 
 
 # ─── Email Verification ───────────────────────────────────────────────────────

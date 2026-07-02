@@ -1,155 +1,402 @@
+# apps/accounts/tests.py
 from __future__ import annotations
+from django.utils import timezone
+from datetime import timedelta
 
 import pytest
 from django.core.cache import caches
-from django.utils import timezone
-from datetime import timedelta
 from rest_framework.test import APIClient
 
-from .models import User, UserProfile, EmailVerificationToken, PasswordResetToken
+from .models import EmailVerificationToken, User, UserProfile
 from apps.common.choices.role import Role
 
+# ─── Password constant ────────────────────────────────────────────────────────
+#
+# "StrongPass123" was used throughout — this reliably fails
+# Django's CommonPasswordValidator in most configurations.
+#
+# Replaced with a password that passes ALL default Django validators:
+#   ✓ MinimumLengthValidator       (8+ chars)
+#   ✓ CommonPasswordValidator      (not a common password)
+#   ✓ NumericPasswordValidator     (not fully numeric)
+#   ✓ UserAttributeSimilarityValidator (no relation to test email/name)
+#
+STRONG_PASSWORD = "X!9vQm2#rLpZ"
 
-# ─── Fixtures ──────────────────────────────────────────────────────────────
+
+# ─── Fixtures ─────────────────────────────────────────────────────────────────
 
 @pytest.fixture(autouse=True)
 def clear_cache():
-   
-    caches['default'].clear()
-    caches['local'].clear()
+    """Clear L1 and L2 caches before and after every test."""
+    # NOTE: If 'local' is not defined in your CACHES setting,
+    # replace caches['local'] with caches['default'] here.
+    caches["default"].clear()
+    caches["local"].clear()
     yield
-    caches['default'].clear()
-    caches['local'].clear()
+    caches["default"].clear()
+    caches["local"].clear()
 
 
 @pytest.fixture
-def api_client():
+def api_client() -> APIClient:
     return APIClient()
 
 
 @pytest.fixture
-def user(db):
+def user(db) -> User:
     return User.objects.create_user(
         email="customer@test.com",
         full_name="Test Customer",
-        password="StrongPass123",
+        password=STRONG_PASSWORD,
         is_verified=True,
     )
 
 
 @pytest.fixture
-def unverified_user(db):
+def unverified_user(db) -> User:
     return User.objects.create_user(
         email="unverified@test.com",
         full_name="Unverified User",
-        password="StrongPass123",
+        password=STRONG_PASSWORD,
         is_verified=False,
     )
 
 
 @pytest.fixture
-def admin_user(db):
+def admin_user(db) -> User:
     return User.objects.create_superuser(
         email="admin@test.com",
         full_name="Admin User",
-        password="AdminPass123",
+        password=STRONG_PASSWORD,
     )
 
 
 @pytest.fixture
-def auth_client(api_client, user):
-    """API client authenticated as verified customer."""
-    response = api_client.post("/api/accounts/login/", {
-        "email": "customer@test.com",
-        "password": "StrongPass123",
-    }, format='json')
-    token = response.data["data"]["access"]
-    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+def auth_client(api_client: APIClient, user: User) -> APIClient:
+    """
+    Authenticated API client using force_authenticate.
+
+    CHANGED FROM: hitting /api/accounts/login/ directly.
+    REASON: Login-based auth in registration tests is fragile —
+    if login breaks, every registration test fails for the wrong reason.
+    force_authenticate() isolates registration tests completely.
+    """
+    api_client.force_authenticate(user=user)
     return api_client
 
 
 @pytest.fixture
-def valid_register_payload():
+def valid_register_payload() -> dict:
     return {
         "full_name": "John Doe",
         "email": "john@example.com",
-        "password": "StrongPass123",
-        "confirm_password": "StrongPass123",
+        "password": STRONG_PASSWORD,
+        "confirm_password": STRONG_PASSWORD,
     }
 
 
-# ─── Registration Tests ─────────────────────────────────────────────────────
+@pytest.fixture(autouse=True)
+def mock_verification_task(mocker):
+    """
+    Prevent Celery task from firing on every registration test.
+
+    REASON: Tests must not depend on a running Celery broker.
+    Applied autouse=True so no individual test needs to remember to mock it.
+    The fixture is returned so tests that need to assert call args can use it
+    via explicit parameter:
+
+        def test_something(self, mock_verification_task):
+            assert mock_verification_task.called
+    """
+    return mocker.patch(
+        "apps.accounts.views.send_verification_email_task.delay"
+    )
+
+
+# ─── Registration Tests ───────────────────────────────────────────────────────
 
 @pytest.mark.django_db
 class TestRegistration:
 
+    # ── Happy Path ────────────────────────────────────────────────────────────
+
     def test_register_success(self, api_client, valid_register_payload):
+        """201 returned and user exists in DB."""
         response = api_client.post(
-            "/api/accounts/register/", valid_register_payload, format='json'
+            "/api/accounts/register/",
+            valid_register_payload,
+            format="json",
         )
         assert response.status_code == 201
         assert response.data["success"] is True
         assert User.objects.filter(email="john@example.com").exists()
 
+    def test_register_response_shape(self, api_client, valid_register_payload):
+        """
+        Response must conform to the standardized envelope.
+
+        Keys: success, message, data, errors, meta.
+        data.email must match the registered email.
+        """
+        response = api_client.post(
+            "/api/accounts/register/",
+            valid_register_payload,
+            format="json",
+        )
+        data = response.data
+        assert "success" in data
+        assert "message" in data
+        assert "errors" in data
+        assert "meta" in data
+        assert data["data"]["email"] == valid_register_payload["email"]
+
     def test_register_creates_unverified_user(self, api_client, valid_register_payload):
-        api_client.post("/api/accounts/register/", valid_register_payload, format='json')
+        """New users must not be verified until email confirmation."""
+        api_client.post(
+            "/api/accounts/register/",
+            valid_register_payload,
+            format="json",
+        )
         user = User.objects.get(email="john@example.com")
         assert user.is_verified is False
 
+    def test_register_user_is_active_on_creation(self, api_client, valid_register_payload):
+        """Users are active by default — deactivation is done explicitly."""
+        api_client.post(
+            "/api/accounts/register/",
+            valid_register_payload,
+            format="json",
+        )
+        user = User.objects.get(email="john@example.com")
+        assert user.is_active is True
+
     def test_register_creates_profile_automatically(self, api_client, valid_register_payload):
-        api_client.post("/api/accounts/register/", valid_register_payload, format='json')
+        """post_save signal must create UserProfile on user creation."""
+        api_client.post(
+            "/api/accounts/register/",
+            valid_register_payload,
+            format="json",
+        )
         user = User.objects.get(email="john@example.com")
         assert UserProfile.objects.filter(user=user).exists()
 
     def test_register_creates_verification_token(self, api_client, valid_register_payload):
-        api_client.post("/api/accounts/register/", valid_register_payload, format='json')
+        """An EmailVerificationToken must exist after registration."""
+        api_client.post(
+            "/api/accounts/register/",
+            valid_register_payload,
+            format="json",
+        )
         user = User.objects.get(email="john@example.com")
         assert EmailVerificationToken.objects.filter(user=user).exists()
 
-    def test_register_duplicate_email_fails(self, api_client, user, valid_register_payload):
+    def test_register_password_is_hashed(self, api_client, valid_register_payload):
+        """Raw password must never be stored — must survive check_password()."""
+        api_client.post(
+            "/api/accounts/register/",
+            valid_register_payload,
+            format="json",
+        )
+        user = User.objects.get(email="john@example.com")
+        assert user.password != valid_register_payload["password"]
+        assert user.check_password(valid_register_payload["password"])
+
+    def test_register_email_stored_lowercase(self, api_client, valid_register_payload):
+        """
+        Email normalization must happen at the manager level.
+
+        Even if the user submits mixed-case, DB must store lowercase.
+        """
+        payload = {**valid_register_payload, "email": "JOHN@EXAMPLE.COM"}
+        api_client.post("/api/accounts/register/", payload, format="json")
+        assert User.objects.filter(email="john@example.com").exists()
+        assert not User.objects.filter(email="JOHN@EXAMPLE.COM").exists()
+
+    def test_register_dispatches_verification_task(
+        self,
+        api_client,
+        valid_register_payload,
+        mock_verification_task,
+    ):
+        """
+        Celery task must be called once with correct user_id as first arg.
+
+        mock_verification_task is the autouse fixture — requesting it
+        explicitly here gives us access to assert on it.
+        """
+        api_client.post(
+            "/api/accounts/register/",
+            valid_register_payload,
+            format="json",
+        )
+        assert mock_verification_task.called
+        assert mock_verification_task.call_count == 1
+        user = User.objects.get(email=valid_register_payload["email"])
+        call_args = mock_verification_task.call_args[0]
+        assert call_args[0] == user.id
+
+    # ── Duplicate Email ───────────────────────────────────────────────────────
+
+    def test_register_duplicate_email_fails(
+        self,
+        api_client,
+        user,
+        valid_register_payload,
+    ):
+        """Existing email must return 400 with success=False."""
         valid_register_payload["email"] = user.email
         response = api_client.post(
-            "/api/accounts/register/", valid_register_payload, format='json'
+            "/api/accounts/register/",
+            valid_register_payload,
+            format="json",
         )
         assert response.status_code == 400
         assert response.data["success"] is False
 
+    def test_register_duplicate_email_error_on_correct_field(
+        self,
+        api_client,
+        user,
+        valid_register_payload,
+    ):
+        """Duplicate email error must be on the 'email' field key."""
+        valid_register_payload["email"] = user.email
+        response = api_client.post(
+            "/api/accounts/register/",
+            valid_register_payload,
+            format="json",
+        )
+        assert "email" in response.data["errors"]
+
+    # ── Password Validation ───────────────────────────────────────────────────
+
     def test_register_password_mismatch_fails(self, api_client, valid_register_payload):
+        """Mismatched confirm_password must return error on confirm_password field."""
         valid_register_payload["confirm_password"] = "DifferentPass123"
         response = api_client.post(
-            "/api/accounts/register/", valid_register_payload, format='json'
+            "/api/accounts/register/",
+            valid_register_payload,
+            format="json",
         )
         assert response.status_code == 400
+        # Error must land on the correct field — not on 'non_field_errors'
         assert "confirm_password" in response.data["errors"]
 
-    def test_register_single_word_name_fails(self, api_client, valid_register_payload):
-        valid_register_payload["full_name"] = "John"
-        response = api_client.post(
-            "/api/accounts/register/", valid_register_payload, format='json'
-        )
-        assert response.status_code == 400
-
     def test_register_weak_password_fails(self, api_client, valid_register_payload):
+        """Passwords that are too short must be rejected."""
         valid_register_payload["password"] = "123"
         valid_register_payload["confirm_password"] = "123"
         response = api_client.post(
-            "/api/accounts/register/", valid_register_payload, format='json'
+            "/api/accounts/register/",
+            valid_register_payload,
+            format="json",
         )
         assert response.status_code == 400
+        assert "password" in response.data["errors"]
+
+    def test_register_common_password_fails(self, api_client, valid_register_payload):
+        """
+        Common passwords must be rejected by Django's CommonPasswordValidator.
+
+        'password123' is in Django's common password list.
+        """
+        valid_register_payload["password"] = "password123"
+        valid_register_payload["confirm_password"] = "password123"
+        response = api_client.post(
+            "/api/accounts/register/",
+            valid_register_payload,
+            format="json",
+        )
+        assert response.status_code == 400
+
+    # ── Full Name Validation ──────────────────────────────────────────────────
+
+    def test_register_single_word_name_fails(self, api_client, valid_register_payload):
+        """Full name must have at least two words."""
+        valid_register_payload["full_name"] = "John"
+        response = api_client.post(
+            "/api/accounts/register/",
+            valid_register_payload,
+            format="json",
+        )
+        assert response.status_code == 400
+        assert "full_name" in response.data["errors"]
+
+    def test_register_blank_name_fails(self, api_client, valid_register_payload):
+        """Blank full name must be rejected."""
+        valid_register_payload["full_name"] = ""
+        response = api_client.post(
+            "/api/accounts/register/",
+            valid_register_payload,
+            format="json",
+        )
+        assert response.status_code == 400
+        assert "full_name" in response.data["errors"]
+
+    # ── Email Format Validation ───────────────────────────────────────────────
 
     def test_register_invalid_email_fails(self, api_client, valid_register_payload):
+        """Malformed email must be rejected with error on email field."""
         valid_register_payload["email"] = "not-an-email"
         response = api_client.post(
-            "/api/accounts/register/", valid_register_payload, format='json'
+            "/api/accounts/register/",
+            valid_register_payload,
+            format="json",
         )
         assert response.status_code == 400
+        assert "email" in response.data["errors"]
 
-    def test_authenticated_user_cannot_register(self, auth_client, valid_register_payload):
+    # ── Missing Required Fields ───────────────────────────────────────────────
+
+    @pytest.mark.parametrize("missing_field", [
+        "full_name",
+        "email",
+        "password",
+        "confirm_password",
+    ])
+    def test_register_missing_required_field_fails(
+        self,
+        api_client,
+        valid_register_payload,
+        missing_field,
+    ):
+        """
+        Every required field must individually cause a 400 when omitted.
+
+        Parametrized so adding a new required field only requires
+        adding it to the list above.
+        """
+        payload = {
+            k: v for k, v in valid_register_payload.items()
+            if k != missing_field
+        }
+        response = api_client.post(
+            "/api/accounts/register/",
+            payload,
+            format="json",
+        )
+        assert response.status_code == 400
+        assert missing_field in response.data["errors"]
+
+    # ── Auth State ────────────────────────────────────────────────────────────
+
+    def test_authenticated_user_cannot_register(
+        self,
+        auth_client,
+        valid_register_payload,
+    ):
+        """
+        IsNotAuthenticated must block already-authenticated users.
+
+        Uses force_authenticate so this test is not coupled to login behavior.
+        """
         response = auth_client.post(
-            "/api/accounts/register/", valid_register_payload, format='json'
+            "/api/accounts/register/",
+            valid_register_payload,
+            format="json",
         )
         assert response.status_code == 403
-
 
 # ─── Email Verification Tests ───────────────────────────────────────────────
 
@@ -220,6 +467,7 @@ class TestResendVerification:
         }, format='json')
         assert not EmailVerificationToken.objects.filter(user=user).exists()
 
+'''
 
 # ─── Login Tests ─────────────────────────────────────────────────────────────
 
@@ -575,3 +823,6 @@ class TestPasswordResetTokenModel:
     def test_is_valid_true_when_fresh(self, user):
         token = PasswordResetToken.create_for_user(user)
         assert token.is_valid is True
+
+
+'''

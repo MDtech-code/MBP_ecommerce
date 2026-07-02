@@ -1,6 +1,8 @@
+# apps/accounts/signals.py
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from django.db.models.signals import post_save
 from django.dispatch import receiver
@@ -15,12 +17,53 @@ def create_user_profile(
     sender: type[User],
     instance: User,
     created: bool,
-    **kwargs,
+    **kwargs: Any,
 ) -> None:
-    """Auto-create UserProfile when a new User is created."""
-    if created:
+    """
+    Auto-create a ``UserProfile`` whenever a new ``User`` is saved.
+
+    Triggered by ``post_save`` on the ``User`` model.
+    Logs an error (but does not raise) if profile creation fails,
+    so that the user record itself is never silently lost.
+    """
+    if not created:
+        return
+
+    try:
         UserProfile.objects.create(user=instance)
-        logger.info("Profile created for user: %s", instance.email)
+        logger.info(
+            "UserProfile created for new user",
+            extra={"user_id": instance.id, "email": instance.email},
+        )
+    except Exception:
+        logger.exception(
+            "Failed to create UserProfile for new user — "
+            "manual intervention may be required.",
+            extra={"user_id": instance.id, "email": instance.email},
+        )
+# from __future__ import annotations
+
+# import logging
+
+# from django.db.models.signals import post_save
+# from django.dispatch import receiver
+
+# from .models import User, UserProfile
+
+# logger = logging.getLogger("apps.accounts")
+
+
+# @receiver(post_save, sender=User)
+# def create_user_profile(
+#     sender: type[User],
+#     instance: User,
+#     created: bool,
+#     **kwargs,
+# ) -> None:
+#     """Auto-create UserProfile when a new User is created."""
+#     if created:
+#         UserProfile.objects.create(user=instance)
+#         logger.info("Profile created for user: %s", instance.email)
 
 
 # @receiver(post_save, sender=User)
