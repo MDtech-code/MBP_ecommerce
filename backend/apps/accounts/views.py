@@ -17,7 +17,7 @@ from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
 
 from apps.core.api.views import BaseAPIView
 from apps.core.permissions import IsNotAuthenticated, IsVerified
-from .models import User, EmailVerificationToken, PasswordResetToken
+from .models import User, EmailVerificationToken, PasswordResetToken,UserProfile
 from .serializers import (
     RegisterSerializer,
     LoginSerializer,
@@ -1393,66 +1393,255 @@ class ChangePasswordView(BaseAPIView):
 #         )
 
 # ─── Profile ──────────────────────────────────────────────────────────────────
-
 class ProfileView(BaseAPIView):
     """
-    GET  /api/accounts/profile/  → get own profile
-    PUT  /api/accounts/profile/  → update own profile
-    """
-    permission_classes = [IsAuthenticated]
-    serializer_class=UserSerializer
-    def get(self, request):
-       
-        serializer = self.serializer_class(request.user)  
-        # if not serializer.is_valid():
-        #     return self.error_response(
-        #         message=_("Invalid request."),
-        #         errors=serializer.errors,
-        #         status_code=status.HTTP_400_BAD_REQUEST,
-        #     )
+    GET   /api/accounts/profile/ → Retrieve own profile.
+    PATCH /api/accounts/profile/ → Partially update own profile.
 
+    Why PATCH not PUT:
+        All profile fields are optional on update — clients send only
+        what they want to change. PUT semantics require all fields.
+        PATCH is the correct verb for partial updates.
+
+    Why select_related("profile"):
+        UserSerializer accesses user.profile (OneToOne).
+        Without select_related, every GET/PATCH causes a separate
+        DB query for the profile — avoidable N+1 per request.
+
+    Permissions:
+        IsAuthenticated — profile is private to the owner.
+
+    GET Success (200):
+        Returns full user + nested profile data.
+
+    PATCH Success (200):
+        Returns full user + updated nested profile data.
+
+    Errors:
+        400 — Validation failure on update.
+        500 — Unexpected DB failure on save (logged, sanitized).
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def _get_user_with_profile(self, user_id: int) -> User:
+        """
+        Fetch user with profile in a single JOIN query.
+
+        Args:
+            user_id: PK of the user to fetch.
+
+        Returns:
+            ``User`` instance with ``profile`` pre-fetched.
+        """
+        return (
+            User.objects
+            .select_related("profile")
+            .get(pk=user_id)
+        )
+
+    def get(self, request: Request) -> Response:
+        log_context = {
+            "request_id": request.id,
+            "user_id": request.user.id,
+        }
+
+        try:
+            user = self._get_user_with_profile(request.user.id)
+        except Exception:
+            logger.exception(
+                "Unexpected error fetching profile",
+                extra=log_context,
+            )
+            return self.error_response(
+                message=_("An unexpected error occurred. Please try again later."),
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        logger.info(
+            "Profile retrieved",
+            extra=log_context,
+        )
+
+        serializer = UserSerializer(user)
         return self.success_response(
             data=serializer.data,
             message=_("Profile retrieved successfully."),
         )
 
-    def put(self, request):
-        profile = request.user.profile
+    def patch(self, request: Request) -> Response:
+        log_context = {
+            "request_id": request.id,
+            "user_id": request.user.id,
+        }
+
+        # ── Fetch profile safely ──────────────────────────────────────────────
+        try:
+            user = self._get_user_with_profile(request.user.id)
+            profile = user.profile
+        except UserProfile.DoesNotExist:
+            # Should never happen — signal creates profile on user creation.
+            # If it does, the signal failed silently — log at ERROR level.
+            logger.error(
+                "Profile not found for authenticated user — "
+                "signal may have failed on account creation.",
+                extra=log_context,
+            )
+            return self.error_response(
+                message=_("Profile not found."),
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+        except Exception:
+            logger.exception(
+                "Unexpected error fetching profile for update",
+                extra=log_context,
+            )
+            return self.error_response(
+                message=_("An unexpected error occurred. Please try again later."),
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        # ── Validate input ────────────────────────────────────────────────────
         serializer = ProfileUpdateSerializer(
             profile,
             data=request.data,
             partial=True,
         )
+
         if not serializer.is_valid():
+            logger.warning(
+                "Profile update validation failed",
+                extra={**log_context, "errors": serializer.errors},
+            )
             return self.error_response(
                 message=_("Profile update failed."),
                 errors=serializer.errors,
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
-        serializer.save()
+        # ── Save ──────────────────────────────────────────────────────────────
+        try:
+            serializer.save()
+        except Exception:
+            logger.exception(
+                "Unexpected error saving profile update",
+                extra=log_context,
+            )
+            return self.error_response(
+                message=_("An unexpected error occurred. Please try again later."),
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        logger.info(
+            "Profile updated successfully",
+            extra=log_context,
+        )
+
+        # Re-fetch to ensure response reflects saved state
+        user = self._get_user_with_profile(request.user.id)
         return self.success_response(
-            data=UserSerializer(request.user).data,
+            data=UserSerializer(user).data,
             message=_("Profile updated successfully."),
         )
+
+    # Support PUT as alias for PATCH — both do partial update
+    put = patch
+
+# class ProfileView(BaseAPIView):
+#     """
+#     GET  /api/accounts/profile/  → get own profile
+#     PUT  /api/accounts/profile/  → update own profile
+#     """
+#     permission_classes = [IsAuthenticated]
+#     serializer_class=UserSerializer
+#     def get(self, request):
+       
+#         serializer = self.serializer_class(request.user)  
+        
+
+#         return self.success_response(
+#             data=serializer.data,
+#             message=_("Profile retrieved successfully."),
+#         )
+
+#     def put(self, request):
+#         profile = request.user.profile
+#         serializer = ProfileUpdateSerializer(
+#             profile,
+#             data=request.data,
+#             partial=True,
+#         )
+#         if not serializer.is_valid():
+#             return self.error_response(
+#                 message=_("Profile update failed."),
+#                 errors=serializer.errors,
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#             )
+
+#         serializer.save()
+#         return self.success_response(
+#             data=UserSerializer(request.user).data,
+#             message=_("Profile updated successfully."),
+#         )
 
 
 
 
 # ─── Avatar Upload ────────────────────────────────────────────────────────────
-
 class AvatarUploadView(BaseAPIView):
     """
     POST /api/accounts/profile/avatar/
-    Upload or replace profile avatar.
+
+    Upload or replace the authenticated user's profile avatar.
+
+    Flow:
+        1. Validate file (size ≤ 2MB, type: JPEG/PNG/WebP).
+        2. Delete old avatar from storage if present.
+        3. Save new avatar to profile.
+        4. Return absolute URL of new avatar.
+
+    Why delete before save:
+        Storage backends (S3, local) accumulate orphaned files if
+        old avatar is not explicitly deleted before replacement.
+        We delete first to keep storage clean.
+
+    Why old avatar deletion is non-fatal:
+        File may already be missing from storage (manual cleanup,
+        S3 lifecycle policy, etc.). We log the failure and continue
+        — a missing old file must not block the new upload.
+
+    Permissions:
+        IsAuthenticated — only the owner can upload their avatar.
+
+    Parsers:
+        MultiPartParser + FormParser — required for file upload.
+
+    Success (200):
+        Returns absolute URL of the newly uploaded avatar.
+
+    Errors:
+        400 — File missing, invalid type, exceeds size limit.
+        500 — Unexpected DB or storage failure (logged, sanitized).
     """
+
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
-    serializer_class=AvatarUploadSerializer
-    def post(self, request):
+    serializer_class = AvatarUploadSerializer
+
+    def post(self, request: Request) -> Response:
+        log_context = {
+            "request_id": request.id,
+            "user_id": request.user.id,
+        }
+
+        # ── Validate uploaded file ────────────────────────────────────────────
         serializer = self.serializer_class(data=request.data)
-          
+
         if not serializer.is_valid():
+            logger.warning(
+                "Avatar upload validation failed",
+                extra={**log_context, "errors": serializer.errors},
+            )
             return self.error_response(
                 message=_("Avatar upload failed."),
                 errors=serializer.errors,
@@ -1460,17 +1649,73 @@ class AvatarUploadView(BaseAPIView):
             )
 
         profile = request.user.profile
+        new_avatar = serializer.validated_data["avatar"]
 
-        # delete old avatar from storage
+        # ── Delete old avatar from storage ────────────────────────────────────
+        # Non-fatal — missing file must not block the new upload.
         if profile.avatar:
-            profile.avatar.delete(save=False)
+            try:
+                profile.avatar.delete(save=False)
+            except Exception:
+                logger.warning(
+                    "Failed to delete old avatar from storage — "
+                    "proceeding with new upload. Manual cleanup may be needed.",
+                    extra={**log_context, "old_avatar": str(profile.avatar)},
+                )
 
-        profile.avatar = serializer.validated_data["avatar"]
-        profile.save(update_fields=["avatar"])
+        # ── Save new avatar ───────────────────────────────────────────────────
+        try:
+            profile.avatar = new_avatar
+            profile.save(update_fields=["avatar"])
+        except Exception:
+            logger.exception(
+                "Unexpected error saving new avatar to profile",
+                extra=log_context,
+            )
+            return self.error_response(
+                message=_("An unexpected error occurred. Please try again later."),
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
-        logger.info("Avatar updated for user: %s", request.user.email)
+        logger.info(
+            "Avatar updated successfully",
+            extra=log_context,
+        )
 
         return self.success_response(
             data={"avatar_url": request.build_absolute_uri(profile.avatar.url)},
             message=_("Avatar uploaded successfully."),
         )
+# class AvatarUploadView(BaseAPIView):
+#     """
+#     POST /api/accounts/profile/avatar/
+#     Upload or replace profile avatar.
+#     """
+#     permission_classes = [IsAuthenticated]
+#     parser_classes = [MultiPartParser, FormParser]
+#     serializer_class=AvatarUploadSerializer
+#     def post(self, request):
+#         serializer = self.serializer_class(data=request.data)
+          
+#         if not serializer.is_valid():
+#             return self.error_response(
+#                 message=_("Avatar upload failed."),
+#                 errors=serializer.errors,
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#             )
+
+#         profile = request.user.profile
+
+#         # delete old avatar from storage
+#         if profile.avatar:
+#             profile.avatar.delete(save=False)
+
+#         profile.avatar = serializer.validated_data["avatar"]
+#         profile.save(update_fields=["avatar"])
+
+#         logger.info("Avatar updated for user: %s", request.user.email)
+
+#         return self.success_response(
+#             data={"avatar_url": request.build_absolute_uri(profile.avatar.url)},
+#             message=_("Avatar uploaded successfully."),
+#         )

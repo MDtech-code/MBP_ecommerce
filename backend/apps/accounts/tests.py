@@ -1792,6 +1792,387 @@ class TestChangePassword:
         )
         assert response.status_code == 400
         assert missing_field in response.data["errors"]
+
+
+
+# apps/accounts/tests.py
+# ─── add these constants near the top ────────────────────────────────────────
+
+PROFILE_URL      = "/api/accounts/profile/"
+AVATAR_UPLOAD_URL = "/api/accounts/profile/avatar/"
+
+
+# ─── Profile Tests ────────────────────────────────────────────────────────────
+
+@pytest.mark.django_db
+class TestProfileGet:
+    """
+    Tests for GET /api/accounts/profile/
+
+    Coverage:
+        - Happy path (profile data returned)
+        - Response shape conformance
+        - Nested profile present in response
+        - Unauthenticated request blocked
+    """
+
+    def test_get_profile_returns_200(self, auth_client):
+        """Authenticated user must receive their profile."""
+        response = auth_client.get(PROFILE_URL, format="json")
+        assert response.status_code == 200
+        assert response.data["success"] is True
+
+    def test_get_profile_response_shape(self, auth_client):
+        """Response must conform to standardized envelope."""
+        response = auth_client.get(PROFILE_URL, format="json")
+        data = response.data
+        assert "success" in data
+        assert "message" in data
+        assert "errors" in data
+        assert "meta" in data
+
+    def test_get_profile_contains_user_fields(self, auth_client, user):
+        """Response data must contain core user fields."""
+        response = auth_client.get(PROFILE_URL, format="json")
+        data = response.data["data"]
+        assert data["email"] == user.email
+        assert data["full_name"] == user.full_name
+        assert "role" in data
+        assert "is_verified" in data
+
+    def test_get_profile_contains_nested_profile(self, auth_client):
+        """Response data must contain nested profile object."""
+        response = auth_client.get(PROFILE_URL, format="json")
+        data = response.data["data"]
+        assert "profile" in data
+        profile = data["profile"]
+        assert "phone" in profile
+        assert "gender" in profile
+        assert "city" in profile
+        assert "province" in profile
+        assert "has_complete_address" in profile
+
+    def test_get_profile_unauthenticated_returns_401(self, api_client):
+        """IsAuthenticated must block unauthenticated requests."""
+        response = api_client.get(PROFILE_URL, format="json")
+        assert response.status_code == 401
+
+
+@pytest.mark.django_db
+class TestProfileUpdate:
+    """
+    Tests for PATCH /api/accounts/profile/
+
+    Coverage:
+        - Happy path (profile fields updated)
+        - Response shape and updated data returned
+        - Partial update (only sent fields change)
+        - Phone validation (invalid format rejected)
+        - Future date of birth rejected
+        - Invalid gender choice rejected
+        - Invalid province choice rejected
+        - Unauthenticated request blocked
+        - PUT method also accepted (alias for PATCH)
+    """
+
+    VALID_UPDATE = {
+        "phone": "03001234567",
+        "city": "Lahore",
+        "province": "PB",
+        "address_line1": "123 Main Street",
+        "postal_code": "54000",
+        "country": "Pakistan",
+    }
+
+    def test_patch_profile_returns_200(self, auth_client):
+        """Valid partial update must return 200."""
+        response = auth_client.patch(
+            PROFILE_URL,
+            self.VALID_UPDATE,
+            format="json",
+        )
+        assert response.status_code == 200
+        assert response.data["success"] is True
+
+    def test_patch_profile_response_shape(self, auth_client):
+        """Response must conform to standardized envelope."""
+        response = auth_client.patch(
+            PROFILE_URL,
+            self.VALID_UPDATE,
+            format="json",
+        )
+        data = response.data
+        assert "success" in data
+        assert "message" in data
+        assert "errors" in data
+        assert "meta" in data
+
+    def test_patch_profile_updates_fields_in_db(self, auth_client, user):
+        """Updated fields must be persisted to DB."""
+        auth_client.patch(
+            PROFILE_URL,
+            {"city": "Karachi", "province": "SD"},
+            format="json",
+        )
+        user.profile.refresh_from_db()
+        assert user.profile.city == "Karachi"
+        assert user.profile.province == "SD"
+
+    def test_patch_profile_response_reflects_updated_data(self, auth_client):
+        """Response data must contain the newly saved values."""
+        response = auth_client.patch(
+            PROFILE_URL,
+            {"city": "Islamabad"},
+            format="json",
+        )
+        assert response.data["data"]["profile"]["city"] == "Islamabad"
+
+    def test_patch_profile_is_partial(self, auth_client, user):
+        """
+        Unincluded fields must NOT be cleared on partial update.
+        Sending only city must not reset phone to empty string.
+        """
+        user.profile.phone = "03001234567"
+        user.profile.save(update_fields=["phone"])
+
+        auth_client.patch(
+            PROFILE_URL,
+            {"city": "Multan"},
+            format="json",
+        )
+        user.profile.refresh_from_db()
+        assert user.profile.phone == "03001234567"
+        assert user.profile.city == "Multan"
+
+    def test_put_profile_also_accepted(self, auth_client):
+        """PUT must be accepted as alias for PATCH."""
+        response = auth_client.put(
+            PROFILE_URL,
+            {"city": "Quetta"},
+            format="json",
+        )
+        assert response.status_code == 200
+
+    # ── Phone Validation ──────────────────────────────────────────────────────
+
+    def test_patch_invalid_phone_returns_400(self, auth_client):
+        """Invalid phone format must return 400 on phone field."""
+        response = auth_client.patch(
+            PROFILE_URL,
+            {"phone": "12345"},
+            format="json",
+        )
+        assert response.status_code == 400
+        assert "phone" in response.data["errors"]
+
+    def test_patch_valid_international_phone_accepted(self, auth_client):
+        """International format (+923001234567) must be accepted."""
+        response = auth_client.patch(
+            PROFILE_URL,
+            {"phone": "+923001234567"},
+            format="json",
+        )
+        assert response.status_code == 200
+
+    def test_patch_valid_local_phone_accepted(self, auth_client):
+        """Local format (03001234567) must be accepted."""
+        response = auth_client.patch(
+            PROFILE_URL,
+            {"phone": "03001234567"},
+            format="json",
+        )
+        assert response.status_code == 200
+
+    # ── Date of Birth Validation ──────────────────────────────────────────────
+
+    def test_patch_future_date_of_birth_returns_400(self, auth_client):
+        """Future date of birth must be rejected."""
+        from datetime import date, timedelta
+        future_date = date.today() + timedelta(days=365)
+        response = auth_client.patch(
+            PROFILE_URL,
+            {"date_of_birth": future_date.isoformat()},
+            format="json",
+        )
+        assert response.status_code == 400
+        assert "date_of_birth" in response.data["errors"]
+
+    def test_patch_past_date_of_birth_accepted(self, auth_client):
+        """Valid past date of birth must be accepted."""
+        response = auth_client.patch(
+            PROFILE_URL,
+            {"date_of_birth": "1990-06-15"},
+            format="json",
+        )
+        assert response.status_code == 200
+
+    # ── Choice Field Validation ───────────────────────────────────────────────
+
+    def test_patch_invalid_gender_returns_400(self, auth_client):
+        """Invalid gender choice must return 400."""
+        response = auth_client.patch(
+            PROFILE_URL,
+            {"gender": "X"},
+            format="json",
+        )
+        assert response.status_code == 400
+        assert "gender" in response.data["errors"]
+
+    def test_patch_invalid_province_returns_400(self, auth_client):
+        """Invalid province choice must return 400."""
+        response = auth_client.patch(
+            PROFILE_URL,
+            {"province": "XX"},
+            format="json",
+        )
+        assert response.status_code == 400
+        assert "province" in response.data["errors"]
+
+    # ── Auth State ────────────────────────────────────────────────────────────
+
+    def test_patch_profile_unauthenticated_returns_401(self, api_client):
+        """IsAuthenticated must block unauthenticated requests."""
+        response = api_client.patch(
+            PROFILE_URL,
+            {"city": "Lahore"},
+            format="json",
+        )
+        assert response.status_code == 401
+
+
+@pytest.mark.django_db
+class TestAvatarUpload:
+    """
+    Tests for POST /api/accounts/profile/avatar/
+
+    Coverage:
+        - Happy path (avatar saved, URL returned)
+        - Response shape conformance
+        - Missing file returns 400
+        - File too large returns 400
+        - Invalid file type returns 400
+        - Unauthenticated request blocked
+        - Old avatar replaced (not duplicated)
+    """
+
+    def _make_image(self, name="test.jpg", size=(100, 100), fmt="JPEG") -> object:
+        """
+        Create an in-memory image file for upload testing.
+        Uses Pillow — already a Django dependency via ImageField.
+        """
+        from io import BytesIO
+        from PIL import Image
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        buf = BytesIO()
+        img = Image.new("RGB", size, color=(255, 0, 0))
+        img.save(buf, format=fmt)
+        buf.seek(0)
+        content_type = "image/jpeg" if fmt == "JPEG" else "image/png"
+        return SimpleUploadedFile(name, buf.read(), content_type=content_type)
+
+    def _make_oversized_image(self) -> object:
+        """Create an in-memory file that exceeds 2MB."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        # 2MB + 1 byte of data
+        content = b"x" * (2 * 1024 * 1024 + 1)
+        return SimpleUploadedFile(
+            "big.jpg", content, content_type="image/jpeg"
+        )
+
+    def _make_invalid_type_file(self) -> object:
+        """Create a file with disallowed MIME type (PDF)."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        return SimpleUploadedFile(
+            "doc.pdf", b"fake pdf content", content_type="application/pdf"
+        )
+
+    # ── Happy Path ────────────────────────────────────────────────────────────
+
+    def test_avatar_upload_returns_200(self, auth_client):
+        """Valid image upload must return 200."""
+        response = auth_client.post(
+            AVATAR_UPLOAD_URL,
+            {"avatar": self._make_image()},
+            format="multipart",
+        )
+        assert response.status_code == 200
+        assert response.data["success"] is True
+
+    def test_avatar_upload_response_shape(self, auth_client):
+        """Response must conform to standardized envelope."""
+        response = auth_client.post(
+            AVATAR_UPLOAD_URL,
+            {"avatar": self._make_image()},
+            format="multipart",
+        )
+        data = response.data
+        assert "success" in data
+        assert "message" in data
+        assert "errors" in data
+        assert "meta" in data
+
+    def test_avatar_upload_returns_avatar_url(self, auth_client):
+        """Response data must contain avatar_url as non-empty string."""
+        response = auth_client.post(
+            AVATAR_UPLOAD_URL,
+            {"avatar": self._make_image()},
+            format="multipart",
+        )
+        assert "avatar_url" in response.data["data"]
+        assert response.data["data"]["avatar_url"]
+
+    def test_avatar_upload_saves_to_profile(self, auth_client, user):
+        """Avatar must be persisted to the user's profile in DB."""
+        auth_client.post(
+            AVATAR_UPLOAD_URL,
+            {"avatar": self._make_image()},
+            format="multipart",
+        )
+        user.profile.refresh_from_db()
+        assert bool(user.profile.avatar)
+
+    # ── Validation Failures ───────────────────────────────────────────────────
+
+    def test_avatar_upload_missing_file_returns_400(self, auth_client):
+        """Missing avatar field must return 400."""
+        response = auth_client.post(
+            AVATAR_UPLOAD_URL,
+            {},
+            format="multipart",
+        )
+        assert response.status_code == 400
+        assert "avatar" in response.data["errors"]
+
+    def test_avatar_upload_oversized_file_returns_400(self, auth_client):
+        """File exceeding 2MB must return 400."""
+        response = auth_client.post(
+            AVATAR_UPLOAD_URL,
+            {"avatar": self._make_oversized_image()},
+            format="multipart",
+        )
+        assert response.status_code == 400
+        assert "avatar" in response.data["errors"]
+
+    def test_avatar_upload_invalid_type_returns_400(self, auth_client):
+        """Non-image MIME type must return 400."""
+        response = auth_client.post(
+            AVATAR_UPLOAD_URL,
+            {"avatar": self._make_invalid_type_file()},
+            format="multipart",
+        )
+        assert response.status_code == 400
+
+    # ── Auth State ────────────────────────────────────────────────────────────
+
+    def test_avatar_upload_unauthenticated_returns_401(self, api_client):
+        """IsAuthenticated must block unauthenticated requests."""
+        response = api_client.post(
+            AVATAR_UPLOAD_URL,
+            {"avatar": self._make_image()},
+            format="multipart",
+        )
+        assert response.status_code == 401
 '''
 # ─── Email Verification Tests ───────────────────────────────────────────────
 

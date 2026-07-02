@@ -6,7 +6,7 @@ from django.contrib.auth import authenticate
 from django.db import IntegrityError
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
-
+from django.utils import timezone
 from apps.core.api.serializers import BaseModelSerializer
 from .models import User, UserProfile
 from .validators import validate_email_unique,validate_full_name,validate_image_file,validate_pakistani_phone,validate_passwords_match,validate_strong_password
@@ -14,9 +14,23 @@ logger = logging.getLogger("apps.accounts")
 
 
 # ─── Profile Serializer ───────────────────────────────────────────────────────
+class UserProfileSerializer(serializers.ModelSerializer):
+    """
+    Read-only + partial-update serializer for ``UserProfile``.
 
-class UserProfileSerializer(BaseModelSerializer):
-    """Read/update profile information."""
+    Read-only fields:
+        province_display, gender_display, full_address,
+        has_complete_address, created_at, updated_at, avatar.
+
+    Writable fields (all optional — partial update):
+        phone, date_of_birth, gender, address_line1,
+        address_line2, city, province, postal_code, country.
+
+    Note:
+        ``avatar`` is intentionally read-only here.
+        Avatar upload is handled by the dedicated ``AvatarUploadView``
+        which uses ``MultiPartParser`` and separate validation.
+    """
 
     province_display = serializers.CharField(
         source="get_province_display",
@@ -50,8 +64,73 @@ class UserProfileSerializer(BaseModelSerializer):
             "updated_at",
         ]
         extra_kwargs = {
-            "avatar": {"read_only": True},  # handled by separate upload endpoint
+            # Avatar is read-only here — handled by AvatarUploadView
+            "avatar": {"read_only": True},
+            "created_at": {"read_only": True},
+            "updated_at": {"read_only": True},
         }
+
+    def validate_phone(self, value: str) -> str:
+        """
+        Run Pakistani phone number format validation.
+
+        Delegates to the shared validator so model and serializer
+        use identical validation logic. Empty string is allowed
+        (phone is optional on the profile).
+        """
+        if not value:
+            return value
+        return validate_pakistani_phone(value)
+
+    def validate_date_of_birth(self, value) -> object:
+        """
+        Assert date of birth is in the past.
+
+        Prevents submission of future dates which would pass
+        model-level validation but are semantically invalid.
+        """
+        if value and value >= timezone.now().date():
+            raise serializers.ValidationError(
+                _("Date of birth must be in the past.")
+            )
+        return value
+# class UserProfileSerializer(BaseModelSerializer):
+#     """Read/update profile information."""
+
+#     province_display = serializers.CharField(
+#         source="get_province_display",
+#         read_only=True,
+#     )
+#     gender_display = serializers.CharField(
+#         source="get_gender_display",
+#         read_only=True,
+#     )
+#     full_address = serializers.CharField(read_only=True)
+#     has_complete_address = serializers.BooleanField(read_only=True)
+
+#     class Meta:
+#         model = UserProfile
+#         fields = [
+#             "phone",
+#             "date_of_birth",
+#             "gender",
+#             "gender_display",
+#             "avatar",
+#             "address_line1",
+#             "address_line2",
+#             "city",
+#             "province",
+#             "province_display",
+#             "postal_code",
+#             "country",
+#             "full_address",
+#             "has_complete_address",
+#             "created_at",
+#             "updated_at",
+#         ]
+#         extra_kwargs = {
+#             "avatar": {"read_only": True},  # handled by separate upload endpoint
+#         }
 
 
 # ─── User Serializer ──────────────────────────────────────────────────────────
@@ -597,39 +676,94 @@ class ChangePasswordSerializer(serializers.Serializer):
 
 
 # ─── Profile Update Serializer ───────────────────────────────────────────────
+class ProfileUpdateSerializer(UserProfileSerializer):
+    """
+    Explicit partial-update serializer for ``UserProfile``.
 
-class ProfileUpdateSerializer(BaseModelSerializer):
-    """Allows authenticated user to update their profile."""
+    Inherits all fields and validators from ``UserProfileSerializer``.
+    Exists as a named class for clarity in the view and for
+    drf-spectacular schema generation (shows as distinct schema type).
 
-    class Meta:
-        model = UserProfile
-        fields = [
-            "phone",
-            "date_of_birth",
-            "gender",
-            "address_line1",
-            "address_line2",
-            "city",
-            "province",
-            "postal_code",
-            "country",
-        ]
+    All fields are optional — clients send only what they want to change.
+    """
 
-    def validate_phone(self, value: str) -> str:
-        return validate_pakistani_phone(value)
+    class Meta(UserProfileSerializer.Meta):
+        # Explicitly mark all writable fields as not required
+        # Redundant when used with partial=True but makes intent clear
+        extra_kwargs = {
+            **UserProfileSerializer.Meta.extra_kwargs,
+            "phone": {"required": False},
+            "date_of_birth": {"required": False},
+            "gender": {"required": False},
+            "address_line1": {"required": False},
+            "address_line2": {"required": False},
+            "city": {"required": False},
+            "province": {"required": False},
+            "postal_code": {"required": False},
+            "country": {"required": False},
+        }
+# class ProfileUpdateSerializer(BaseModelSerializer):
+#     """Allows authenticated user to update their profile."""
+
+#     class Meta:
+#         model = UserProfile
+#         fields = [
+#             "phone",
+#             "date_of_birth",
+#             "gender",
+#             "address_line1",
+#             "address_line2",
+#             "city",
+#             "province",
+#             "postal_code",
+#             "country",
+#         ]
+
+#     def validate_phone(self, value: str) -> str:
+#         return validate_pakistani_phone(value)
 
 
 # ─── Avatar Upload Serializer ─────────────────────────────────────────────────
-
 class AvatarUploadSerializer(serializers.Serializer):
-    """Handles avatar image upload."""
+    """
+    Accept and validate an avatar image upload.
+
+    Validation:
+        - File must be present.
+        - Size must not exceed 2 MB.
+        - MIME type must be JPEG, PNG, or WebP.
+
+    Note:
+        Kept as a plain ``Serializer`` (not ``ModelSerializer``) because
+        avatar saving is handled explicitly in the view — we want full
+        control over old avatar deletion before saving the new one.
+    """
 
     avatar = serializers.ImageField(
         error_messages={
-            "invalid_image": _("Upload a valid image file."),
-            "blank": _("No image was submitted."),
+            "required": _("Please select an image to upload."),
+            "invalid": _("Upload a valid image file."),
+            "empty": _("The submitted image file is empty."),
         }
     )
 
-    def validate_avatar(self, value):
-       return validate_image_file(value)
+    def validate_avatar(self, value) -> object:
+        """
+        Run size and MIME type validation via shared image validator.
+
+        Delegates to ``validate_image_file`` so all image upload
+        points in the system use identical validation rules.
+        """
+        return validate_image_file(value)
+# class AvatarUploadSerializer(serializers.Serializer):
+#     """Handles avatar image upload."""
+
+#     avatar = serializers.ImageField(
+#         error_messages={
+#             "invalid_image": _("Upload a valid image file."),
+#             "blank": _("No image was submitted."),
+#         }
+#     )
+
+#     def validate_avatar(self, value):
+#        return validate_image_file(value)
