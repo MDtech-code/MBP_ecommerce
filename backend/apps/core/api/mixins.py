@@ -10,14 +10,20 @@ class APIResponseMixin:
     """
     Standardized API response mixin.
 
-    Response shape:
+    Provides build_response() which every BaseAPIView response helper
+    delegates to. Enforces a consistent response envelope across
+    every endpoint in the project:
+
     {
-        "success": bool,
-        "message": str | None,
-        "data": Any,
-        "errors": Any | None,
-        "meta": dict | None      ← NEW: pagination, trace, extra info
+        "success": bool,        ← True if 2xx, False otherwise
+        "message": str | null,  ← Human-readable summary
+        "data": any,            ← Response payload (null on error)
+        "errors": any | null,   ← Error detail (null on success)
+        "meta": dict | null     ← Pagination, request_id, extras
     }
+
+    transform_payload() is a hook point — BaseAPIView overrides it
+    to inject request_id into meta on every response automatically.
     """
 
     MESSAGE_KEY: str = "message"
