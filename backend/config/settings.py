@@ -91,9 +91,11 @@ MIDDLEWARE = [
     # 8. Clickjacking protection
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 
-    # 9. Debug Toolbar (only in DEBUG mode)
-    'debug_toolbar.middleware.DebugToolbarMiddleware',
+   
 ]
+# ─── Debug Toolbar guard ──────────────────────────────
+if DEBUG:
+    MIDDLEWARE.append('debug_toolbar.middleware.DebugToolbarMiddleware')
 
 
 # ─── Templates (admin only) ───────────────────────────
@@ -160,10 +162,7 @@ AUTH_PASSWORD_VALIDATORS = [
 REST_FRAMEWORK = {
     #* Auto-generates OpenAPI schema (used by drf-spectacular for API docs)
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
-    #* Use JWT tokens for authentication
-    'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
-    ),
+   
     #* Require all requests to be from authenticated users by default
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
