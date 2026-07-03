@@ -33,9 +33,7 @@ export const setupInterceptors = () => {
 
   // Response interceptor — handle 401, 429
   api.interceptors.response.use(
-    (response) => {
-      return response.data; 
-    },
+    (response) => response,
     async (error) => {
       const originalRequest = error.config
       const status = error.response?.status
