@@ -1,1 +1,2 @@
-import '@testing-library/jest-dom'
+// src/test/setup.js
+import "@testing-library/jest-dom";
