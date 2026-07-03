@@ -110,3 +110,116 @@ describe("accountService.register", () => {
     ).rejects.toThrow();
   });
 });
+
+
+// ADD to src/test/services/accountService.test.js
+// below existing register tests
+
+// ─── verifyEmail ──────────────────────────────────────────────────────────────
+
+describe("accountService.verifyEmail", () => {
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it("calls correct endpoint with token payload", async () => {
+    api.post.mockResolvedValue(
+      mockSuccessEnvelope(null, "Email verified successfully.")
+    )
+
+    await accountService.verifyEmail({ token: "test-token-123" })
+
+    expect(api.post).toHaveBeenCalledWith(
+      "/api/accounts/verify-email/",
+      { token: "test-token-123" }
+    )
+  })
+
+  it("returns extracted envelope on success", async () => {
+    api.post.mockResolvedValue(
+      mockSuccessEnvelope(null, "Email verified successfully.")
+    )
+
+    const result = await accountService.verifyEmail({ token: "test-token-123" })
+
+    expect(result.data).toBeNull()
+    expect(result.message).toBe("Email verified successfully.")
+  })
+
+  it("bubbles up error without catching", async () => {
+    const error = new Error("Invalid token")
+    error.response = {
+      status: 400,
+      data: {
+        message: "Invalid or expired token.",
+        errors: { non_field_errors: ["Invalid or expired token."] },
+        meta: null,
+      },
+    }
+
+    api.post.mockRejectedValue(error)
+
+    await expect(
+      accountService.verifyEmail({ token: "bad-token" })
+    ).rejects.toThrow("Invalid token")
+  })
+
+})
+
+// ─── resendVerification ───────────────────────────────────────────────────────
+
+describe("accountService.resendVerification", () => {
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it("calls correct endpoint with email payload", async () => {
+    api.post.mockResolvedValue(
+      mockSuccessEnvelope(null, "Verification email sent.")
+    )
+
+    await accountService.resendVerification({ email: "john@test.com" })
+
+    expect(api.post).toHaveBeenCalledWith(
+      "/api/accounts/resend-verification/",
+      { email: "john@test.com" }
+    )
+  })
+
+  it("returns extracted envelope on success", async () => {
+    api.post.mockResolvedValue(
+      mockSuccessEnvelope(null, "Verification email sent.")
+    )
+
+    const result = await accountService.resendVerification({
+      email: "john@test.com",
+    })
+
+    expect(result.message).toBe("Verification email sent.")
+    expect(result.data).toBeNull()
+  })
+
+  it("bubbles up error without catching", async () => {
+    const error = new Error("Not found")
+    error.response = {
+      status: 404,
+      data: {
+        message: "No account found with this email.",
+        errors: null,
+        meta: null,
+      },
+    }
+
+    api.post.mockRejectedValue(error)
+
+    await expect(
+      accountService.resendVerification({ email: "ghost@test.com" })
+    ).rejects.toThrow("Not found")
+  })
+
+})
+
+
+

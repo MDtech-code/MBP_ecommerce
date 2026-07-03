@@ -34,7 +34,11 @@ export function useRegisterForm() {
   const handleSubmit = (e) => {
     e.preventDefault();
     register(form, {
-      onSuccess: () => navigate("/verify-email"),
+      onSuccess: () => {
+        // Store email for VerifyEmail page to display + use for resend
+        sessionStorage.setItem("pending_verification_email", form.email),
+        navigate("/verify-email")
+      }
     });
   };
 

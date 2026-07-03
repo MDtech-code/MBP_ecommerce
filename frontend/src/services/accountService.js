@@ -12,6 +12,28 @@ export const accountService = {
     const response = await api.post("/api/accounts/register/", payload);
     return extractResponse(response);
   },
+  // ── NEW ──────────────────────────────────────────────────────────────────
+
+  /**
+   * POST /api/accounts/verify-email/
+   * @param {{ token: string }} payload
+   */
+  verifyEmail: async (payload) => {
+    const response = await api.post("/api/accounts/verify-email/", payload);
+    return extractResponse(response);
+  },
+
+  /**
+   * POST /api/accounts/resend-verification/
+   * @param {{ email: string }} payload
+   */
+  resendVerification: async (payload) => {
+    const response = await api.post(
+      "/api/accounts/resend-verification/",
+      payload,
+    );
+    return extractResponse(response);
+  },
 };
 
 // // src/services/accountService.js

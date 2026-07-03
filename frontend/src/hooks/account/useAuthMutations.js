@@ -11,6 +11,28 @@ export function useRegister() {
     // Component handles navigation to verify-email page
   });
 }
+// ── NEW ──────────────────────────────────────────────────────────────────────
+
+/**
+ * useVerifyEmail
+ * POST /api/accounts/verify-email/
+ * On success: clean up sessionStorage, navigate to login
+ */
+export function useVerifyEmail() {
+  return useMutation({
+    mutationFn: accountService.verifyEmail,
+  })
+}
+
+/**
+ * useResendVerification
+ * POST /api/accounts/resend-verification/
+ */
+export function useResendVerification() {
+  return useMutation({
+    mutationFn: accountService.resendVerification,
+  })
+}
 // // src/hooks/account/useAuth.js
 
 // import { useMutation } from "@tanstack/react-query";
