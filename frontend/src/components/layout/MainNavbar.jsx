@@ -1,6 +1,7 @@
 import {Search,User,ShoppingCart,ChevronDown} from "lucide-react";
 import Container from "../common/Container";
 import Logo from "./Logo";
+import { Link } from "react-router-dom"
 
 export default function MainNavbar(){
 
@@ -32,10 +33,17 @@ return (
 
 <div className="flex gap-6 items-center">
       {/* Account */}
-      <div className="flex items-center gap-1 font-semibold">
+      {/* <div className="flex items-center gap-1 font-semibold">
         <User className="w-5 h-5" />
         <span>Account</span>
-      </div>
+      </div> */}
+      <Link
+  to="/register"
+  className="flex items-center gap-1 font-semibold hover:text-primary transition-colors"
+>
+  <User className="w-5 h-5" />
+  <span>Account</span>
+</Link>
 
       {/* Cart with badge */}
       <div className="relative flex items-center gap-1 font-semibold">
