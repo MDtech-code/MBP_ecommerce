@@ -8,7 +8,7 @@ import { ApolloProvider } from "@apollo/client/react";
 import { client } from "./graphql/client";
 import { setupInterceptors } from './api/interceptors'
 import { initAuthSync } from "./api/authSync";
-import { queryClient } from "./lib/queryClient"
+import { queryClient } from "./lib/queryClient.js"
 
 initAuthSync();
 setupInterceptors();
