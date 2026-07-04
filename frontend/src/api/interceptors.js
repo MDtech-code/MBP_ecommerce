@@ -1,7 +1,109 @@
+// // src/api/interceptors.js
+// import { api } from "./client";
+// import { setAuthToken, clearAuth, broadcastLogout, getAuthToken } from "./auth";
+// import { getCookie } from "../utils/getCsrfToken";
+
+// let isRefreshing = false;
+// let failedQueue = [];
+
+// const processQueue = (error, token = null) => {
+//   failedQueue.forEach((p) => (error ? p.reject(error) : p.resolve(token)));
+//   failedQueue = [];
+// };
+
+// export const setupInterceptors = () => {
+//   // Request interceptor — attach Bearer token to every request
+//   api.interceptors.request.use(
+//     (config) => {
+//       const token = getAuthToken();
+//       if (token) {
+//         config.headers.Authorization = `Bearer ${token}`;
+//       }
+//       return config;
+//     },
+//     (error) => Promise.reject(error),
+//   );
+
+//   // Response interceptor — handle 401, 429, 500
+//   api.interceptors.response.use(
+//     (response) => response,
+
+//     async (error) => {
+//       const originalRequest = error.config;
+//       const status = error.response?.status;
+//       const errorCode = error.response?.data?.errors?.code;
+
+//       // ─── 401 handling ─────────────────────────────────────────────────────
+//       if (
+//         status === 401 &&
+//         !originalRequest._retry &&
+//         !originalRequest._isRefreshCall && // ← never retry the refresh itself
+//         errorCode !== "invalid_credentials"
+//       ) {
+//         if (isRefreshing) {
+//           return new Promise((resolve, reject) => {
+//             failedQueue.push({ resolve, reject });
+//           })
+//             .then((token) => {
+//               originalRequest.headers.Authorization = `Bearer ${token}`;
+//               return api(originalRequest);
+//             })
+//             .catch((err) => Promise.reject(err));
+//         }
+
+//         originalRequest._retry = true;
+//         isRefreshing = true;
+
+//         try {
+//           // Through Vite proxy — no CORS issue
+//           const response = await api.post(
+//             "/api/accounts/token/refresh/",
+//             {},
+//             {
+//               withCredentials: true,
+//               headers: {
+//                 "X-CSRFToken": getCookie("csrftoken"),
+//               },
+//               _isRefreshCall: true, // ← prevent interceptor loop
+//             },
+//           );
+
+//           const newToken = response.data.data.access;
+//           setAuthToken(newToken);
+//           processQueue(null, newToken);
+//           return api(originalRequest);
+//         } catch (err) {
+//           processQueue(err, null);
+//           clearAuth();
+//           broadcastLogout();
+//           window.location.href = "/login";
+//           return Promise.reject(err);
+//         } finally {
+//           isRefreshing = false;
+//         }
+//       }
+
+//       // ─── 429 rate limit ───────────────────────────────────────────────────
+//       if (status === 429) {
+//         const retryAfter = error.response?.headers["retry-after"] || 60;
+//         console.warn(`Rate limited. Retry after ${retryAfter}s`);
+//         return Promise.reject(error);
+//       }
+
+//       // ─── 500 server error ─────────────────────────────────────────────────
+//       if (status >= 500) {
+//         console.error("Server error:", error.response?.data);
+//       }
+
+//       return Promise.reject(error);
+//     },
+//   );
+// };
 // src/api/interceptors.js
+import axios from "axios"
 import { api } from "./client"
 import { setAuthToken, clearAuth, broadcastLogout,getAuthToken } from "./auth"
-import axios from "axios"
+import { getCookie } from "../utils/getCsrfToken";
 
 let isRefreshing = false
 let failedQueue = []
@@ -9,12 +111,6 @@ let failedQueue = []
 const processQueue = (error, token = null) => {
   failedQueue.forEach(p => error ? p.reject(error) : p.resolve(token))
   failedQueue = []
-}
-
-function getCookie(name) {
-  const value = `; ${document.cookie}`;
-  const parts = value.split(`; ${name}=`);
-  if (parts.length === 2) return parts.pop().split(";").shift();
 }
 
 export const setupInterceptors = () => {
@@ -45,49 +141,48 @@ export const setupInterceptors = () => {
       if (
         status === 401 &&
         !originalRequest._retry &&
-        errorCode !== "invalid_credentials"   // ← fine-grained check
+        !originalRequest.url?.includes("/api/accounts/token/refresh/") &&
+        errorCode !== "invalid_credentials" // ← fine-grained check
       ) {
         if (isRefreshing) {
           return new Promise((resolve, reject) => {
-            failedQueue.push({ resolve, reject })
+            failedQueue.push({ resolve, reject });
           })
-            .then(token => {
-              originalRequest.headers.Authorization = `Bearer ${token}`
-              return api(originalRequest)
+            .then((token) => {
+              originalRequest.headers.Authorization = `Bearer ${token}`;
+              return api(originalRequest);
             })
-            .catch(err => Promise.reject(err))
+            .catch((err) => Promise.reject(err));
         }
 
-        originalRequest._retry = true
-        isRefreshing = true
+        originalRequest._retry = true;
+        isRefreshing = true;
 
         try {
+          console.log("i am from intercepter file ");
           const response = await axios.post(
-            `${import.meta.env.VITE_API_ORIGIN}/api/token/refresh/`,
+            `${import.meta.env.VITE_API_ORIGIN}/api/accounts/token/refresh/`,
+            {},
             {
-              
-            },
-            {
-              withCredentials: true, headers: {
+              withCredentials: true,
+              headers: {
                 "X-CSRFToken": getCookie("csrftoken"), // attach CSRF token
-              }, },
-            
-          )
+              },
+            },
+          );
 
-          const newToken = response.data.data.access
-          setAuthToken(newToken)
-          processQueue(null, newToken)
-          return api(originalRequest)
-
+          const newToken = response.data.data.access;
+          setAuthToken(newToken);
+          processQueue(null, newToken);
+          return api(originalRequest);
         } catch (err) {
-          processQueue(err, null)
-          clearAuth()
-          broadcastLogout()
-          window.location.href = "/login"
-          return Promise.reject(err)
-
+          processQueue(err, null);
+          clearAuth();
+          broadcastLogout();
+          // window.location.href = "/login";
+          return Promise.reject(err);
         } finally {
-          isRefreshing = false
+          isRefreshing = false;
         }
       }
 
