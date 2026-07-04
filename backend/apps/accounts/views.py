@@ -14,7 +14,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle
 from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
-
+from django.middleware.csrf import get_token
 from apps.core.api.views import BaseAPIView
 from apps.core.permissions import IsNotAuthenticated, IsVerified
 from .models import User, EmailVerificationToken, PasswordResetToken,UserProfile
@@ -57,11 +57,30 @@ def set_refresh_cookie(response, refresh_token: str) -> None:
         **COOKIE_SETTINGS,
     )
 
+def set_csrf_cookie(request, response) -> None:
+    """
+    Ensure csrftoken cookie is set and readable by JS.
+    """
+    csrf_token = get_token(request)
+    response.set_cookie(
+        "csrftoken",
+        csrf_token,
+        httponly=False,   # must be accessible to JS
+        secure=True,      # True in production
+        samesite="Lax",   # or "None" if cross-site frontend/backend
+    )
+
 
 def clear_refresh_cookie(response) -> None:
     response.delete_cookie(
         REFRESH_COOKIE_NAME,
         path=COOKIE_SETTINGS["path"],
+    )
+
+def clear_csrf_cookie(response) -> None:
+    response.delete_cookie(
+        "csrftoken",   # the name you used when setting it
+        path="/",      # CSRF cookie is usually scoped to root
     )
 
 
@@ -607,6 +626,7 @@ class LoginView(BaseAPIView):
         )
 
         set_refresh_cookie(response, refresh)
+        set_csrf_cookie(request, response)
         return response
 # class LoginView(BaseAPIView):
 #     """
@@ -712,6 +732,7 @@ class LogoutView(BaseAPIView):
             message=_("Logged out successfully."),
         )
         clear_refresh_cookie(response)
+        clear_csrf_cookie(response)
         return response
 # class LogoutView(BaseAPIView):
 #     """
@@ -842,6 +863,7 @@ class TokenRefreshView(BaseAPIView):
                     },
                 )
                 clear_refresh_cookie(response)
+                clear_csrf_cookie(response)
                 return self.error_response(
                     message=_("Session is no longer valid. Please log in again."),
                     status_code=status.HTTP_401_UNAUTHORIZED,
@@ -1683,7 +1705,7 @@ class AvatarUploadView(BaseAPIView):
         )
 
         return self.success_response(
-            data={"avatar_url": request.build_absolute_uri(profile.avatar.url)},
+            data={"avatar": profile.avatar.url},
             message=_("Avatar uploaded successfully."),
         )
 # class AvatarUploadView(BaseAPIView):

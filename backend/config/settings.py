@@ -14,7 +14,8 @@ SECRET_KEY = env('SECRET_KEY')
 DEBUG = env.bool('DEBUG',default=False)
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost"])
 CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
-
+CORS_ALLOW_CREDENTIALS=env.bool('CORS_ALLOW_CREDENTIALS',default=False)
+CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
 CSRF_COOKIE_SECURE = env.bool('CSRF_COOKIE_SECURE',default=False)
 SESSION_COOKIE_SECURE = env.bool('SESSION_COOKIE_SECURE',default=False)
 
@@ -200,7 +201,7 @@ CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=[
 # ─── JWT ──────────────────────────────────────────────
 from datetime import timedelta
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=1),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
