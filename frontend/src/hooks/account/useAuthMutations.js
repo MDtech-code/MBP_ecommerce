@@ -1,7 +1,10 @@
 // src/hooks/account/useAuth.js
 
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { accountService } from "../../services/accountService";
+import { useAuthStore } from "../../stores/authStore";
+
+import { queryClient } from "../../lib/queryClient";
 
 export function useRegister() {
   return useMutation({
@@ -21,7 +24,7 @@ export function useRegister() {
 export function useVerifyEmail() {
   return useMutation({
     mutationFn: accountService.verifyEmail,
-  })
+  });
 }
 
 /**
@@ -31,108 +34,94 @@ export function useVerifyEmail() {
 export function useResendVerification() {
   return useMutation({
     mutationFn: accountService.resendVerification,
-  })
+  });
 }
-// // src/hooks/account/useAuth.js
 
-// import { useMutation } from "@tanstack/react-query";
-// import { accountService } from "../../services/accountService";
-// import {
-//   setAuthToken,
-//   clearAuth,
-//   broadcastLogin,
-//   broadcastLogout,
-// } from "../../api/auth";
-// import { queryClient } from "../../lib/queryClient";
+// ── NEW ───────────────────────────────────────────────────────────────────────
 
-// /**
-//  * useRegister
-//  *
-//  * Wraps POST /api/accounts/register/
-//  *
-//  * Usage in component:
-//  *   const { mutate: register, isPending, isError, error } = useRegister()
-//  *   register({ full_name, email, password, confirm_password })
-//  *
-//  * Component is responsible for:
-//  *   - Calling normalizeError(error) to get clean error shape
-//  *   - Navigating after success (via onSuccess callback)
-//  *   - Showing field errors from getFieldErrors()
-//  */
-// export function useRegister() {
-//   return useMutation({
-//     mutationFn: accountService.register,
-//     // No onSuccess here — register likely redirects to verify email
-//     // Component handles navigation in its own onSuccess callback
-//   });
-// }
+/**
+ * useLogin
+ * On success: stores token + user in authStore
+ * Navigation handled in useLoginForm.js
+ */
+export function useLogin() {
+  const login = useAuthStore((state) => state.login);
 
-// /**
-//  * useLogin
-//  *
-//  * Wraps POST /api/accounts/login/
-//  *
-//  * On success:
-//  *   - Sets access token in memory + axios headers
-//  *   - Broadcasts login to other tabs
-//  *   - Clears stale cache from any previous session
-//  *
-//  * Usage in component:
-//  *   const { mutate: login, isPending, isError, error } = useLogin()
-//  *   login(
-//  *     { email, password },
-//  *     { onSuccess: () => navigate('/') }  ← component handles redirect
-//  *   )
-//  */
-// export function useLogin() {
-//   return useMutation({
-//     mutationFn: accountService.login,
+  return useMutation({
+    mutationFn: accountService.login,
+    onSuccess: ({ data }) => {
+      // data.access → access token
+      // data.user   → full user object
+      login(data);
+    },
+  });
+}
 
-//     onSuccess: ({ data }) => {
-//       // Set access token in memory — this updates axios headers automatically
-//       setAuthToken(data.access);
+/**
+ * useLogout
+ * On success AND error: always clear client state
+ * Server call failing must never leave user stuck in auth limbo
+ */
+export function useLogout() {
+  const logout = useAuthStore((state) => state.logout);
 
-//       // Tell other browser tabs this tab logged in
-//       broadcastLogin();
+  return useMutation({
+    mutationFn: accountService.logout,
+    onSuccess: () => {
+      logout();
+    },
+    onError: () => {
+      // Force logout on client even if server call fails
+      logout();
+    },
+  });
+}
 
-//       // Wipe any cache from previous user session
-//       queryClient.clear();
-//     },
+/**
+ * useProfile
+ * GET /api/accounts/profile/
+ * Called on protected pages to restore user state after page refresh
+ * Only runs when user has an access token (hasAuthToken check in component)
+ */
+export function useProfile(options = {}) {
+  const setUser = useAuthStore((state) => state.setUser);
 
-//     // onError: we do NOT normalize here
-//     // Normalization happens in the component
-//     // Hook stays clean — no UI concerns
-//   });
-// }
+  return useQuery({
+    queryKey: ["account", "profile"],
+    queryFn: async () => {
+      const result = await accountService.getProfile();
+      // Sync fetched profile into Zustand so UI is always consistent
+      setUser(result.data);
+      return result;
+    },
+    ...options,
+  });
+}
 
-// /**
-//  * useLogout
-//  *
-//  * Wraps POST /api/accounts/logout/
-//  *
-//  * Always clears client auth regardless of server response.
-//  * If server call fails — we still log the user out on client.
-//  *
-//  * Usage:
-//  *   const { mutate: logout } = useLogout()
-//  *   logout()
-//  */
-// export function useLogout() {
-//   return useMutation({
-//     mutationFn: accountService.logout,
+export function useUpdateProfile() {
+  const setUser = useAuthStore((state) => state.setUser);
+  return useMutation({
+    mutationFn: accountService.updateProfile,
+    onSuccess: ({ data }) => {
+      setUser(data);
+      queryClient.invalidateQueries({ queryKey: ["account", "profile"] });
+    },
+  });
+}
 
-//     onSuccess: () => {
-//       clearAuth();
-//       broadcastLogout();
-//       queryClient.clear();
-//     },
-
-//     onError: () => {
-//       // Force logout on client even if server 500s
-//       // Never leave user in broken auth state
-//       clearAuth();
-//       broadcastLogout();
-//       queryClient.clear();
-//     },
-//   });
-// }
+export function useUploadAvatar() {
+  const user = useAuthStore((state) => state.user);
+  const setUser = useAuthStore((state) => state.setUser);
+  return useMutation({
+    mutationFn: accountService.uploadAvatar,
+    onSuccess: ({ data }) => {
+      setUser({
+        ...user,
+        profile: {
+          ...user.profile,
+          avatar: data.avatar,
+        },
+      });
+    },
+  });
+}

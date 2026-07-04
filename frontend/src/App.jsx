@@ -1,15 +1,41 @@
+// src/App.jsx
 
-import {RouterProvider} from "react-router-dom";
-import {router} from "./routes/index";
+console.log("AppContent render");
+import { RouterProvider } from "react-router-dom"
+import { router } from "./routes/index"
+import { useBootstrapAuth } from "./hooks/account/useBootstrapAuth"
+import { useAuthStore } from "./stores/authStore"
+function AppContent() {
+  useBootstrapAuth()
 
+  // Show nothing while restoring session
+  // This prevents the /login redirect flicker on page refresh
+  const isBootstrapping = useAuthStore((state) => state.isBootstrapping)
+  if (isBootstrapping) {
+    return (
+      <div className="min-h-screen bg-surface flex items-center justify-center">
+        <div className="text-gray-400 text-sm">Loading...</div>
+      </div>
+    )
+  }
 
-function App(){
-
-return <RouterProvider router={router}/>
-
+  return <RouterProvider router={router} />
 }
 
-export default App;
+export default function App() {
+  return <AppContent />
+}
+// import {RouterProvider} from "react-router-dom";
+// import {router} from "./routes/index";
+
+
+// function App(){
+
+// return <RouterProvider router={router}/>
+
+// }
+
+// export default App;
 
 
 

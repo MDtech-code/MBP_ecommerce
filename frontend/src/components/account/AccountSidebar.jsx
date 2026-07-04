@@ -1,154 +1,227 @@
-import {
-  User,
-  Package,
-  MapPin,
-  Heart,
-  Shield,
-  LogOut
-} from "lucide-react";
-
+// src/components/account/AccountSidebar.jsx
+import { User, Package, MapPin, Heart, Shield, LogOut } from "lucide-react"
+import { useNavigate, useLocation } from "react-router-dom"
+import { useLogout } from "../../hooks/account/useAuthMutations"
+import { useAuthStore } from "../../stores/authStore"
 
 const menu = [
+  { name: "Profile",   icon: User,    path: "/profile"    },
+  { name: "Orders",    icon: Package, path: "/orders"      },
+  { name: "Addresses", icon: MapPin,  path: "/addresses"   },
+  { name: "Wishlist",  icon: Heart,   path: "/wishlist"    },
+  { name: "Security",  icon: Shield,  path: "/security"    },
+]
 
-{
- name:"Profile",
- icon:User
-},
+export default function AccountSidebar() {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const logout = useAuthStore((state) => state.logout)
+  const { mutate: logoutMutation, isPending } = useLogout()
 
-{
- name:"Orders",
- icon:Package
-},
+  const handleLogout = () => {
+    logoutMutation(undefined, {
+      onSuccess: () => navigate("/login"),
+      onError: () => navigate("/login"),
+    })
+  }
 
-{
- name:"Addresses",
- icon:MapPin
-},
+  return (
+    <aside className="hidden lg:block w-64 bg-dark text-white">
+      <div className="p-6">
 
-{
- name:"Wishlist",
- icon:Heart
-},
+        <h2 className="font-bold text-xl mb-8">MY ACCOUNT</h2>
 
-{
- name:"Security",
- icon:Shield
-},
+        <div className="space-y-2">
 
-{
- name:"Logout",
- icon:LogOut
+          {menu.map(({ name, icon: Icon, path }) => (
+            <div
+              key={name}
+              onClick={() => navigate(path)}
+              className={`
+                flex items-center gap-4 px-5 py-4 rounded-lg cursor-pointer
+                ${location.pathname === path
+                  ? "bg-primary"
+                  : "hover:bg-white/10"
+                }
+              `}
+            >
+              <Icon size={20} />
+              <span className="font-semibold">{name}</span>
+            </div>
+          ))}
+
+          {/* Logout — separate from nav items */}
+          <div
+            onClick={handleLogout}
+            className={`
+              flex items-center gap-4 px-5 py-4 rounded-lg cursor-pointer
+              hover:bg-white/10
+              ${isPending ? "opacity-60 pointer-events-none" : ""}
+            `}
+          >
+            <LogOut size={20} />
+            <span className="font-semibold">
+              {isPending ? "Logging out..." : "Logout"}
+            </span>
+          </div>
+
+        </div>
+
+      </div>
+    </aside>
+  )
 }
-
-];
-
-
-
-export default function AccountSidebar(){
-
-
-return (
-
-<aside
-className="
-hidden
-lg:block
-w-64
-bg-dark
-text-white
-"
->
+// import {
+//   User,
+//   Package,
+//   MapPin,
+//   Heart,
+//   Shield,
+//   LogOut
+// } from "lucide-react";
 
 
-<div
-className="
-p-6
-"
->
+// const menu = [
 
+// {
+//  name:"Profile",
+//  icon:User
+// },
 
-<h2
-className="
-font-bold
-text-xl
-mb-8
-"
->
+// {
+//  name:"Orders",
+//  icon:Package
+// },
 
-MY ACCOUNT
+// {
+//  name:"Addresses",
+//  icon:MapPin
+// },
 
-</h2>
+// {
+//  name:"Wishlist",
+//  icon:Heart
+// },
 
+// {
+//  name:"Security",
+//  icon:Shield
+// },
 
+// {
+//  name:"Logout",
+//  icon:LogOut
+// }
 
-
-<div
-className="
-space-y-2
-"
->
-
-
-{
-
-menu.map(({name,icon:Icon})=>(
-
-
-<div
-key={name}
-
-className={`
-flex
-items-center
-gap-4
-px-5
-py-4
-rounded-lg
-cursor-pointer
-
-${name==="Profile"
-?
-"bg-primary"
-:
-"hover:bg-white/10"
-}
-
-`}
-
->
-
-
-<Icon size={20}/>
-
-
-<span
-className="
-font-semibold
-"
->
-
-{name}
-
-</span>
+// ];
 
 
 
-</div>
+// export default function AccountSidebar(){
 
 
-))
+// return (
 
-}
+// <aside
+// className="
+// hidden
+// lg:block
+// w-64
+// bg-dark
+// text-white
+// "
+// >
 
 
-</div>
+// <div
+// className="
+// p-6
+// "
+// >
 
 
-</div>
+// <h2
+// className="
+// font-bold
+// text-xl
+// mb-8
+// "
+// >
+
+// MY ACCOUNT
+
+// </h2>
 
 
-</aside>
 
-)
 
-}
+// <div
+// className="
+// space-y-2
+// "
+// >
+
+
+// {
+
+// menu.map(({name,icon:Icon})=>(
+
+
+// <div
+// key={name}
+
+// className={`
+// flex
+// items-center
+// gap-4
+// px-5
+// py-4
+// rounded-lg
+// cursor-pointer
+
+// ${name==="Profile"
+// ?
+// "bg-primary"
+// :
+// "hover:bg-white/10"
+// }
+
+// `}
+
+// >
+
+
+// <Icon size={20}/>
+
+
+// <span
+// className="
+// font-semibold
+// "
+// >
+
+// {name}
+
+// </span>
+
+
+
+// </div>
+
+
+// ))
+
+// }
+
+
+// </div>
+
+
+// </div>
+
+
+// </aside>
+
+// )
+
+// }

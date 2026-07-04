@@ -2,6 +2,8 @@
 
 import { api } from "../api/client";
 import { extractResponse } from "../api/transformers";
+import { getCookie } from "../utils/getCsrfToken";
+// import axios from "axios";
 
 export const accountService = {
   /**
@@ -34,70 +36,129 @@ export const accountService = {
     );
     return extractResponse(response);
   },
+
+  // ── NEW ────────────────────────────────────────────────────────────────────
+
+  /**
+   * POST /api/accounts/login/
+   * @param {{ email: string, password: string }} payload
+   * @returns {{ data: { access: string, user: object }, message, meta }}
+   */
+  login: async (payload) => {
+    const response = await api.post("/api/accounts/login/", payload);
+    return extractResponse(response);
+  },
+
+  /**
+   * POST /api/accounts/logout/
+   * Requires withCredentials so backend can clear the refresh token cookie
+   */
+  logout: async () => {
+    const response = await api.post(
+      "/api/accounts/logout/",
+      {},
+      {
+        withCredentials: true,
+      },
+    );
+    return extractResponse(response);
+  },
+
+  /**
+   * GET /api/accounts/profile/
+   * Returns full user object — called on page refresh to restore state
+   */
+  getProfile: async () => {
+    const response = await api.get("/api/accounts/profile/");
+    return extractResponse(response);
+  },
+
+  /**
+   * PATCH /api/accounts/profile/
+   * Partial update — only send changed fields
+   */
+  updateProfile: async (payload) => {
+    const response = await api.patch("/api/accounts/profile/", payload);
+    return extractResponse(response);
+  },
+
+  /**
+   * POST /api/accounts/profile/avatar/
+   * FormData upload — field name must be "avatar"
+   */
+  uploadAvatar: async (formData) => {
+    const response = await api.post("/api/accounts/profile/avatar/", formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    });
+    return extractResponse(response);
+  },
+
+  /**
+   * Called ONCE on app start to restore session.
+   * Uses refresh token cookie to get a new access token.
+   * Direct axios call — bypasses our api instance so interceptors
+   * do not accidentally catch and loop this call.
+   */
+  bootstrap: async () => {
+    console.log("i am from the bootstrap");
+    const response = await api.post(
+      "/api/accounts/token/refresh/",
+      {},
+      {
+        withCredentials: true,
+        headers: {
+          "X-CSRFToken": getCookie("csrftoken"),
+        },
+      },
+    );
+    return extractResponse(response);
+  },
+ 
+
 };
-
-// // src/services/accountService.js
-
-// import { api } from "../api/client";
-// import { extractResponse } from "../api/transformers";
-
-// /**
-//  * Account Service
-//  *
-//  * Handles all HTTP calls for the accounts app.
-//  * Endpoints: /api/accounts/
-//  *
-//  * Rules:
-//  *  - Every function calls extractResponse() before returning
-//  *  - Never catch errors here — let them bubble to TanStack Query
-//  *  - Never import hooks here — services are plain async functions
-//  *  - Never access component state here
-//  */
-
-// export const accountService = {
-//   /**
-//    * Register a new user
-//    * POST /api/accounts/register/
-//    *
-//    * @param {{ full_name, email, password, confirm_password }} payload
-//    * @returns {{ data: { user }, message, meta }}
-//    */
-//   register: async (payload) => {
-//     const response = await api.post("/api/accounts/register/", payload);
-//     return extractResponse(response);
-//   },
-
-//   /**
-//    * Login with email and password
-//    * POST /api/accounts/login/
-//    *
-//    * @param {{ email, password }} payload
-//    * @returns {{ data: { access, user }, message, meta }}
-//    */
-//   login: async (payload) => {
-//     const response = await api.post("/api/accounts/login/", payload);
-//     return extractResponse(response);
-//   },
-
-//   /**
-//    * Logout current user
-//    * POST /api/accounts/logout/
-//    * Refresh token cookie is cleared by backend
-//    *
-//    * @returns {{ data: null, message, meta }}
-//    */
-//   logout: async () => {
-//     const response = await api.post(
-//       "/api/accounts/logout/",
-//       {},
-//       {
-//         withCredentials: true, // backend needs to clear the cookie
-//       },
-//     );
-//     return extractResponse(response);
-//   },
-// };
-
-// // Note: token/refresh is NOT here
-// // It is called directly inside interceptors.js — not via TanStack Query
-// // because it runs during the axios error handling cycle, not component lifecycle
+ // bootstrap: async () => {
+  //   console.log("i am from the bootstrap");
+  //   const response = await axios.post(
+  //     `${import.meta.env.VITE_API_ORIGIN}/api/accounts/token/refresh/`,
+  //     {},
+  //     {
+  //       withCredentials: true,
+  //       headers: {
+  //         "X-CSRFToken": getCookie("csrftoken"),
+  //       },
+  //     },
+  //   );
+  //   return extractResponse(response);
+  // },
+  // bootstrap: async () => {
+  //   // Use api instance (goes through Vite proxy — no CORS)
+  //   // withCredentials sends the refresh token cookie
+  //   // X-CSRFToken satisfies Django CSRF check
+  //   const response = await api.post(
+  //     "/api/accounts/token/refresh/",
+  //     {},
+  //     {
+  //       withCredentials: true,
+  //       headers: {
+  //         "X-CSRFToken": getCookie("csrftoken"),
+  //       },
+  //     },
+  //   );
+  //   return extractResponse(response);
+  // },
+  // bootstrap: async () => {
+  //   console.log("ha csrftoken hi hu bahi", getCookie("csrftoken"));
+  //   const response = await axios.post(
+  //     `${import.meta.env.VITE_API_ORIGIN}/api/accounts/token/refresh/`,
+  //     {},
+  //     {
+  //       withCredentials: true,
+  //       headers: {
+  //         "X-CSRFToken": getCookie("csrftoken"),
+  //       },
+  //     },
+  //   );
+  //   return extractResponse(response);
+  // },
