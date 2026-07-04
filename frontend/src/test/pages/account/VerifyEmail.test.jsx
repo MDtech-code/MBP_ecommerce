@@ -5,13 +5,17 @@ import { MemoryRouter } from "react-router-dom"
 import VerifyEmail from "../../../pages/account/VerifyEmail"
 import * as useVerifyEmailPageModule from "../../../hooks/account/useVerifyEmailPage"
 
+// ─── Mocks ────────────────────────────────────────────────────────────────────
+
 vi.mock("../../../hooks/account/useVerifyEmailPage")
 
 vi.mock("../../../components/account/AuthLayout", () => ({
-  default: ({ children }) => <div data-testid="auth-layout">{children}</div>,
+  default: ({ children }) => (
+    <div data-testid="auth-layout">{children}</div>
+  ),
 }))
 
-// ─── Default mock hook return ─────────────────────────────────────────────────
+// ─── Default hook return ──────────────────────────────────────────────────────
 
 const defaultHookReturn = {
   email: "john@test.com",
@@ -25,7 +29,7 @@ const defaultHookReturn = {
   handleResend: vi.fn(),
 }
 
-const renderVerifyEmail = () =>
+const renderPage = () =>
   render(
     <MemoryRouter>
       <VerifyEmail />
@@ -42,48 +46,50 @@ describe("VerifyEmail page", () => {
       .mockReturnValue(defaultHookReturn)
   })
 
-  // ── Normal state (no token) ───────────────────────────────────────────────
+  // ── Static elements always present ───────────────────────────────────────
+
+  it("always renders the heading", () => {
+    renderPage()
+    expect(screen.getByText("Verify Your Email")).toBeInTheDocument()
+  })
+
+  // ── No token — normal waiting state ──────────────────────────────────────
 
   describe("no token in URL — waiting state", () => {
 
-    it("renders heading", () => {
-      renderVerifyEmail()
-      expect(screen.getByText("Verify Your Email")).toBeInTheDocument()
-    })
-
-    it("shows the registered email address", () => {
-      renderVerifyEmail()
+    it("shows registered email address", () => {
+      renderPage()
       expect(screen.getByText("john@test.com")).toBeInTheDocument()
     })
 
-    it("shows fallback text when email is empty", () => {
+    it("shows fallback text when email is empty string", () => {
       vi.spyOn(useVerifyEmailPageModule, "useVerifyEmailPage")
         .mockReturnValue({ ...defaultHookReturn, email: "" })
 
-      renderVerifyEmail()
+      renderPage()
       expect(screen.getByText("your email address")).toBeInTheDocument()
     })
 
     it("renders resend button", () => {
-      renderVerifyEmail()
+      renderPage()
       expect(
         screen.getByRole("button", { name: /resend email/i })
       ).toBeInTheDocument()
     })
 
     it("renders back to login link", () => {
-      renderVerifyEmail()
+      renderPage()
       expect(
         screen.getByRole("link", { name: /back to login/i })
       ).toBeInTheDocument()
     })
 
-    it("calls handleResend when resend button clicked", () => {
+    it("calls handleResend when button clicked", () => {
       const mockHandleResend = vi.fn()
       vi.spyOn(useVerifyEmailPageModule, "useVerifyEmailPage")
         .mockReturnValue({ ...defaultHookReturn, handleResend: mockHandleResend })
 
-      renderVerifyEmail()
+      renderPage()
       fireEvent.click(screen.getByRole("button", { name: /resend email/i }))
 
       expect(mockHandleResend).toHaveBeenCalledTimes(1)
@@ -93,62 +99,105 @@ describe("VerifyEmail page", () => {
       vi.spyOn(useVerifyEmailPageModule, "useVerifyEmailPage")
         .mockReturnValue({ ...defaultHookReturn, isResending: true })
 
-      renderVerifyEmail()
+      renderPage()
 
       const button = screen.getByRole("button", { name: /sending/i })
       expect(button).toBeDisabled()
     })
 
-    it("shows resend success message", () => {
+    it("shows resend success message with role status", () => {
       vi.spyOn(useVerifyEmailPageModule, "useVerifyEmailPage")
         .mockReturnValue({
           ...defaultHookReturn,
           resendSuccessMsg: "Verification email sent. Please check your inbox.",
         })
 
-      renderVerifyEmail()
+      renderPage()
 
-      expect(
-        screen.getByRole("status")
-      ).toHaveTextContent("Verification email sent. Please check your inbox.")
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Verification email sent. Please check your inbox."
+      )
     })
 
-    it("shows resend error message", () => {
+    it("shows resend error message with role alert", () => {
       vi.spyOn(useVerifyEmailPageModule, "useVerifyEmailPage")
         .mockReturnValue({
           ...defaultHookReturn,
           resendErrorMsg: "No account found with this email.",
         })
 
-      renderVerifyEmail()
+      renderPage()
+
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "No account found with this email."
+      )
+    })
+
+    it("does not show resend or back to login when token is in URL and no error", () => {
+      vi.spyOn(useVerifyEmailPageModule, "useVerifyEmailPage")
+        .mockReturnValue({
+          ...defaultHookReturn,
+          tokenFromUrl: "valid-token",
+          verifyErrorMsg: null,
+        })
+
+      renderPage()
 
       expect(
-        screen.getByRole("alert")
-      ).toHaveTextContent("No account found with this email.")
+        screen.queryByRole("button", { name: /resend email/i })
+      ).not.toBeInTheDocument()
+
+      expect(
+        screen.queryByRole("link", { name: /back to login/i })
+      ).not.toBeInTheDocument()
     })
 
   })
 
-  // ── Token in URL state ────────────────────────────────────────────────────
+  // ── Token in URL — verifying state ───────────────────────────────────────
 
-  describe("token in URL — auto verifying state", () => {
+  describe("token in URL — verifying state", () => {
 
-    it("shows verifying message when isVerifying is true", () => {
+    it("shows verifying message when isVerifying true and no error", () => {
       vi.spyOn(useVerifyEmailPageModule, "useVerifyEmailPage")
         .mockReturnValue({
           ...defaultHookReturn,
-          tokenFromUrl: "test-token-123",
+          tokenFromUrl: "valid-token",
           isVerifying: true,
+          verifyErrorMsg: null,
         })
 
-      renderVerifyEmail()
+      renderPage()
 
       expect(
         screen.getByText(/verifying your email/i)
       ).toBeInTheDocument()
     })
 
-    it("shows verify error when token is invalid", () => {
+    it("shows redirecting text when verified and not verifying", () => {
+      vi.spyOn(useVerifyEmailPageModule, "useVerifyEmailPage")
+        .mockReturnValue({
+          ...defaultHookReturn,
+          tokenFromUrl: "valid-token",
+          isVerifying: false,
+          isVerifySuccess: true,
+          verifyErrorMsg: null,
+        })
+
+      renderPage()
+
+      expect(
+        screen.getByText(/redirecting/i)
+      ).toBeInTheDocument()
+    })
+
+  })
+
+  // ── Token in URL — error state ────────────────────────────────────────────
+
+  describe("token in URL — error state", () => {
+
+    it("shows verify error and falls back to waiting UI", () => {
       vi.spyOn(useVerifyEmailPageModule, "useVerifyEmailPage")
         .mockReturnValue({
           ...defaultHookReturn,
@@ -157,25 +206,17 @@ describe("VerifyEmail page", () => {
           verifyErrorMsg: "Invalid or expired token.",
         })
 
-      renderVerifyEmail()
+      renderPage()
 
+      // Error banner shown
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Invalid or expired token."
+      )
+
+      // Resend button shown so user can request a new link
       expect(
-        screen.getByText("Invalid or expired token.")
+        screen.getByRole("button", { name: /resend email/i })
       ).toBeInTheDocument()
-    })
-
-    it("does not show resend button when token is in URL", () => {
-      vi.spyOn(useVerifyEmailPageModule, "useVerifyEmailPage")
-        .mockReturnValue({
-          ...defaultHookReturn,
-          tokenFromUrl: "test-token-123",
-        })
-
-      renderVerifyEmail()
-
-      expect(
-        screen.queryByRole("button", { name: /resend email/i })
-      ).not.toBeInTheDocument()
     })
 
   })

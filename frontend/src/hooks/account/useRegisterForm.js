@@ -36,7 +36,7 @@ export function useRegisterForm() {
     register(form, {
       onSuccess: () => {
         // Store email for VerifyEmail page to display + use for resend
-        sessionStorage.setItem("pending_verification_email", form.email),
+        localStorage.setItem("pending_verification_email", form.email),
         navigate("/verify-email")
       }
     });

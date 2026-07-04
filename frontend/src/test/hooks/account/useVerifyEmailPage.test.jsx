@@ -2,7 +2,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { renderHook, act, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { useVerifyEmailPage } from "../../../hooks/account/useVerifyEmailPage"
 import { accountService } from "../../../services/accountService"
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
@@ -36,40 +35,51 @@ const makeWrapper = () => {
   )
 }
 
-// Helper — mock URL with no token (normal page load after register)
 const mockNoToken = () => {
+  useSearchParams.mockReturnValue([{ get: () => null }])
+}
+
+const mockWithToken = (token = "test-token-123") => {
   useSearchParams.mockReturnValue([
-    { get: () => null },
+    { get: (key) => (key === "token" ? token : null) },
   ])
 }
 
-// Helper — mock URL with token (user clicked email link)
-const mockWithToken = (token = "test-token-123") => {
-  useSearchParams.mockReturnValue([
-    { get: (key) => key === "token" ? token : null },
-  ])
+// ─── Module cache reset between tests ────────────────────────────────────────
+// Module-level variables in useVerifyEmailPage persist across tests
+// We must reset them by re-importing the module fresh each time
+
+const resetModuleCache = async () => {
+  vi.resetModules()
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe("useVerifyEmailPage", () => {
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks()
+    localStorage.clear()
     sessionStorage.clear()
+    await resetModuleCache()
   })
 
   afterEach(() => {
+    localStorage.clear()
     sessionStorage.clear()
   })
 
-  // ── Email from sessionStorage ─────────────────────────────────────────────
+  // ── Email from storage ────────────────────────────────────────────────────
 
-  describe("email from sessionStorage", () => {
+  describe("email from localStorage", () => {
 
-    it("reads email from sessionStorage on mount", () => {
+    it("reads email from localStorage on mount", async () => {
       mockNoToken()
-      sessionStorage.setItem("pending_verification_email", "john@test.com")
+      localStorage.setItem("pending_verification_email", "john@test.com")
+
+      const { useVerifyEmailPage } = await import(
+        "../../../hooks/account/useVerifyEmailPage"
+      )
 
       const { result } = renderHook(() => useVerifyEmailPage(), {
         wrapper: makeWrapper(),
@@ -78,8 +88,12 @@ describe("useVerifyEmailPage", () => {
       expect(result.current.email).toBe("john@test.com")
     })
 
-    it("returns empty string when sessionStorage has no email", () => {
+    it("returns empty string when storage has no email", async () => {
       mockNoToken()
+
+      const { useVerifyEmailPage } = await import(
+        "../../../hooks/account/useVerifyEmailPage"
+      )
 
       const { result } = renderHook(() => useVerifyEmailPage(), {
         wrapper: makeWrapper(),
@@ -92,22 +106,14 @@ describe("useVerifyEmailPage", () => {
 
   // ── No token in URL ───────────────────────────────────────────────────────
 
-  describe("no token in URL (arrived from register)", () => {
+  describe("no token in URL", () => {
 
-    it("does not call verifyEmail on mount when no token", async () => {
+    it("tokenFromUrl is null", async () => {
       mockNoToken()
 
-      renderHook(() => useVerifyEmailPage(), {
-        wrapper: makeWrapper(),
-      })
-
-      await new Promise((r) => setTimeout(r, 50))
-
-      expect(accountService.verifyEmail).not.toHaveBeenCalled()
-    })
-
-    it("tokenFromUrl is null when no token in URL", () => {
-      mockNoToken()
+      const { useVerifyEmailPage } = await import(
+        "../../../hooks/account/useVerifyEmailPage"
+      )
 
       const { result } = renderHook(() => useVerifyEmailPage(), {
         wrapper: makeWrapper(),
@@ -116,8 +122,28 @@ describe("useVerifyEmailPage", () => {
       expect(result.current.tokenFromUrl).toBeNull()
     })
 
-    it("isVerifying is false when no token in URL", () => {
+    it("does not call verifyEmail on mount", async () => {
       mockNoToken()
+
+      const { useVerifyEmailPage } = await import(
+        "../../../hooks/account/useVerifyEmailPage"
+      )
+
+      renderHook(() => useVerifyEmailPage(), {
+        wrapper: makeWrapper(),
+      })
+
+      await new Promise((r) => setTimeout(r, 100))
+
+      expect(accountService.verifyEmail).not.toHaveBeenCalled()
+    })
+
+    it("isVerifying is false", async () => {
+      mockNoToken()
+
+      const { useVerifyEmailPage } = await import(
+        "../../../hooks/account/useVerifyEmailPage"
+      )
 
       const { result } = renderHook(() => useVerifyEmailPage(), {
         wrapper: makeWrapper(),
@@ -128,28 +154,22 @@ describe("useVerifyEmailPage", () => {
 
   })
 
-  // ── Token in URL ──────────────────────────────────────────────────────────
+  // ── Token in URL — success ────────────────────────────────────────────────
 
-  describe("token in URL (user clicked email link)", () => {
+  describe("token in URL — successful verification", () => {
 
-    it("tokenFromUrl contains the token value", () => {
-      mockWithToken("abc-123")
-
-      const { result } = renderHook(() => useVerifyEmailPage(), {
-        wrapper: makeWrapper(),
-      })
-
-      expect(result.current.tokenFromUrl).toBe("abc-123")
-    })
-
-    it("calls verifyEmail with correct token key on mount", async () => {
-      mockWithToken("test-token-123")
+    it("calls verifyEmail with correct token key", async () => {
+      mockWithToken("good-token-123")
 
       accountService.verifyEmail.mockResolvedValue({
         data: null,
         message: "Email verified.",
         meta: null,
       })
+
+      const { useVerifyEmailPage } = await import(
+        "../../../hooks/account/useVerifyEmailPage"
+      )
 
       renderHook(() => useVerifyEmailPage(), {
         wrapper: makeWrapper(),
@@ -157,20 +177,24 @@ describe("useVerifyEmailPage", () => {
 
       await waitFor(() => {
         expect(accountService.verifyEmail).toHaveBeenCalledWith(
-          { token: "test-token-123" },  // ← key must be "token" not "tokenFromUrl"
+          { token: "good-token-123" },
           expect.anything()
         )
       })
     })
 
-    it("navigates to /login on successful verification", async () => {
-      mockWithToken("test-token-123")
+    it("navigates to /login with success message on verified", async () => {
+      mockWithToken("good-token-123")
 
       accountService.verifyEmail.mockResolvedValue({
         data: null,
         message: "Email verified.",
         meta: null,
       })
+
+      const { useVerifyEmailPage } = await import(
+        "../../../hooks/account/useVerifyEmailPage"
+      )
 
       renderHook(() => useVerifyEmailPage(), {
         wrapper: makeWrapper(),
@@ -183,9 +207,9 @@ describe("useVerifyEmailPage", () => {
       })
     })
 
-    it("removes email from sessionStorage on successful verification", async () => {
-      mockWithToken("test-token-123")
-      sessionStorage.setItem("pending_verification_email", "john@test.com")
+    it("clears email from localStorage on success", async () => {
+      mockWithToken("good-token-123")
+      localStorage.setItem("pending_verification_email", "john@test.com")
 
       accountService.verifyEmail.mockResolvedValue({
         data: null,
@@ -193,14 +217,26 @@ describe("useVerifyEmailPage", () => {
         meta: null,
       })
 
+      const { useVerifyEmailPage } = await import(
+        "../../../hooks/account/useVerifyEmailPage"
+      )
+
       renderHook(() => useVerifyEmailPage(), {
         wrapper: makeWrapper(),
       })
 
       await waitFor(() => {
-        expect(sessionStorage.getItem("pending_verification_email")).toBeNull()
+        expect(
+          localStorage.getItem("pending_verification_email")
+        ).toBeNull()
       })
     })
+
+  })
+
+  // ── Token in URL — failure ────────────────────────────────────────────────
+
+  describe("token in URL — failed verification", () => {
 
     it("exposes verifyErrorMsg when token is invalid", async () => {
       mockWithToken("bad-token")
@@ -217,12 +253,18 @@ describe("useVerifyEmailPage", () => {
 
       accountService.verifyEmail.mockRejectedValue(mockError)
 
+      const { useVerifyEmailPage } = await import(
+        "../../../hooks/account/useVerifyEmailPage"
+      )
+
       const { result } = renderHook(() => useVerifyEmailPage(), {
         wrapper: makeWrapper(),
       })
 
       await waitFor(() => {
-        expect(result.current.verifyErrorMsg).toBe("Invalid or expired token.")
+        expect(result.current.verifyErrorMsg).toBe(
+          "Invalid or expired token."
+        )
       })
     })
 
@@ -241,6 +283,10 @@ describe("useVerifyEmailPage", () => {
 
       accountService.verifyEmail.mockRejectedValue(mockError)
 
+      const { useVerifyEmailPage } = await import(
+        "../../../hooks/account/useVerifyEmailPage"
+      )
+
       const { result } = renderHook(() => useVerifyEmailPage(), {
         wrapper: makeWrapper(),
       })
@@ -258,15 +304,19 @@ describe("useVerifyEmailPage", () => {
 
   describe("handleResend", () => {
 
-    it("calls resendVerification with email from sessionStorage", async () => {
+    it("calls resendVerification with email", async () => {
       mockNoToken()
-      sessionStorage.setItem("pending_verification_email", "john@test.com")
+      localStorage.setItem("pending_verification_email", "john@test.com")
 
       accountService.resendVerification.mockResolvedValue({
         data: null,
         message: "Verification email sent.",
         meta: null,
       })
+
+      const { useVerifyEmailPage } = await import(
+        "../../../hooks/account/useVerifyEmailPage"
+      )
 
       const { result } = renderHook(() => useVerifyEmailPage(), {
         wrapper: makeWrapper(),
@@ -278,14 +328,18 @@ describe("useVerifyEmailPage", () => {
 
       await waitFor(() => {
         expect(accountService.resendVerification).toHaveBeenCalledWith(
-          { email: "john@test.com" },expect.anything()
+          { email: "john@test.com" },
+          expect.anything()
         )
       })
     })
 
     it("does not call resendVerification when email is empty", async () => {
       mockNoToken()
-      // sessionStorage is empty — no email
+
+      const { useVerifyEmailPage } = await import(
+        "../../../hooks/account/useVerifyEmailPage"
+      )
 
       const { result } = renderHook(() => useVerifyEmailPage(), {
         wrapper: makeWrapper(),
@@ -295,20 +349,24 @@ describe("useVerifyEmailPage", () => {
         result.current.handleResend()
       })
 
-      await new Promise((r) => setTimeout(r, 50))
+      await new Promise((r) => setTimeout(r, 100))
 
       expect(accountService.resendVerification).not.toHaveBeenCalled()
     })
 
-    it("exposes resendSuccessMsg on successful resend", async () => {
+    it("exposes resendSuccessMsg on success", async () => {
       mockNoToken()
-      sessionStorage.setItem("pending_verification_email", "john@test.com")
+      localStorage.setItem("pending_verification_email", "john@test.com")
 
       accountService.resendVerification.mockResolvedValue({
         data: null,
         message: "Sent.",
         meta: null,
       })
+
+      const { useVerifyEmailPage } = await import(
+        "../../../hooks/account/useVerifyEmailPage"
+      )
 
       const { result } = renderHook(() => useVerifyEmailPage(), {
         wrapper: makeWrapper(),
@@ -325,9 +383,9 @@ describe("useVerifyEmailPage", () => {
       })
     })
 
-    it("exposes resendErrorMsg on failed resend", async () => {
+    it("exposes resendErrorMsg on failure", async () => {
       mockNoToken()
-      sessionStorage.setItem("pending_verification_email", "ghost@test.com")
+      localStorage.setItem("pending_verification_email", "ghost@test.com")
 
       const mockError = new Error("Not found")
       mockError.response = {
@@ -340,6 +398,10 @@ describe("useVerifyEmailPage", () => {
       }
 
       accountService.resendVerification.mockRejectedValue(mockError)
+
+      const { useVerifyEmailPage } = await import(
+        "../../../hooks/account/useVerifyEmailPage"
+      )
 
       const { result } = renderHook(() => useVerifyEmailPage(), {
         wrapper: makeWrapper(),
