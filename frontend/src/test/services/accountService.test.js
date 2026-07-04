@@ -7,6 +7,8 @@ import { api } from "../../api/client";
 vi.mock("../../api/client", () => ({
   api: {
     post: vi.fn(),
+    get: vi.fn(),
+    patch: vi.fn(),
   },
 }));
 
@@ -223,3 +225,256 @@ describe("accountService.resendVerification", () => {
 
 
 
+
+
+
+
+describe("accountService.login", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("calls correct endpoint with credentials", async () => {
+    const payload = {
+      email: "john@test.com",
+      password: "password123",
+    };
+
+    api.post.mockResolvedValue(
+      mockSuccessEnvelope(
+        {
+          access: "jwt-token",
+          user: { id: 1 },
+        },
+        "Login successful.",
+      ),
+    );
+
+    await accountService.login(payload);
+
+    expect(api.post).toHaveBeenCalledWith("/api/accounts/login/", payload);
+  });
+
+  it("returns extracted login response", async () => {
+    api.post.mockResolvedValue(
+      mockSuccessEnvelope(
+        {
+          access: "jwt",
+          user: { id: 1 },
+        },
+        "Login successful.",
+      ),
+    );
+
+    const result = await accountService.login({
+      email: "john@test.com",
+      password: "password123",
+    });
+
+    expect(result.data.access).toBe("jwt");
+    expect(result.data.user.id).toBe(1);
+    expect(result.message).toBe("Login successful.");
+  });
+
+  it("bubbles authentication error", async () => {
+    const error = new Error("Unauthorized");
+
+    error.response = {
+      status: 401,
+      data: {
+        message: "Login failed.",
+        errors: {
+          non_field_errors: ["Invalid email or password."],
+        },
+      },
+    };
+
+    api.post.mockRejectedValue(error);
+
+    await expect(
+      accountService.login({
+        email: "john@test.com",
+        password: "wrong",
+      }),
+    ).rejects.toThrow("Unauthorized");
+  });
+});
+
+
+
+
+
+
+describe("accountService.login", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("calls correct endpoint with credentials", async () => {
+    const payload = {
+      email: "john@test.com",
+      password: "password123",
+    };
+
+    api.post.mockResolvedValue(
+      mockSuccessEnvelope(
+        {
+          access: "jwt-token",
+          user: { id: 1 },
+        },
+        "Login successful.",
+      ),
+    );
+
+    await accountService.login(payload);
+
+    expect(api.post).toHaveBeenCalledWith("/api/accounts/login/", payload);
+  });
+
+  it("returns extracted login response", async () => {
+    api.post.mockResolvedValue(
+      mockSuccessEnvelope(
+        {
+          access: "jwt",
+          user: { id: 1 },
+        },
+        "Login successful.",
+      ),
+    );
+
+    const result = await accountService.login({
+      email: "john@test.com",
+      password: "password123",
+    });
+
+    expect(result.data.access).toBe("jwt");
+    expect(result.data.user.id).toBe(1);
+    expect(result.message).toBe("Login successful.");
+  });
+
+  it("bubbles authentication error", async () => {
+    const error = new Error("Unauthorized");
+
+    error.response = {
+      status: 401,
+      data: {
+        message: "Login failed.",
+        errors: {
+          non_field_errors: ["Invalid email or password."],
+        },
+      },
+    };
+
+    api.post.mockRejectedValue(error);
+
+    await expect(
+      accountService.login({
+        email: "john@test.com",
+        password: "wrong",
+      }),
+    ).rejects.toThrow("Unauthorized");
+  });
+});
+
+
+describe("accountService.logout", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("calls logout endpoint with credentials", async () => {
+    api.post.mockResolvedValue(mockSuccessEnvelope(null, "Logged out."));
+
+    await accountService.logout();
+
+    expect(api.post).toHaveBeenCalledWith(
+      "/api/accounts/logout/",
+      {},
+      {
+        withCredentials: true,
+      },
+    );
+  });
+
+  it("returns extracted response", async () => {
+    api.post.mockResolvedValue(mockSuccessEnvelope(null, "Logged out."));
+
+    const result = await accountService.logout();
+
+    expect(result.message).toBe("Logged out.");
+    expect(result.data).toBeNull();
+  });
+});
+
+
+describe("accountService.getProfile", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("calls profile endpoint", async () => {
+    api.get.mockResolvedValue(
+      mockSuccessEnvelope({
+        id: 1,
+        email: "john@test.com",
+      }),
+    );
+
+    await accountService.getProfile();
+
+    expect(api.get).toHaveBeenCalledWith("/api/accounts/profile/");
+  });
+});
+
+
+describe("accountService.updateProfile", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("patches profile fields", async () => {
+    const payload = {
+      phone: "123456",
+    };
+
+    api.patch.mockResolvedValue(mockSuccessEnvelope(payload, "Updated."));
+
+    await accountService.updateProfile(payload);
+
+    expect(api.patch).toHaveBeenCalledWith("/api/accounts/profile/", payload);
+  });
+});
+
+
+
+
+describe("accountService.uploadAvatar", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("uploads multipart form data", async () => {
+    const formData = new FormData();
+
+    api.post.mockResolvedValue(
+      mockSuccessEnvelope(
+        {
+          avatar: "/avatar.jpg",
+        },
+        "Avatar updated.",
+      ),
+    );
+
+    await accountService.uploadAvatar(formData);
+
+    expect(api.post).toHaveBeenCalledWith(
+      "/api/accounts/profile/avatar/",
+      formData,
+      {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      },
+    );
+  });
+});

@@ -2,13 +2,31 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useRegister,useVerifyEmail,useResendVerification } from "../../../hooks/account/useAuthMutations";
+import { useRegister,useVerifyEmail,useResendVerification,useLogin,useLogout,useProfile,useUpdateProfile,useUploadAvatar } from "../../../hooks/account/useAuthMutations";
 import { accountService } from "../../../services/accountService";
+
+
+
+const mockLogin = vi.fn();
+const mockLogout = vi.fn();
+const mockSetUser = vi.fn();
+const { invalidateQueries } = vi.hoisted(() => ({
+  invalidateQueries: vi.fn(),
+}));
+
+
 
 // Mock service layer
 vi.mock("../../../services/accountService", () => ({
   accountService: {
     register: vi.fn(),
+    verifyEmail: vi.fn(),
+    resendVerification: vi.fn(),
+    login: vi.fn(),
+    logout: vi.fn(),
+    getProfile: vi.fn(),
+    updateProfile: vi.fn(),
+    uploadAvatar: vi.fn(),
   },
 }));
 
@@ -25,11 +43,40 @@ const makeWrapper = () => {
   );
 };
 
+
+
+
+
+vi.mock("../../../stores/authStore", () => ({
+  useAuthStore: (selector) =>
+    selector({
+      login: mockLogin,
+      logout: mockLogout,
+      setUser: mockSetUser,
+      user: {
+        id: 1,
+        email: "john@test.com",
+        profile: {
+          avatar: "/old-avatar.jpg",
+        },
+      },
+    }),
+}));
+
+
+
+vi.mock("../../../lib/queryClient", () => ({
+  queryClient: {
+    invalidateQueries,
+  },
+}));
+
 // ─── useRegister ──────────────────────────────────────────────────────────────
 
 describe("useRegister", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    
   });
 
   it("starts in idle state", () => {
@@ -224,3 +271,349 @@ describe("useResendVerification", () => {
   })
 
 })
+
+
+
+describe("useLogin", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("starts in idle state", () => {
+    const { result } = renderHook(() => useLogin(), {
+      wrapper: makeWrapper(),
+    });
+
+    expect(result.current.isPending).toBe(false);
+    expect(result.current.isSuccess).toBe(false);
+  });
+
+  it("calls accountService.login", async () => {
+    const payload = {
+      email: "john@test.com",
+      password: "password123",
+    };
+
+    accountService.login.mockResolvedValue({
+      data: {
+        access: "jwt-token",
+        user: { id: 1 },
+      },
+    });
+
+    const { result } = renderHook(() => useLogin(), {
+      wrapper: makeWrapper(),
+    });
+
+    act(() => {
+      result.current.mutate(payload);
+    });
+
+    await waitFor(() =>
+      expect(result.current.isSuccess).toBe(true),
+    );
+
+    expect(accountService.login).toHaveBeenCalledWith(payload);
+  });
+
+  it("stores authenticated user", async () => {
+    accountService.login.mockResolvedValue({
+      data: {
+        access: "jwt",
+        user: {
+          id: 1,
+        },
+      },
+    });
+
+    const { result } = renderHook(() => useLogin(), {
+      wrapper: makeWrapper(),
+    });
+
+    act(() => {
+      result.current.mutate({
+        email: "john@test.com",
+        password: "password123",
+      });
+    });
+
+    await waitFor(() =>
+      expect(mockLogin).toHaveBeenCalledWith({
+        access: "jwt",
+        user: {
+          id: 1,
+        },
+      }),
+    );
+  });
+});
+
+
+
+
+
+describe("useLogin", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("starts in idle state", () => {
+    const { result } = renderHook(() => useLogin(), {
+      wrapper: makeWrapper(),
+    });
+
+    expect(result.current.isPending).toBe(false);
+    expect(result.current.isSuccess).toBe(false);
+  });
+
+  it("calls accountService.login", async () => {
+    const payload = {
+      email: "john@test.com",
+      password: "password123",
+    };
+
+    accountService.login.mockResolvedValue({
+      data: {
+        access: "jwt-token",
+        user: { id: 1 },
+      },
+    });
+
+    const { result } = renderHook(() => useLogin(), {
+      wrapper: makeWrapper(),
+    });
+
+    act(() => {
+      result.current.mutate(payload);
+    });
+
+    await waitFor(() =>
+      expect(result.current.isSuccess).toBe(true),
+    );
+
+    expect(accountService.login).toHaveBeenCalledWith(payload);
+  });
+
+  it("stores authenticated user", async () => {
+    accountService.login.mockResolvedValue({
+      data: {
+        access: "jwt",
+        user: {
+          id: 1,
+        },
+      },
+    });
+
+    const { result } = renderHook(() => useLogin(), {
+      wrapper: makeWrapper(),
+    });
+
+    act(() => {
+      result.current.mutate({
+        email: "john@test.com",
+        password: "password123",
+      });
+    });
+
+    await waitFor(() =>
+      expect(mockLogin).toHaveBeenCalledWith({
+        access: "jwt",
+        user: {
+          id: 1,
+        },
+      }),
+    );
+  });
+});
+
+
+
+describe("useLogout", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("calls logout service", async () => {
+    accountService.logout.mockResolvedValue({});
+
+    const { result } = renderHook(() => useLogout(), {
+      wrapper: makeWrapper(),
+    });
+
+    act(() => {
+      result.current.mutate();
+    });
+
+    await waitFor(() =>
+      expect(accountService.logout).toHaveBeenCalled(),
+    );
+  });
+
+  it("clears auth store after successful logout", async () => {
+    accountService.logout.mockResolvedValue({});
+
+    const { result } = renderHook(() => useLogout(), {
+      wrapper: makeWrapper(),
+    });
+
+    act(() => {
+      result.current.mutate();
+    });
+
+    await waitFor(() =>
+      expect(mockLogout).toHaveBeenCalled(),
+    );
+  });
+
+  it("still clears auth when request fails", async () => {
+    accountService.logout.mockRejectedValue(
+      new Error("Network"),
+    );
+
+    const { result } = renderHook(() => useLogout(), {
+      wrapper: makeWrapper(),
+    });
+
+    act(() => {
+      result.current.mutate();
+    });
+
+    await waitFor(() =>
+      expect(result.current.isError).toBe(true),
+    );
+
+    expect(mockLogout).toHaveBeenCalled();
+  });
+});
+
+
+
+
+
+describe("useProfile", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("fetches profile", async () => {
+    accountService.getProfile.mockResolvedValue({
+      data: {
+        id: 1,
+      },
+    });
+
+    renderHook(() => useProfile(), {
+      wrapper: makeWrapper(),
+    });
+
+    await waitFor(() =>
+      expect(accountService.getProfile).toHaveBeenCalled(),
+    );
+  });
+
+  it("stores fetched user", async () => {
+    accountService.getProfile.mockResolvedValue({
+      data: {
+        id: 1,
+        email: "john@test.com",
+      },
+    });
+
+    renderHook(() => useProfile(), {
+      wrapper: makeWrapper(),
+    });
+
+    await waitFor(() =>
+      expect(mockSetUser).toHaveBeenCalledWith({
+        id: 1,
+        email: "john@test.com",
+      }),
+    );
+  });
+});
+
+
+
+describe("useUpdateProfile", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("updates store", async () => {
+    accountService.updateProfile.mockResolvedValue({
+      data: {
+        phone: "123456",
+      },
+    });
+
+    const { result } = renderHook(() => useUpdateProfile(), {
+      wrapper: makeWrapper(),
+    });
+
+    act(() => {
+      result.current.mutate({
+        phone: "123456",
+      });
+    });
+
+    await waitFor(() =>
+      expect(mockSetUser).toHaveBeenCalledWith({
+        phone: "123456",
+      }),
+    );
+  });
+
+  it("invalidates profile query", async () => {
+    accountService.updateProfile.mockResolvedValue({
+      data: {},
+    });
+
+    const { result } = renderHook(() => useUpdateProfile(), {
+      wrapper: makeWrapper(),
+    });
+
+    act(() => {
+      result.current.mutate({});
+    });
+
+    await waitFor(() =>
+      expect(invalidateQueries).toHaveBeenCalledWith({
+        queryKey: ["account", "profile"],
+      }),
+    );
+  });
+});
+
+
+
+describe("useUploadAvatar", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("updates only avatar without replacing user", async () => {
+    accountService.uploadAvatar.mockResolvedValue({
+      data: {
+        avatar: "/new-avatar.jpg",
+      },
+    });
+
+    const { result } = renderHook(() => useUploadAvatar(), {
+      wrapper: makeWrapper(),
+    });
+
+    act(() => {
+      result.current.mutate(new FormData());
+    });
+
+    await waitFor(() =>
+      expect(mockSetUser).toHaveBeenCalledWith({
+        id: 1,
+        email: "john@test.com",
+        profile: {
+          avatar: "/new-avatar.jpg",
+        },
+      }),
+    );
+  });
+});
