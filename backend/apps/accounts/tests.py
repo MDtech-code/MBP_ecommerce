@@ -2119,8 +2119,8 @@ class TestAvatarUpload:
             {"avatar": self._make_image()},
             format="multipart",
         )
-        assert "avatar_url" in response.data["data"]
-        assert response.data["data"]["avatar_url"]
+        assert "avatar" in response.data["data"]
+        assert response.data["data"]["avatar"]
 
     def test_avatar_upload_saves_to_profile(self, auth_client, user):
         """Avatar must be persisted to the user's profile in DB."""
