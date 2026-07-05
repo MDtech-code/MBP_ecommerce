@@ -2,7 +2,7 @@ name: MBP Ecommerce CI
 
 on:
   push:
-    branches: [develop, master]
+    branches: [develop, master,feacture/login-logout-auth-state]
   pull_request:
     branches: [master]
 
