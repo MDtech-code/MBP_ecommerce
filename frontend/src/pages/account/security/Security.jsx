@@ -1,0 +1,40 @@
+import DashboardLayout from "../../../components/account/DashboardLayout";
+import SecurityGrid from "../../../components/account/security/SecurityGrid";
+
+export default function Security() {
+
+  return (
+
+    <DashboardLayout>
+
+      <div className="space-y-8">
+
+        <div>
+
+          <h1
+            className="
+              text-3xl
+              font-extrabold
+              text-gray-900
+            "
+          >
+            Security Settings
+          </h1>
+
+          <p className="mt-2 text-gray-500">
+
+            Manage your account security and login preferences.
+
+          </p>
+
+        </div>
+
+        <SecurityGrid />
+
+      </div>
+
+    </DashboardLayout>
+
+  );
+
+}

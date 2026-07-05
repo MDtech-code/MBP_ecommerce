@@ -125,3 +125,52 @@ export function useUploadAvatar() {
     },
   });
 }
+
+
+
+
+
+/**
+ * useRequestPasswordReset
+ * POST /api/accounts/password-reset/
+ * No onSuccess business logic needed — backend always returns generic success
+ * message regardless of whether email exists (prevents email enumeration)
+ * Navigation to confirmation screen handled in useForgotPasswordForm.js
+ */
+export function useRequestPasswordReset() {
+  return useMutation({
+    mutationFn: accountService.requestPasswordReset,
+  });
+}
+
+/**
+ * useConfirmPasswordReset
+ * POST /api/accounts/password-reset/confirm/
+ * Token comes from URL query param — passed in by useResetPasswordForm.js
+ * Navigation to login handled in useResetPasswordForm.js after success
+ */
+export function useConfirmPasswordReset() {
+  return useMutation({
+    mutationFn: accountService.confirmPasswordReset,
+  });
+}
+
+/**
+ * useChangePassword
+ * POST /api/accounts/change-password/
+ * Backend invalidates all sessions after success — we must also clear
+ * client auth state so user is forced to log in again with new password
+ * Navigation to login handled in useChangePasswordForm.js after success
+ */
+export function useChangePassword() {
+  const logout = useAuthStore((state) => state.logout);
+
+  return useMutation({
+    mutationFn: accountService.changePassword,
+    onSuccess: () => {
+      // Backend has already invalidated all server sessions
+      // Clear client state to match — user must re-authenticate
+      logout();
+    },
+  });
+}

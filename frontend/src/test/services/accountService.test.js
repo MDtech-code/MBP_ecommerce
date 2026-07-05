@@ -478,3 +478,266 @@ describe("accountService.uploadAvatar", () => {
     );
   });
 });
+
+// ─── requestPasswordReset ─────────────────────────────────────────────────────
+
+describe("accountService.requestPasswordReset", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("calls correct endpoint with email payload", async () => {
+    api.post.mockResolvedValue(
+      mockSuccessEnvelope(
+        null,
+        "If this email is registered, a password reset link has been sent.",
+      ),
+    );
+
+    await accountService.requestPasswordReset({
+      email: "john@test.com",
+    });
+
+    expect(api.post).toHaveBeenCalledWith(
+      "/api/accounts/password-reset/",
+      { email: "john@test.com" },
+    );
+  });
+
+  it("returns extracted envelope on success", async () => {
+    api.post.mockResolvedValue(
+      mockSuccessEnvelope(
+        null,
+        "If this email is registered, a password reset link has been sent.",
+      ),
+    );
+
+    const result = await accountService.requestPasswordReset({
+      email: "john@test.com",
+    });
+
+    expect(result.data).toBeNull();
+    expect(result.message).toBe(
+      "If this email is registered, a password reset link has been sent.",
+    );
+    expect(result.meta).toEqual({ request_id: "test-123" });
+  });
+
+  it("bubbles up error without catching", async () => {
+    const error = new Error("Rate limited");
+    error.response = {
+      status: 429,
+      data: {
+        message: "Too many requests.",
+        errors: null,
+        meta: null,
+      },
+    };
+
+    api.post.mockRejectedValue(error);
+
+    await expect(
+      accountService.requestPasswordReset({
+        email: "john@test.com",
+      }),
+    ).rejects.toThrow("Rate limited");
+  });
+});
+
+// ─── confirmPasswordReset ─────────────────────────────────────────────────────
+
+describe("accountService.confirmPasswordReset", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("calls correct endpoint with token and passwords", async () => {
+    const payload = {
+      token: "reset-token-uuid",
+      password: "NewPass123!",
+      confirm_password: "NewPass123!",
+    };
+
+    api.post.mockResolvedValue(
+      mockSuccessEnvelope(
+        null,
+        "Password reset successfully. You can now log in.",
+      ),
+    );
+
+    await accountService.confirmPasswordReset(payload);
+
+    expect(api.post).toHaveBeenCalledWith(
+      "/api/accounts/password-reset/confirm/",
+      payload,
+    );
+  });
+
+  it("returns extracted envelope on success", async () => {
+    api.post.mockResolvedValue(
+      mockSuccessEnvelope(
+        null,
+        "Password reset successfully. You can now log in.",
+      ),
+    );
+
+    const result = await accountService.confirmPasswordReset({
+      token: "reset-token-uuid",
+      password: "NewPass123!",
+      confirm_password: "NewPass123!",
+    });
+
+    expect(result.data).toBeNull();
+    expect(result.message).toBe(
+      "Password reset successfully. You can now log in.",
+    );
+  });
+
+  it("bubbles up invalid token error without catching", async () => {
+    const error = new Error("Invalid token");
+    error.response = {
+      status: 400,
+      data: {
+        message: "Invalid or expired token.",
+        errors: {
+          non_field_errors: ["Invalid or expired token."],
+        },
+        meta: null,
+      },
+    };
+
+    api.post.mockRejectedValue(error);
+
+    await expect(
+      accountService.confirmPasswordReset({
+        token: "bad-token",
+        password: "NewPass123!",
+        confirm_password: "NewPass123!",
+      }),
+    ).rejects.toThrow("Invalid token");
+  });
+
+  it("bubbles up validation error without catching", async () => {
+    const error = new Error("Validation failed");
+    error.response = {
+      status: 400,
+      data: {
+        message: "Password reset failed.",
+        errors: {
+          password: ["Password must be at least 8 characters."],
+          confirm_password: ["Passwords do not match."],
+        },
+        meta: null,
+      },
+    };
+
+    api.post.mockRejectedValue(error);
+
+    await expect(
+      accountService.confirmPasswordReset({
+        token: "valid-token",
+        password: "abc",
+        confirm_password: "xyz",
+      }),
+    ).rejects.toThrow("Validation failed");
+  });
+});
+
+// ─── changePassword ───────────────────────────────────────────────────────────
+
+describe("accountService.changePassword", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("calls correct endpoint with all password fields", async () => {
+    const payload = {
+      current_password: "OldPass123!",
+      new_password: "NewPass456!",
+      confirm_new_password: "NewPass456!",
+    };
+
+    api.post.mockResolvedValue(
+      mockSuccessEnvelope(
+        null,
+        "Password changed successfully. Please log in again.",
+      ),
+    );
+
+    await accountService.changePassword(payload);
+
+    expect(api.post).toHaveBeenCalledWith(
+      "/api/accounts/change-password/",
+      payload,
+    );
+  });
+
+  it("returns extracted envelope on success", async () => {
+    api.post.mockResolvedValue(
+      mockSuccessEnvelope(
+        null,
+        "Password changed successfully. Please log in again.",
+      ),
+    );
+
+    const result = await accountService.changePassword({
+      current_password: "OldPass123!",
+      new_password: "NewPass456!",
+      confirm_new_password: "NewPass456!",
+    });
+
+    expect(result.data).toBeNull();
+    expect(result.message).toBe(
+      "Password changed successfully. Please log in again.",
+    );
+  });
+
+  it("bubbles up wrong current password error without catching", async () => {
+    const error = new Error("Unauthorized");
+    error.response = {
+      status: 400,
+      data: {
+        message: "Password change failed.",
+        errors: {
+          current_password: ["Current password is incorrect."],
+        },
+        meta: null,
+      },
+    };
+
+    api.post.mockRejectedValue(error);
+
+    await expect(
+      accountService.changePassword({
+        current_password: "wrong",
+        new_password: "NewPass456!",
+        confirm_new_password: "NewPass456!",
+      }),
+    ).rejects.toThrow("Unauthorized");
+  });
+
+  it("bubbles up validation error without catching", async () => {
+    const error = new Error("Validation failed");
+    error.response = {
+      status: 400,
+      data: {
+        message: "Password change failed.",
+        errors: {
+          new_password: ["Password must be at least 8 characters."],
+          confirm_new_password: ["Passwords do not match."],
+        },
+        meta: null,
+      },
+    };
+
+    api.post.mockRejectedValue(error);
+
+    await expect(
+      accountService.changePassword({
+        current_password: "OldPass123!",
+        new_password: "abc",
+        confirm_new_password: "xyz",
+      }),
+    ).rejects.toThrow("Validation failed");
+  });
+});

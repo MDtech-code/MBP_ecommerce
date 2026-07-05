@@ -1,21 +1,9 @@
 // src/test/hooks/account/useAuthMutations.test.jsx
 
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeEach,
-} from "vitest";
-import {
-  renderHook,
-  act,
-  waitFor,
-} from "@testing-library/react";
-import {
-  QueryClient,
-  QueryClientProvider,
-} from "@tanstack/react-query";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { renderHook, act, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
 import {
   useRegister,
   useVerifyEmail,
@@ -25,7 +13,11 @@ import {
   useProfile,
   useUpdateProfile,
   useUploadAvatar,
+  useRequestPasswordReset,
+  useConfirmPasswordReset,
+  useChangePassword,
 } from "../../../hooks/account/useAuthMutations";
+
 import { accountService } from "../../../services/accountService";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -55,6 +47,9 @@ vi.mock("../../../services/accountService", () => ({
     getProfile: vi.fn(),
     updateProfile: vi.fn(),
     uploadAvatar: vi.fn(),
+    requestPasswordReset: vi.fn(),
+    confirmPasswordReset: vi.fn(),
+    changePassword: vi.fn(),
   },
 }));
 
@@ -582,6 +577,296 @@ describe("useUploadAvatar", () => {
         },
       }),
     );
+  });
+});
+
+
+
+// ADD to bottom of src/test/hooks/account/useAuthMutations.test.jsx
+
+// ─────────────────────────────────────────────────────────────────────────────
+// useRequestPasswordReset
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("useRequestPasswordReset", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("starts in idle state", () => {
+    const { result } = renderHook(
+      () => useRequestPasswordReset(),
+      { wrapper: makeWrapper() },
+    );
+
+    expect(result.current.isPending).toBe(false);
+    expect(result.current.isError).toBe(false);
+    expect(result.current.isSuccess).toBe(false);
+  });
+
+  it("calls accountService.requestPasswordReset with email", async () => {
+    accountService.requestPasswordReset.mockResolvedValue({
+      data: null,
+      message:
+        "If this email is registered, a password reset link has been sent.",
+      meta: { request_id: "abc" },
+    });
+
+    const { result } = renderHook(
+      () => useRequestPasswordReset(),
+      { wrapper: makeWrapper() },
+    );
+
+    act(() => {
+      result.current.mutate({ email: "john@test.com" });
+    });
+
+    await waitFor(() =>
+      expect(result.current.isSuccess).toBe(true),
+    );
+
+    expect(
+      accountService.requestPasswordReset,
+    ).toHaveBeenCalledWith(
+      { email: "john@test.com" },
+      expect.anything(),
+    );
+  });
+
+  it("exposes error when service rejects", async () => {
+    const mockError = new Error("Rate limited");
+    mockError.response = {
+      status: 429,
+      data: {
+        message: "Too many requests.",
+        errors: null,
+        meta: null,
+      },
+    };
+
+    accountService.requestPasswordReset.mockRejectedValue(
+      mockError,
+    );
+
+    const { result } = renderHook(
+      () => useRequestPasswordReset(),
+      { wrapper: makeWrapper() },
+    );
+
+    act(() => {
+      result.current.mutate({ email: "john@test.com" });
+    });
+
+    await waitFor(() =>
+      expect(result.current.isError).toBe(true),
+    );
+
+    expect(result.current.error).toBe(mockError);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// useConfirmPasswordReset
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("useConfirmPasswordReset", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("starts in idle state", () => {
+    const { result } = renderHook(
+      () => useConfirmPasswordReset(),
+      { wrapper: makeWrapper() },
+    );
+
+    expect(result.current.isPending).toBe(false);
+    expect(result.current.isError).toBe(false);
+    expect(result.current.isSuccess).toBe(false);
+  });
+
+  it("calls accountService.confirmPasswordReset with token and passwords", async () => {
+    const payload = {
+      token: "reset-token-uuid",
+      password: "NewPass123!",
+      confirm_password: "NewPass123!",
+    };
+
+    accountService.confirmPasswordReset.mockResolvedValue({
+      data: null,
+      message: "Password reset successfully. You can now log in.",
+      meta: { request_id: "abc" },
+    });
+
+    const { result } = renderHook(
+      () => useConfirmPasswordReset(),
+      { wrapper: makeWrapper() },
+    );
+
+    act(() => {
+      result.current.mutate(payload);
+    });
+
+    await waitFor(() =>
+      expect(result.current.isSuccess).toBe(true),
+    );
+
+    expect(
+      accountService.confirmPasswordReset,
+    ).toHaveBeenCalledWith(payload, expect.anything());
+  });
+
+  it("exposes error when token is invalid", async () => {
+    const mockError = new Error("Invalid token");
+    mockError.response = {
+      status: 400,
+      data: {
+        message: "Invalid or expired token.",
+        errors: {
+          non_field_errors: ["Invalid or expired token."],
+        },
+        meta: null,
+      },
+    };
+
+    accountService.confirmPasswordReset.mockRejectedValue(
+      mockError,
+    );
+
+    const { result } = renderHook(
+      () => useConfirmPasswordReset(),
+      { wrapper: makeWrapper() },
+    );
+
+    act(() => {
+      result.current.mutate({
+        token: "bad-token",
+        password: "NewPass123!",
+        confirm_password: "NewPass123!",
+      });
+    });
+
+    await waitFor(() =>
+      expect(result.current.isError).toBe(true),
+    );
+
+    expect(result.current.error).toBe(mockError);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// useChangePassword
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("useChangePassword", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("starts in idle state", () => {
+    const { result } = renderHook(
+      () => useChangePassword(),
+      { wrapper: makeWrapper() },
+    );
+
+    expect(result.current.isPending).toBe(false);
+    expect(result.current.isError).toBe(false);
+    expect(result.current.isSuccess).toBe(false);
+  });
+
+  it("calls accountService.changePassword with all fields", async () => {
+    const payload = {
+      current_password: "OldPass123!",
+      new_password: "NewPass456!",
+      confirm_new_password: "NewPass456!",
+    };
+
+    accountService.changePassword.mockResolvedValue({
+      data: null,
+      message:
+        "Password changed successfully. Please log in again.",
+      meta: { request_id: "abc" },
+    });
+
+    const { result } = renderHook(
+      () => useChangePassword(),
+      { wrapper: makeWrapper() },
+    );
+
+    act(() => {
+      result.current.mutate(payload);
+    });
+
+    await waitFor(() =>
+      expect(result.current.isSuccess).toBe(true),
+    );
+
+    expect(
+      accountService.changePassword,
+    ).toHaveBeenCalledWith(payload, expect.anything());
+  });
+
+  it("calls authStore logout after successful password change", async () => {
+    accountService.changePassword.mockResolvedValue({
+      data: null,
+      message:
+        "Password changed successfully. Please log in again.",
+      meta: null,
+    });
+
+    const { result } = renderHook(
+      () => useChangePassword(),
+      { wrapper: makeWrapper() },
+    );
+
+    act(() => {
+      result.current.mutate({
+        current_password: "OldPass123!",
+        new_password: "NewPass456!",
+        confirm_new_password: "NewPass456!",
+      });
+    });
+
+    await waitFor(() =>
+      expect(mockLogout).toHaveBeenCalledTimes(1),
+    );
+  });
+
+  it("exposes error when current password is wrong", async () => {
+    const mockError = new Error("Unauthorized");
+    mockError.response = {
+      status: 400,
+      data: {
+        message: "Password change failed.",
+        errors: {
+          current_password: ["Current password is incorrect."],
+        },
+        meta: null,
+      },
+    };
+
+    accountService.changePassword.mockRejectedValue(
+      mockError,
+    );
+
+    const { result } = renderHook(
+      () => useChangePassword(),
+      { wrapper: makeWrapper() },
+    );
+
+    act(() => {
+      result.current.mutate({
+        current_password: "wrong",
+        new_password: "NewPass456!",
+        confirm_new_password: "NewPass456!",
+      });
+    });
+
+    await waitFor(() =>
+      expect(result.current.isError).toBe(true),
+    );
+
+    expect(result.current.error).toBe(mockError);
   });
 });
 // // src/test/hooks/account/useAuthMutations.test.js

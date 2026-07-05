@@ -96,6 +96,42 @@ export const accountService = {
   },
 
   /**
+   * POST /api/accounts/password-reset/
+   * Sends reset link to email — always returns success message
+   * regardless of whether email exists (backend security behavior)
+   * @param {{ email: string }} payload
+   */
+  requestPasswordReset: async (payload) => {
+    const response = await api.post("/api/accounts/password-reset/", payload);
+    return extractResponse(response);
+  },
+
+  /**
+   * POST /api/accounts/password-reset/confirm/
+   * Consumes the token from the reset link URL and sets new password
+   * @param {{ token: string, password: string, confirm_password: string }} payload
+   */
+  confirmPasswordReset: async (payload) => {
+    const response = await api.post(
+      "/api/accounts/password-reset/confirm/",
+      payload,
+    );
+    return extractResponse(response);
+  },
+
+  /**
+   * POST /api/accounts/change-password/
+   * Authenticated user changes their own password
+   * Backend logs user out after success — frontend must also clear session
+   * @param {{ current_password: string, new_password: string,
+   *            confirm_new_password: string }} payload
+   */
+  changePassword: async (payload) => {
+    const response = await api.post("/api/accounts/change-password/", payload);
+    return extractResponse(response);
+  },
+
+  /**
    * Called ONCE on app start to restore session.
    * Uses refresh token cookie to get a new access token.
    * Direct axios call — bypasses our api instance so interceptors
@@ -115,8 +151,6 @@ export const accountService = {
     );
     return extractResponse(response);
   },
- 
-
 };
  // bootstrap: async () => {
   //   console.log("i am from the bootstrap");
