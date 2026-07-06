@@ -1,47 +1,56 @@
 # MBP E-Commerce System Architecture
 
 ## 1. High-Level System Topology
-This project uses a decoupled architecture running inside Docker containers. The frontend React single-page application (SPA) communicates with a Django REST/GraphQL backend over secure local HTTPS.
+This project utilizes a dual-environment engineering workflow: a **Local Native Environment** optimized for rapid development, debugging, and IDE integration, and a **Containerized Docker Environment** used for environment parity, deployment verification, and CI/CD mirroring.
 
-
+Both environments power a decoupled architecture where a React single-page application (SPA) communicates with a Django REST/GraphQL backend over local HTTPS.
 
 
 [ Client Browser ] (HTTPS)
 │
-├──► [ Docker: react_MBP_frontend ] ──► Vite Dev Server (Port 5173)
-│                                              │
-│ (REST API / GraphQL Requests)                │
-▼                                              ▼
-[ Docker: django_MBP_backend ] ◄──────────────────────┘
-│  Django REST Framework (Port 8000)
-│  ├── apps/accounts  ──► Auth, JWT/Session, Profiles, Security
-│  ├── apps/products  ──► Product Catalog, Categories, Inventory
-│  ├── apps/cart      ──► Shopping Cart Management
-│  ├── apps/core      ──► Global Exceptions, Middleware, Throttling
-│  └── apps/common    ──► Shared Utilities, Role Choices, Trees(sorting backend responce to parent child relation)
+├───► Frontend Dev Server (Local: Port 5173 | Docker: Port 5173)
 │
-├──► [ Docker: redis_MBP_cache ] ──► Redis 7 (Port 6379)
+└───► Backend API Server  (Local: Port 8000 | Docker: Port 8000)
+│
+├──► [ Redis Cache & Broker ] (Local: Port 7000 | Docker: Port 6379)
 │      │
-│      └──► [ Docker: celery_MBP_worker ] ──► Async Tasks (Emails, Processing)
-│             │
-▼             ▼
-[ Docker: postgres_MBP_db ] ──► PostgreSQL 18 (Port 5432)
+│      └──► [ Celery Workers ] (Async Tasks & Background Jobs)
+│
+└──► [ PostgreSQL Database ]  (Local: Port 5432 | Docker: Port 5432)
 
 
+---
 
-## 2. Docker Container Ecosystem
-Our `docker-compose.yml` orchestrates 5 interconnected services using Docker Watch for hot-reloading without container restarts.
+## 2. Local Development Architecture (Primary)
+The primary day-to-day development workflow runs natively on the host machine to leverage maximum execution speed, native IDE indexing, and simplified step-through debugging.
 
-| Container Name | Technology | Port | Core Responsibility |
-|---|---|---|---|
-| `django_MBP_backend` | Python 3.12 / Django | 8000 | Serves REST APIs, GraphQL endpoints, and business logic over HTTPS. |
-| `react_MBP_frontend` | Node 20 / Vite + React | 5173 | Serves the interactive user interface and proxies client state. |
-| `postgres_MBP_db` | PostgreSQL 16| 5432 | Persistent relational data storage (Users, Orders, Products). |
-| `redis_MBP_cache` | Redis 7 Alpine | 6379 | In-memory cache and message broker for Celery task queues. |
-| `celery_MBP_worker` | Python 3.12 / Celery | None | Background job execution (email sending, token cleanup, heavy ops). |
+| Component | Tech / Version | Host Port | Execution Mode | Notes / Configuration |
+|---|---|---|---|---|
+| **Frontend** | React 19.2.6 / Vite 8.0.12 | `5173` | Native Node Process | Run via `npm run dev` with local HTTPS certs. |
+| **Backend** | Python 3.14.5 / Django | `8000` | Native Python Virtualenv | Run via `python manage.py runserver_plus` over HTTPS. |
+| **Database** | PostgreSQL 18 | `5432` | Native OS Service | Host-managed relational database instance. |
+| **Cache/Broker** | Redis 7 | `7000` | Isolated Docker Container | Mapped `7000:6379` to prevent host port collisions. |
+| **Workers** | Celery / Python 3.14.5 | Internal | Native Terminal Process | Connected to local Redis broker on port 7000. |
 
-## 3. Backend Domain Architecture (`/backend/apps/`)
-Instead of a monolithic Django structure, the backend is partitioned into domain-specific apps following separation of concerns:
+---
+
+## 3. Containerized Architecture (Verification & CI Parity)
+To prevent "it works on my machine" regressions, the application is mirrored in Docker Compose. This architecture is spun up to verify container builds, test inter-service networking, and replicate the CI/CD pipeline before pushing code.
+
+| Service Name | Container Image / Build | Exposed Port | Internal Role | Key Volume Mounts |
+|---|---|---|---|---|
+| **`backend`** | Python 3.12 (Dockerfile) | `8000` | REST API & GraphQL Server | `./backend:/app`, `./certs:/app/certs` |
+| **`frontend`** | Node.js 20 (Dockerfile) | `5173` | Vite SPA Dev Server | `./frontend:/app`, `frontend_node_modules` |
+| **`db`** | PostgreSQL 16 | `5432` | Containerized Database | `postgres_data:/var/lib/postgresql/data` |
+| **`redis`** | Redis 7 Alpine | `6379` | In-memory Cache & Broker | Ephemeral container storage |
+| **`celery`** | Python 3.12 (Shared) | Internal | Background Job Execution | `./backend:/app`, `./certs:/app/certs` |
+
+> **Architectural Note on Version Parity:** Notice the version splits between Local (Python 3.14 / Postgres 18) and Docker (Python 3.12 / Postgres 16). Documenting this explicitly ensures any version-specific syntax or SQL behavior differences can be traced immediately.
+
+---
+
+## 4. Backend Domain Architecture (`/backend/apps/`)
+Instead of a monolithic structure, the backend is partitioned into domain-specific apps following strict separation of concerns:
 
 * **`accounts`**: Manages user authentication, security settings, passwords, and profile management.
 * **`products`**: Manages product listings, detail views, category hierarchies, and brand associations.
@@ -49,7 +58,9 @@ Instead of a monolithic Django structure, the backend is partitioned into domain
 * **`core`**: Contains project-wide infrastructure including custom exception handling (`api/exceptions.py`), API throttling, middleware, and caching logic.
 * **`common`**: Houses reusable utilities, tree structures for categories, and shared enums (`role.py`).
 
-## 4. Frontend Architecture (`/frontend/src/`)
+---
+
+## 5. Frontend Architecture (`/frontend/src/`)
 The React frontend is structured for scalability and clean API separation:
 
 * **`/api` & `/services`**: Decoupled HTTP clients (`client.js`, `auth.js`) with request/response interceptors and data transformers.
@@ -57,7 +68,9 @@ The React frontend is structured for scalability and clean API separation:
 * **`/components` & `/pages`**: Modular UI pieces organized by feature (`/account`, `/cart`, `/products`) using Tailwind CSS.
 * **`/stores`**: Global state management (`authStore.js`) for persistent client sessions.
 
-## 5. Automated Guardrails (CI/CD)
+---
+
+## 6. Automated Guardrails (CI/CD)
 Managed via GitHub Actions (`.github/workflows/ci.yml`):
 * **Backend Pipeline**: Provisions ephemeral Postgres/Redis containers, restores pip cache, executes `pytest`, and validates zero missing migrations (`makemigrations --check`).
-* **Frontend Pipeline**: Restores npm cache, executes component unit tests (`npm test`), and verifies production bundling (`npm run build`).
+* **Frontend Pipeline**: Restores npm cache, executes component unit tests (`npm test`), and verifies  production bundling (`npm run build`).
