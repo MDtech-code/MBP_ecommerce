@@ -1,0 +1,516 @@
+# DATABASE_SCHEMA.md
+
+> **Version:** 1.0.0
+> **Last Updated:** 2025-07-14
+> **Database:** PostgreSQL 18 (Local) / PostgreSQL 16 (Docker)
+> **Convention:** All table names follow Django default `appname_modelname`
+> pattern. Snake_case for all columns. UUID tokens use `uuid4`.
+
+---
+
+## Table of Contents
+
+1. [Accounts App](#1-accounts-app) ✅
+2. [Products App](#2-products-app) ✅
+3. [Cart App](#3-cart-app) ✅
+4. [Cross-App Relationships](#cross-app-relationships) *(built after all apps)*
+
+---
+
+## 1. Accounts App
+
+**App Label:** `accounts`
+**Purpose:** Manages user identity, authentication, email verification,
+password reset, and extended profile data.
+**Status:** ✅ Migrated
+
+---
+
+### 1.1 `accounts_user`
+
+Custom user model. Replaces Django's default `auth_user`.
+Uses **email** as the primary login identifier.
+
+| Column | Django Field | DB Type | Constraints | Default | Notes |
+|---|---|---|---|---|---|
+| `id` | `AutoField` (PK) | `BIGINT` | `PK`, `NOT NULL`, `AUTO INCREMENT` | Auto | Django default PK |
+| `email` | `EmailField` | `VARCHAR(254)` | `UNIQUE`, `NOT NULL`, `INDEX` | — | Primary login identifier |
+| `full_name` | `CharField(255)` | `VARCHAR(255)` | `NOT NULL` | — | Single field — intentional for Pakistani names |
+| `role` | `CharField(2)` | `VARCHAR(2)` | `NOT NULL` | `'CU'` | See Role choices below |
+| `password` | Inherited | `VARCHAR(128)` | `NOT NULL` | — | Hashed. Provided by `AbstractBaseUser` |
+| `last_login` | Inherited | `TIMESTAMPTZ` | `NULL` | `NULL` | Provided by `AbstractBaseUser` |
+| `is_active` | `BooleanField` | `BOOLEAN` | `NOT NULL` | `TRUE` | Soft disable instead of deletion |
+| `is_staff` | `BooleanField` | `BOOLEAN` | `NOT NULL` | `FALSE` | Django admin access |
+| `is_verified` | `BooleanField` | `BOOLEAN` | `NOT NULL` | `FALSE` | Email verification status |
+| `is_superuser` | Inherited | `BOOLEAN` | `NOT NULL` | `FALSE` | Provided by `PermissionsMixin` |
+| `date_joined` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `timezone.now` | Account creation timestamp |
+
+**Indexes:**
+
+| Index Name | Column(s) | Type |
+|---|---|---|
+| `accounts_user_email_idx` | `email` | `UNIQUE BTREE` |
+
+**`Role` Enum Choices** *(defined in `apps.common.choices.role`)*:
+
+| Display | DB Value |
+|---|---|
+| Customer | `CU` |
+| Admin | `AD` |
+
+**Relationships:**
+
+| Relation | Type | On Delete |
+|---|---|---|
+| `accounts_user` → `accounts_userprofile` | One-to-One | `CASCADE` |
+| `accounts_user` → `accounts_emailverificationtoken` | One-to-Many | `CASCADE` |
+| `accounts_user` → `accounts_passwordresettoken` | One-to-Many | `CASCADE` |
+
+---
+
+### 1.2 `accounts_userprofile`
+
+Extended personal information for a user.
+Created automatically via Django signal on `User` post-save.
+
+| Column | Django Field | DB Type | Constraints | Default | Notes |
+|---|---|---|---|---|---|
+| `id` | `AutoField` (PK) | `BIGINT` | `PK`, `NOT NULL` | Auto | — |
+| `user_id` | `OneToOneField → User` | `BIGINT` | `UNIQUE`, `NOT NULL`, `FK`, `INDEX` | — | `CASCADE` on delete |
+| `phone` | `CharField(15)` | `VARCHAR(15)` | `NOT NULL` | `''` | Pakistani format: `+923001234567` or `03001234567` |
+| `date_of_birth` | `DateField` | `DATE` | `NULL` | `NULL` | Optional |
+| `gender` | `CharField(1)` | `VARCHAR(1)` | `NOT NULL` | `''` | See Gender choices below |
+| `avatar` | `ImageField` | `VARCHAR(255)` | `NULL` | `NULL` | Stored path. Uploads to `avatars/%Y/%m/` |
+| `address_line1` | `CharField(255)` | `VARCHAR(255)` | `NOT NULL` | `''` | Primary street address |
+| `address_line2` | `CharField(255)` | `VARCHAR(255)` | `NOT NULL` | `''` | Apartment / floor / area |
+| `city` | `CharField(100)` | `VARCHAR(100)` | `NOT NULL` | `''` | — |
+| `province` | `CharField(2)` | `VARCHAR(2)` | `NOT NULL` | `''` | See Province choices below |
+| `postal_code` | `CharField(10)` | `VARCHAR(10)` | `NOT NULL` | `''` | Pakistani 5-digit postal code |
+| `country` | `CharField(100)` | `VARCHAR(100)` | `NOT NULL` | `'Pakistan'` | Single-country ecommerce default |
+| `created_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now_add` | From `TimeStampedModel` |
+| `updated_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now` | From `TimeStampedModel` |
+
+**`Gender` Choices:**
+
+| Display | DB Value |
+|---|---|
+| Male | `M` |
+| Female | `F` |
+| Other | `O` |
+| Prefer not to say | `N` |
+
+**`Province` Choices:**
+
+| Display | DB Value |
+|---|---|
+| Punjab | `PB` |
+| Sindh | `SD` |
+| Khyber Pakhtunkhwa | `KP` |
+| Balochistan | `BL` |
+| Gilgit-Baltistan | `GB` |
+| Azad Jammu & Kashmir | `AK` |
+| Islamabad Capital Territory | `IC` |
+
+**Computed Properties** *(Python level — not stored in DB)*:
+
+| Property | Returns | Notes |
+|---|---|---|
+| `has_complete_address` | `bool` | True if `address_line1`, `city`, `province`, `postal_code` all non-empty |
+| `full_address` | `str` | All address parts joined with `, ` |
+
+---
+
+### 1.3 `accounts_emailverificationtoken`
+
+One-time token for email address verification.
+Expires after **24 hours**. All previous tokens for a user
+are deleted before a new one is created.
+
+| Column | Django Field | DB Type | Constraints | Default | Notes |
+|---|---|---|---|---|---|
+| `id` | `AutoField` (PK) | `BIGINT` | `PK`, `NOT NULL` | Auto | — |
+| `user_id` | `ForeignKey → User` | `BIGINT` | `NOT NULL`, `FK`, `INDEX` | — | `CASCADE` on delete |
+| `token` | `UUIDField` | `UUID` | `UNIQUE`, `NOT NULL`, `INDEX` | `uuid4` | Non-editable. Used in verification URL |
+| `created_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now_add` | — |
+| `expires_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | Set in `save()` | `created_at + 24 hours` |
+
+**Indexes:**
+
+| Index Name | Column | Type |
+|---|---|---|
+| `accounts_emailverif_token_idx` | `token` | `UNIQUE BTREE` |
+| `accounts_emailverif_user_idx` | `user_id` | `BTREE` |
+
+**Token Lifecycle:**
+
+```
+Register → token created → email sent → user clicks link
+→ lookup by UUID → check expiry → User.is_verified = True
+→ token deleted on next resend via create_for_user()
+```
+
+---
+
+### 1.4 `accounts_passwordresettoken`
+
+Single-use token for password reset.
+Expires after **1 hour**. Marked `is_used=True` after consumption.
+All previous tokens deleted when a new one is requested.
+
+| Column | Django Field | DB Type | Constraints | Default | Notes |
+|---|---|---|---|---|---|
+| `id` | `AutoField` (PK) | `BIGINT` | `PK`, `NOT NULL` | Auto | — |
+| `user_id` | `ForeignKey → User` | `BIGINT` | `NOT NULL`, `FK`, `INDEX` | — | `CASCADE` on delete |
+| `token` | `UUIDField` | `UUID` | `UNIQUE`, `NOT NULL`, `INDEX` | `uuid4` | Non-editable |
+| `created_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now_add` | — |
+| `expires_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | Set in `save()` | `created_at + 1 hour` |
+| `is_used` | `BooleanField` | `BOOLEAN` | `NOT NULL` | `FALSE` | `TRUE` after successful reset — prevents replay |
+
+**Indexes:**
+
+| Index Name | Column | Type |
+|---|---|---|
+| `accounts_pwreset_token_idx` | `token` | `UNIQUE BTREE` |
+| `accounts_pwreset_user_idx` | `user_id` | `BTREE` |
+
+**Token Lifecycle:**
+
+```
+Request reset → old tokens deleted → new token created → email sent
+→ user clicks link → lookup by UUID → check is_used + expiry
+→ password updated → mark_used() → is_used = TRUE
+```
+
+**Computed Properties** *(Python level — not stored in DB)*:
+
+| Property | Logic |
+|---|---|
+| `is_expired` | `timezone.now() > expires_at` |
+| `is_valid` | `NOT is_used AND NOT is_expired` |
+
+---
+
+
+
+---
+
+## 2. Products App
+
+**App Label:** `products`
+**Purpose:** Manages motorbike parts catalog including categories, brands,
+bike model compatibility, product listings, and image galleries.
+**Status:** ✅ Migrated
+
+---
+
+### 2.1 `products_category`
+
+Hierarchical product category with optional self-referencing parent.
+Supports unlimited nesting depth (e.g. Engine → Pistons → Piston Rings).
+
+| Column | Django Field | DB Type | Constraints | Default | Notes |
+|---|---|---|---|---|---|
+| `id` | `AutoField` (PK) | `BIGINT` | `PK`, `NOT NULL`, `AUTO INCREMENT` | Auto | — |
+| `name` | `CharField(100)` | `VARCHAR(100)` | `UNIQUE`, `NOT NULL` | — | Category display name |
+| `slug` | `SlugField(120)` | `VARCHAR(120)` | `UNIQUE`, `NOT NULL` | Auto from `name` | Auto-generated via `slugify(name)` on first save |
+| `parent_id` | `ForeignKey → self` | `BIGINT` | `NULL`, `FK`, `INDEX` | `NULL` | `CASCADE` on delete. `NULL` = root category |
+| `is_active` | `BooleanField` | `BOOLEAN` | `NOT NULL` | `TRUE` | Soft disable without deletion |
+| `created_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now_add` | From `TimeStampedModel` |
+| `updated_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now` | From `TimeStampedModel` |
+
+**Indexes:**
+
+| Index Name | Column(s) | Type |
+|---|---|---|
+| `products_category_name_idx` | `name` | `UNIQUE BTREE` |
+| `products_category_slug_idx` | `slug` | `UNIQUE BTREE` |
+| `products_category_parent_idx` | `parent_id` | `BTREE` |
+
+**Relationships:**
+
+| Relation | Type | On Delete |
+|---|---|---|
+| `products_category` → `products_category` (self) | Many-to-One | `CASCADE` |
+| `products_category` → `products_product` | One-to-Many | `PROTECT` |
+
+**Computed Properties** *(Python level — not stored in DB)*:
+
+| Property | Returns | Notes |
+|---|---|---|
+| `is_subcategory` | `bool` | `True` if `parent_id` is not `NULL` |
+
+---
+
+### 2.2 `products_brand`
+
+Motorbike part manufacturer or brand (Honda, Yamaha, Suzuki, etc.).
+
+| Column | Django Field | DB Type | Constraints | Default | Notes |
+|---|---|---|---|---|---|
+| `id` | `AutoField` (PK) | `BIGINT` | `PK`, `NOT NULL`, `AUTO INCREMENT` | Auto | — |
+| `name` | `CharField(100)` | `VARCHAR(100)` | `UNIQUE`, `NOT NULL` | — | Brand display name |
+| `slug` | `SlugField(120)` | `VARCHAR(120)` | `UNIQUE`, `NOT NULL` | Auto from `name` | Auto-generated via `slugify(name)` on first save |
+| `logo` | `ImageField` | `VARCHAR(255)` | `NULL` | `NULL` | Stored path. Uploads to `brands/` |
+| `is_active` | `BooleanField` | `BOOLEAN` | `NOT NULL` | `TRUE` | Soft disable without deletion |
+| `created_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now_add` | From `TimeStampedModel` |
+| `updated_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now` | From `TimeStampedModel` |
+
+**Indexes:**
+
+| Index Name | Column(s) | Type |
+|---|---|---|
+| `products_brand_name_idx` | `name` | `UNIQUE BTREE` |
+| `products_brand_slug_idx` | `slug` | `UNIQUE BTREE` |
+
+**Relationships:**
+
+| Relation | Type | On Delete |
+|---|---|---|
+| `products_brand` → `products_bikemodel` | One-to-Many | `CASCADE` |
+| `products_brand` → `products_product` | One-to-Many | `SET NULL` |
+
+---
+
+### 2.3 `products_bikemodel`
+
+Specific motorbike model used for product compatibility matching.
+Core differentiator — customers filter parts by their exact bike.
+
+| Column | Django Field | DB Type | Constraints | Default | Notes |
+|---|---|---|---|---|---|
+| `id` | `AutoField` (PK) | `BIGINT` | `PK`, `NOT NULL`, `AUTO INCREMENT` | Auto | — |
+| `brand_id` | `ForeignKey → Brand` | `BIGINT` | `NOT NULL`, `FK`, `INDEX` | — | `CASCADE` on delete |
+| `name` | `CharField(100)` | `VARCHAR(100)` | `NOT NULL` | — | e.g. `CB150F`, `YBR125` |
+| `slug` | `SlugField(150)` | `VARCHAR(150)` | `UNIQUE`, `NOT NULL` | Auto from `brand+name` | Auto-generated via `slugify(brand.name-name)` |
+| `year_start` | `PositiveIntegerField` | `INTEGER` | `NOT NULL` | — | Production start year |
+| `year_end` | `PositiveIntegerField` | `INTEGER` | `NULL` | `NULL` | Production end year. `NULL` = still in production |
+| `is_active` | `BooleanField` | `BOOLEAN` | `NOT NULL` | `TRUE` | Soft disable without deletion |
+| `created_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now_add` | From `TimeStampedModel` |
+| `updated_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now` | From `TimeStampedModel` |
+
+**Indexes:**
+
+| Index Name | Column(s) | Type |
+|---|---|---|
+| `products_bikemodel_slug_idx` | `slug` | `UNIQUE BTREE` |
+| `products_bikemodel_brand_idx` | `brand_id` | `BTREE` |
+| `products_bikemodel_brand_name_uniq` | `brand_id`, `name` | `UNIQUE BTREE` |
+
+**Relationships:**
+
+| Relation | Type | On Delete |
+|---|---|---|
+| `products_bikemodel` → `products_brand` | Many-to-One | `CASCADE` |
+| `products_bikemodel` ↔ `products_product` | Many-to-Many | Via junction table |
+
+**Computed Properties** *(Python level — not stored in DB)*:
+
+| Property / Method | Returns | Notes |
+|---|---|---|
+| `display_name` | `str` | `"{brand.name} {name}"` |
+| `covers_year(year)` | `bool` | True if bike was in production during given year |
+
+---
+
+### 2.4 `products_product`
+
+Motorbike part product listing. Core catalog entity.
+Compatibility with bike models handled via ManyToMany.
+
+| Column | Django Field | DB Type | Constraints | Default | Notes |
+|---|---|---|---|---|---|
+| `id` | `AutoField` (PK) | `BIGINT` | `PK`, `NOT NULL`, `AUTO INCREMENT` | Auto | — |
+| `name` | `CharField(255)` | `VARCHAR(255)` | `NOT NULL` | — | Product display name |
+| `slug` | `SlugField(280)` | `VARCHAR(280)` | `UNIQUE`, `NOT NULL` | Auto from `name` | Auto-generated via `slugify(name)` on first save |
+| `category_id` | `ForeignKey → Category` | `BIGINT` | `NOT NULL`, `FK`, `INDEX` | — | `PROTECT` on delete — category cannot be deleted while products exist |
+| `brand_id` | `ForeignKey → Brand` | `BIGINT` | `NULL`, `FK`, `INDEX` | `NULL` | `SET NULL` on delete. `NULL` = universal or aftermarket part |
+| `description` | `TextField` | `TEXT` | `NOT NULL` | `''` | Full product description |
+| `sku` | `CharField(50)` | `VARCHAR(50)` | `UNIQUE`, `NOT NULL` | — | Stock keeping unit — unique product code |
+| `price` | `DecimalField(10,2)` | `NUMERIC(10,2)` | `NOT NULL` | — | Base price. Min value `0` |
+| `discount_price` | `DecimalField(10,2)` | `NUMERIC(10,2)` | `NULL` | `NULL` | Sale price. Min value `0`. `NULL` = no active discount |
+| `stock` | `PositiveIntegerField` | `INTEGER` | `NOT NULL` | `0` | Current stock quantity |
+| `status` | `CharField(20)` | `VARCHAR(20)` | `NOT NULL` | `'available'` | See Status choices below |
+| `is_featured` | `BooleanField` | `BOOLEAN` | `NOT NULL` | `FALSE` | Flag for homepage / featured section |
+| `created_by_id` | `ForeignKey → User` | `BIGINT` | `NULL`, `FK`, `INDEX` | `NULL` | `SET NULL` on delete. Admin who created listing |
+| `created_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now_add` | From `TimeStampedModel` |
+| `updated_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now` | From `TimeStampedModel` |
+
+**Indexes:**
+
+| Index Name | Column(s) | Type |
+|---|---|---|
+| `products_product_slug_idx` | `slug` | `UNIQUE BTREE` |
+| `products_product_sku_idx` | `sku` | `UNIQUE BTREE` |
+| `products_product_status_idx` | `status` | `BTREE` |
+| `products_product_category_status_idx` | `category_id`, `status` | `BTREE` |
+
+**`Status` Choices:**
+
+| Display | DB Value |
+|---|---|
+| Available | `available` |
+| Out of Stock | `out_of_stock` |
+| Discontinued | `discontinued` |
+
+**Relationships:**
+
+| Relation | Type | On Delete |
+|---|---|---|
+| `products_product` → `products_category` | Many-to-One | `PROTECT` |
+| `products_product` → `products_brand` | Many-to-One | `SET NULL` |
+| `products_product` → `accounts_user` | Many-to-One | `SET NULL` |
+| `products_product` ↔ `products_bikemodel` | Many-to-Many | Via `products_product_compatible_bikes` junction table |
+| `products_product` → `products_productimage` | One-to-Many | `CASCADE` |
+
+**Junction Table — `products_product_compatible_bikes`:**
+
+| Column | DB Type | Constraints |
+|---|---|---|
+| `id` | `BIGINT` | `PK`, `NOT NULL` |
+| `product_id` | `BIGINT` | `FK → products_product`, `NOT NULL`, `INDEX` |
+| `bikemodel_id` | `BIGINT` | `FK → products_bikemodel`, `NOT NULL`, `INDEX` |
+
+> Auto-generated by Django for the `compatible_bikes` ManyToManyField.
+> Pair `(product_id, bikemodel_id)` is implicitly unique.
+
+**Computed Properties** *(Python level — not stored in DB)*:
+
+| Property / Method | Returns | Notes |
+|---|---|---|
+| `is_in_stock` | `bool` | `True` if `stock > 0` AND `status == available` |
+| `current_price` | `Decimal` | Returns `discount_price` if set, else `price` |
+| `has_discount` | `bool` | `True` if `discount_price` is not `NULL` and less than `price` |
+| `discount_percentage` | `int` | Rounded percentage saved. `0` if no discount |
+| `is_compatible_with(bike_model_id)` | `bool` | Queries `compatible_bikes` ManyToMany |
+
+---
+
+### 2.5 `products_productimage`
+
+Product image gallery. Supports multiple images per product
+with one marked as primary for listing thumbnails.
+
+| Column | Django Field | DB Type | Constraints | Default | Notes |
+|---|---|---|---|---|---|
+| `id` | `AutoField` (PK) | `BIGINT` | `PK`, `NOT NULL`, `AUTO INCREMENT` | Auto | — |
+| `product_id` | `ForeignKey → Product` | `BIGINT` | `NOT NULL`, `FK`, `INDEX` | — | `CASCADE` on delete |
+| `image` | `ImageField` | `VARCHAR(255)` | `NOT NULL` | — | Stored path. Uploads to `products/%Y/%m/` |
+| `is_primary` | `BooleanField` | `BOOLEAN` | `NOT NULL` | `FALSE` | Only one `TRUE` allowed per product. Enforced in `save()` |
+| `order` | `PositiveIntegerField` | `INTEGER` | `NOT NULL` | `0` | Display sort order. Lower = shown first |
+| `created_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now_add` | From `TimeStampedModel` |
+| `updated_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now` | From `TimeStampedModel` |
+
+**Indexes:**
+
+| Index Name | Column(s) | Type |
+|---|---|---|
+| `products_productimage_product_idx` | `product_id` | `BTREE` |
+
+**Primary Image Enforcement:**
+```
+On save() — if is_primary=True:
+  UPDATE products_productimage SET is_primary=FALSE
+  WHERE product_id = this.product_id
+  AND id != this.id
+```
+> Enforced at Python/ORM level in `save()`. No DB-level constraint.
+
+---
+
+
+
+---
+
+## 3. Cart App
+
+**App Label:** `cart`
+**Purpose:** Manages per-user shopping carts, line items, quantity
+validation against live stock, and monetary subtotal calculations.
+**Status:** ✅ Migrated
+
+---
+
+### 3.1 `cart_cart`
+
+One cart per user. Created automatically via post_save signal
+on User creation. Totals are computed properties — not stored in DB.
+
+| Column | Django Field | DB Type | Constraints | Default | Notes |
+|---|---|---|---|---|---|
+| `id` | `AutoField` (PK) | `BIGINT` | `PK`, `NOT NULL`, `AUTO INCREMENT` | Auto | — |
+| `user_id` | `OneToOneField → User` | `BIGINT` | `UNIQUE`, `NOT NULL`, `FK`, `INDEX` | — | `CASCADE` on delete. One cart per user enforced at DB level |
+| `created_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now_add` | From `TimeStampedModel` |
+| `updated_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now` | From `TimeStampedModel` |
+
+**Indexes:**
+
+| Index Name | Column(s) | Type |
+|---|---|---|
+| `cart_cart_user_idx` | `user_id` | `UNIQUE BTREE` |
+
+**Relationships:**
+
+| Relation | Type | On Delete |
+|---|---|---|
+| `cart_cart` → `accounts_user` | One-to-One | `CASCADE` |
+| `cart_cart` → `cart_cartitem` | One-to-Many | `CASCADE` |
+
+**Computed Properties** *(Python level — not stored in DB)*:
+
+| Property | Returns | Notes |
+|---|---|---|
+| `total_items` | `int` | Sum of all `CartItem.quantity`. Requires `prefetch_related('items')` |
+| `total_price` | `Decimal` | Sum of all `CartItem.subtotal`. Requires `prefetch_related('items__product')` |
+| `is_empty` | `bool` | `True` if cart has no items. Uses prefetch cache — no extra query |
+
+> **Query Note:** All three properties use `self.items.all()` and rely
+> on prefetch cache. Callers must use `prefetch_related('items__product')`
+> on the queryset to avoid N+1 queries.
+
+---
+
+### 3.2 `cart_cartitem`
+
+A single product line in a cart with quantity.
+One product can appear only once per cart — enforced at DB level
+via `unique_together`. Adding the same product again must increase
+quantity at the view layer rather than inserting a duplicate row.
+
+| Column | Django Field | DB Type | Constraints | Default | Notes |
+|---|---|---|---|---|---|
+| `id` | `AutoField` (PK) | `BIGINT` | `PK`, `NOT NULL`, `AUTO INCREMENT` | Auto | — |
+| `cart_id` | `ForeignKey → Cart` | `BIGINT` | `NOT NULL`, `FK`, `INDEX` | — | `CASCADE` on delete |
+| `product_id` | `ForeignKey → Product` | `BIGINT` | `NOT NULL`, `FK`, `INDEX` | — | `CASCADE` on delete |
+| `quantity` | `PositiveIntegerField` | `INTEGER` | `NOT NULL` | `1` | Min `1` enforced by `PositiveIntegerField`. Max = live stock — validated in `clean()` |
+| `created_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now_add` | From `TimeStampedModel` |
+| `updated_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now` | From `TimeStampedModel` |
+
+**Indexes:**
+
+| Index Name | Column(s) | Type |
+|---|---|---|
+| `cart_cartitem_cart_idx` | `cart_id` | `BTREE` |
+| `cart_cartitem_product_idx` | `product_id` | `BTREE` |
+| `cart_cartitem_cart_product_uniq` | `cart_id`, `product_id` | `UNIQUE BTREE` |
+
+**Relationships:**
+
+| Relation | Type | On Delete |
+|---|---|---|
+| `cart_cartitem` → `cart_cart` | Many-to-One | `CASCADE` |
+| `cart_cartitem` → `products_product` | Many-to-One | `CASCADE` |
+
+**Validation Logic** *(Python level — enforced via `full_clean()` on every `save()`)*:
+
+| Rule | Where Enforced | Notes |
+|---|---|---|
+| `quantity <= product.stock` | `clean()` → called in `save()` | Raises `ValidationError` if exceeded |
+| One product per cart | `unique_together` at DB level | `IntegrityError` on duplicate insert |
+
+**Computed Properties** *(Python level — not stored in DB)*:
+
+| Property | Returns | Notes |
+|---|---|---|
+| `subtotal` | `Decimal` | `product.current_price × quantity`. Requires `select_related('product')` |
+
+---
