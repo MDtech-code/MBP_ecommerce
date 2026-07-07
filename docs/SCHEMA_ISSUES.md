@@ -34,33 +34,7 @@
 
 ## 1. Accounts App Issues
 
----
 
-### ISSUE-A01 — No `updated_at` on `User` Model
-
-**Severity:** 🟡 Medium
-**Table:** `accounts_user`
-
-**Problem:**
-`User` has `date_joined` but no `updated_at`. There is no audit trail
-for when email, role, or active status was last changed. `UserProfile`
-correctly gets `updated_at` from `TimeStampedModel` but `User` itself
-does not.
-
-**Safe Migration Path:**
-```python
-# Add to User model in accounts/models.py
-updated_at = models.DateTimeField(
-    _("last updated"),
-    auto_now=True,
-)
-```
-```sql
--- What Django generates:
--- ALTER TABLE accounts_user ADD COLUMN updated_at TIMESTAMPTZ;
--- Django backfills current timestamp for all existing rows automatically.
--- No data loss. No downtime required.
-```
 
 ---
 
@@ -180,27 +154,6 @@ no existing data affected.
 
 ---
 
-### ISSUE-A05 — Missing Indexes on `role` and `last_login`
-
-**Severity:** 🟢 Low
-**Table:** `accounts_user`
-
-**Problem:**
-`role` has no `db_index`. Filtering all admins or all customers —
-common in admin panels and Celery jobs — requires a full table scan.
-`last_login` has no index either. Celery cleanup jobs targeting
-inactive users will be slow as user count grows.
-
-**Safe Migration Path:**
-```python
-# Add via Meta indexes — preferred over field-level db_index:
-class Meta:
-    indexes = [
-        models.Index(fields=["role"], name="accounts_user_role_idx"),
-        models.Index(fields=["last_login"], name="accounts_user_last_login_idx"),
-    ]
-# Migration risk: None — adding indexes never affects existing data.
-```
 
 ---
 

@@ -61,6 +61,11 @@ class User(AbstractBaseUser, PermissionsMixin):
         _("date joined"),
         default=timezone.now,
     )
+    updated_at = models.DateTimeField(
+        _("last updated"),
+        auto_now=True,
+        help_text=_("Automatically updated whenever the user record is saved."),
+    )
 
     # ─── Auth configuration ───────────────────────────────
     USERNAME_FIELD = "email"
@@ -72,6 +77,11 @@ class User(AbstractBaseUser, PermissionsMixin):
         verbose_name = _("user")
         verbose_name_plural = _("users")
         ordering = ["-date_joined"]
+
+        indexes = [
+            models.Index(fields=["role"], name="accounts_user_role_idx"),
+            models.Index(fields=["last_login"], name="accounts_user_last_login_idx"),
+        ]
 
     def __str__(self) -> str:
         return self.email

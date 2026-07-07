@@ -13,6 +13,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle
 from django.contrib.auth import get_user_model
+from django.contrib.auth.signals import user_logged_in,user_logged_out
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
 from django.middleware.csrf import get_token
 from apps.core.api.views import BaseAPIView
@@ -593,6 +594,12 @@ class LoginView(BaseAPIView):
 
         user = serializer.validated_data["user"]
 
+        user_logged_in.send(
+            sender=user.__class__,
+            request=request,
+            user=user,
+        )
+
         # ── Token generation ──────────────────────────────────────────────────
         # Isolated in try/except — DB or JWT config failures must not
         # surface raw exceptions to the client.
@@ -707,6 +714,11 @@ class LogoutView(BaseAPIView):
             try:
                 token = RefreshToken(refresh_token)
                 token.blacklist()
+                user_logged_out.send(
+                    sender=request.user.__class__,
+                    request=request,
+                    user=request.user,
+                )
                 logger.info(
                     "User logged out — refresh token blacklisted",
                     extra=log_context,
