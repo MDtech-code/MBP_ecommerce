@@ -16,7 +16,8 @@
 4. [Orders App](#4-orders-app) ✅
 5. [Reviews App](#5-reviews-app) ✅
 6. [Contact App](#6-contact-app) ✅
-7. [Cross-App Relationships](#7-cross-app-relationships) *(built after all apps)*
+7. [Coupons App](#7-coupons-app) ✅
+8. [Cross-App Relationships](#8-cross-app-relationships) *(built after all apps)*
 
 
 ---
@@ -829,6 +830,127 @@ Admin reviews → marks resolved
 → is_resolved=TRUE
 → resolved_by_id = admin user id
 → resolved_at = timezone.now()
+```
+
+---
+
+
+## 7. Coupons App
+
+**App Label:** `coupons`
+**Purpose:** Manages discount coupons including percentage discounts,
+fixed PKR amount discounts, and free shipping codes. Enforces global
+usage limits, per-user usage limits, validity windows, and minimum
+order thresholds. Tracks every coupon redemption against an order
+for audit and limit enforcement.
+**Status:** 🟡 Not Yet Migrated — schema changes are low risk
+
+---
+
+### 7.1 `coupons_coupon`
+
+A single discount coupon with configurable type, value, validity
+window, and usage limits. Supports both authenticated users and
+guest checkouts tracked by phone number.
+
+| Column | Django Field | DB Type | Constraints | Default | Notes |
+|---|---|---|---|---|---|
+| `id` | `AutoField` (PK) | `BIGINT` | `PK`, `NOT NULL`, `AUTO INCREMENT` | Auto | — |
+| `code` | `CharField(50)` | `VARCHAR(50)` | `UNIQUE`, `NOT NULL`, `INDEX` | — | Human-readable code e.g. `EIDMUBARAK2026`. Case handling — see ISSUE-CPN01 |
+| `discount_type` | `CharField(20)` | `VARCHAR(20)` | `NOT NULL` | `'FIXED_PKR'` | See Discount Type choices below |
+| `discount_value` | `DecimalField(10,2)` | `NUMERIC(10,2)` | `NOT NULL` | — | Percentage (0–100) or fixed PKR amount. Min `0.00` |
+| `min_order_amount` | `DecimalField(10,2)` | `NUMERIC(10,2)` | `NOT NULL` | `0.00` | Minimum cart subtotal in PKR required to apply coupon |
+| `max_discount_amount` | `DecimalField(10,2)` | `NUMERIC(10,2)` | `NULL` | `NULL` | PKR cap on percentage discounts. `NULL` = no cap |
+| `usage_limit_total` | `PositiveIntegerField` | `INTEGER` | `NULL` | `NULL` | Global usage cap. `NULL` = unlimited |
+| `usage_limit_per_user` | `PositiveSmallIntegerField` | `SMALLINT` | `NOT NULL` | `1` | Max times one user can use this coupon |
+| `total_used` | `PositiveIntegerField` | `INTEGER` | `NOT NULL` | `0` | Running count of total redemptions. Incremented on each use |
+| `valid_from` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | — | Coupon activation start datetime |
+| `valid_until` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | — | Coupon expiry datetime |
+| `is_active` | `BooleanField` | `BOOLEAN` | `NOT NULL` | `TRUE` | Admin toggle to disable coupon without deletion |
+| `created_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now_add` | From `TimeStampedModel` |
+| `updated_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now` | From `TimeStampedModel` |
+
+**Indexes:**
+
+| Index Name | Column(s) | Type |
+|---|---|---|
+| `coupons_coupon_code_idx` | `code` | `UNIQUE BTREE` |
+| `coupons_coupon_lookup_idx` | `code`, `is_active`, `valid_until` | `BTREE` |
+
+**Discount Type Choices:**
+
+| Display | DB Value | Behaviour |
+|---|---|---|
+| Percentage Discount | `PERCENTAGE` | `discount_value` treated as `%`. Capped by `max_discount_amount` if set |
+| Fixed Amount (PKR) | `FIXED_PKR` | `discount_value` deducted directly from order subtotal |
+| Free Shipping | `FREE_SHIPPING` | `shipping_fee` set to `0`. `discount_value` ignored |
+
+**Relationships:**
+
+| Relation | Type | On Delete |
+|---|---|---|
+| `coupons_coupon` → `coupons_couponusage` | One-to-Many | `PROTECT` |
+
+**Coupon Validity Logic** *(enforced at application layer)*:
+
+```
+A coupon is redeemable when ALL of the following are true:
+  1. is_active = TRUE
+  2. timezone.now() >= valid_from
+  3. timezone.now() <= valid_until
+  4. total_used < usage_limit_total  (if usage_limit_total is not NULL)
+  5. user usage count < usage_limit_per_user
+  6. cart subtotal >= min_order_amount
+```
+
+---
+
+### 7.2 `coupons_couponusage`
+
+Records every coupon redemption. Used to enforce both global
+and per-user usage limits. Tracks guest checkouts by phone number
+in addition to authenticated user FK. Links to order via
+`order_id` string reference.
+
+| Column | Django Field | DB Type | Constraints | Default | Notes |
+|---|---|---|---|---|---|
+| `id` | `AutoField` (PK) | `BIGINT` | `PK`, `NOT NULL`, `AUTO INCREMENT` | Auto | — |
+| `coupon_id` | `ForeignKey → Coupon` | `BIGINT` | `NOT NULL`, `FK`, `INDEX` | — | `PROTECT` on delete — coupon cannot be deleted while usage records exist |
+| `user_id` | `ForeignKey → User` | `BIGINT` | `NULL`, `FK`, `INDEX` | `NULL` | `CASCADE` on delete. `NULL` = guest checkout |
+| `phone_number` | `CharField(15)` | `VARCHAR(15)` | `NOT NULL`, `INDEX` | — | Pakistani phone number. Used to track guest coupon usage |
+| `order_id` | `CharField(100)` | `VARCHAR(100)` | `UNIQUE`, `NOT NULL` | — | String reference to `orders_order`. See ISSUE-CPN03 |
+| `discount_applied` | `DecimalField(10,2)` | `NUMERIC(10,2)` | `NOT NULL` | — | Actual PKR discount amount applied to this order |
+| `created_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now_add` | From `TimeStampedModel` |
+| `updated_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now` | From `TimeStampedModel` |
+
+**Indexes:**
+
+| Index Name | Column(s) | Type |
+|---|---|---|
+| `coupons_couponusage_coupon_idx` | `coupon_id` | `BTREE` |
+| `coupons_couponusage_user_idx` | `user_id` | `BTREE` |
+| `coupons_couponusage_phone_idx` | `phone_number` | `BTREE` |
+| `coupons_couponusage_order_uniq` | `order_id` | `UNIQUE BTREE` |
+| `coupons_couponusage_coupon_user_order_uniq` | `coupon_id`, `user_id`, `order_id` | `UNIQUE BTREE` |
+
+**Relationships:**
+
+| Relation | Type | On Delete |
+|---|---|---|
+| `coupons_couponusage` → `coupons_coupon` | Many-to-One | `PROTECT` |
+| `coupons_couponusage` → `accounts_user` | Many-to-One | `CASCADE` |
+
+**Per-User Limit Enforcement Query:**
+
+```python
+# Check how many times a user has used a coupon before applying:
+user_usage_count = CouponUsage.objects.filter(
+    coupon=coupon,
+    user=request.user,
+).count()
+
+if user_usage_count >= coupon.usage_limit_per_user:
+    raise CouponLimitExceeded()
 ```
 
 ---

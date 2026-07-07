@@ -13,6 +13,7 @@
 
 ---
 
+
 ## Table of Contents
 
 1. [Accounts App Issues](#1-accounts-app-issues) ✅
@@ -21,7 +22,8 @@
 4. [Orders App Issues](#4-orders-app-issues) ✅
 5. [Reviews App Issues](#5-reviews-app-issues) ✅
 6. [Contact App Issues](#6-contact-app-issues) ✅
-7. [Cross-App Issues](#7-cross-app-issues) *(built after all apps)*
+7. [Coupons App Issues](#7-coupons-app-issues) ✅
+8. [Cross-App Issues](#8-cross-app-issues) *(built after all apps)*
 
 ---
 
@@ -1432,6 +1434,276 @@ def clean(self) -> None:
 
 # No migration required for clean() approach.
 # Field removal would require a migration — evaluate carefully.
+```
+
+---
+
+
+## 7. Coupons App Issues
+
+---
+
+### ISSUE-CPN01 — Coupon `code` Has No Case Normalisation
+
+**Severity:** 🔴 High
+**Table:** `coupons_coupon`
+
+**Problem:**
+`code` is stored and looked up as-is with no case normalisation.
+A user typing `eidmubarak2026` will not match `EIDMUBARAK2026`
+even though they are the same coupon. Since `unique=True` is
+case-sensitive in PostgreSQL by default, an admin could also
+accidentally create both `EID2026` and `eid2026` as separate
+coupons — a silent duplicate that splits usage counts.
+
+**Safe Migration Path:**
+```python
+# Override save() to always uppercase the code before storing:
+def save(self, *args, **kwargs) -> None:
+    self.code = self.code.strip().upper()
+    super().save(*args, **kwargs)
+
+# Normalise at lookup time in the redemption view:
+coupon = Coupon.objects.get(code=submitted_code.strip().upper())
+
+# For DB-level case-insensitive uniqueness use a functional index:
+# CREATE UNIQUE INDEX coupons_coupon_code_ci_idx
+# ON coupons_coupon (UPPER(code));
+# Then remove the standard unique=True and manage via this index.
+
+# Simplest path: add save() normalisation — no migration required.
+# Existing codes already uppercase — no data affected.
+```
+
+---
+
+### ISSUE-CPN02 — `total_used` Counter Is Not Concurrency Safe
+
+**Severity:** 🔴 High
+**Table:** `coupons_coupon`
+
+**Problem:**
+`total_used` is incremented by application code after each
+redemption. Under concurrent checkouts two requests can both
+read `total_used=99` against a `usage_limit_total=100`, both
+pass the limit check, and both increment — resulting in
+`total_used=101` and one over-redemption. For promotional
+coupons on high-traffic events like Eid sales this will
+be exploited.
+
+**Safe Migration Path:**
+```python
+# Use F() expression for atomic increment — never read-modify-write:
+from django.db.models import F
+
+# At redemption — inside atomic transaction:
+with transaction.atomic():
+    coupon = Coupon.objects.select_for_update().get(pk=coupon_id)
+
+    # Re-check limit after acquiring lock:
+    if (coupon.usage_limit_total is not None and
+            coupon.total_used >= coupon.usage_limit_total):
+        raise CouponLimitExceeded()
+
+    # Atomic increment:
+    Coupon.objects.filter(pk=coupon_id).update(
+        total_used=F("total_used") + 1
+    )
+    CouponUsage.objects.create(...)
+
+# No migration required — ORM pattern fix in redemption logic.
+```
+
+---
+
+### ISSUE-CPN03 — `CouponUsage.order_id` Is a String Not a Real FK
+
+**Severity:** 🔴 High
+**Table:** `coupons_couponusage`
+
+**Problem:**
+`order_id` is defined as `CharField(100)` described as a
+"reference to the Order model". This is a soft reference —
+there is no actual FK constraint to `orders_order`. The database
+has no way to verify the referenced order exists, enforce
+referential integrity, or cascade correctly. A typo, a deleted
+order, or a UUID format mismatch leaves orphaned `CouponUsage`
+rows pointing to non-existent orders with no error raised.
+
+**Safe Migration Path:**
+```python
+# Replace CharField with a real ForeignKey to orders_order:
+from apps.orders.models import Order
+
+order = models.ForeignKey(
+    Order,
+    on_delete=models.PROTECT,   # preserve usage record if order deleted
+    related_name="coupon_usages",
+    verbose_name=_("order"),
+)
+
+# This also resolves the unique_together on (coupon, user, order_id)
+# which should become (coupon, user, order) with the FK.
+
+# Migration: Safe — new table not yet migrated.
+# Add the FK before first migrate run.
+# Also add coupon_discount fields to Order model (see ISSUE-CPN05).
+```
+
+---
+
+### ISSUE-CPN04 — `CouponUsage` Guest Tracking by Phone Is Bypassable
+
+**Severity:** 🟡 Medium
+**Table:** `coupons_couponusage`
+
+**Problem:**
+Guest coupon usage is tracked by `phone_number` only. A guest
+can bypass the per-user limit by submitting a slightly different
+phone format — `03001234567` vs `+923001234567` — which are the
+same number but stored as different strings. The same phone
+validator from `accounts_userprofile` is not applied here,
+so format consistency is not enforced.
+
+**Safe Migration Path:**
+```python
+# Apply the same phone validator used in accounts app:
+from django.core.validators import RegexValidator
+
+phone_validator = RegexValidator(
+    regex=r"^\+?92\d{10}$|^0\d{10}$",
+    message=_("Enter a valid Pakistani phone number.")
+)
+
+phone_number = models.CharField(
+    max_length=15,
+    db_index=True,
+    validators=[phone_validator],
+)
+
+# Normalise format in save() — always store in +92 format:
+def save(self, *args, **kwargs) -> None:
+    if self.phone_number.startswith("0"):
+        self.phone_number = "+92" + self.phone_number[1:]
+    super().save(*args, **kwargs)
+
+# No migration required — not yet migrated.
+# Add normalisation before first migrate run.
+```
+
+---
+
+### ISSUE-CPN05 — `Order` Model Has No Coupon Relationship
+
+**Severity:** 🔴 High
+**Tables:** `orders_order` ↔ `coupons_coupon`
+
+**Problem:**
+`Order` stores `subtotal`, `shipping_fee`, and `total_price` but
+has no reference to which coupon was applied or what discount
+was given. `CouponUsage` tracks the usage but an order record
+itself cannot answer "was a coupon used on this order and what
+was the discount?". Admin order views, customer order history,
+and financial reporting all need this on the order directly.
+
+**Safe Migration Path:**
+```python
+# Add to Order model in orders/models.py:
+coupon = models.ForeignKey(
+    "coupons.Coupon",
+    on_delete=models.SET_NULL,
+    null=True,
+    blank=True,
+    related_name="orders",
+    verbose_name=_("applied coupon"),
+)
+discount_amount = models.DecimalField(
+    _("coupon discount amount"),
+    max_digits=10,
+    decimal_places=2,
+    default=Decimal("0.00"),
+    help_text=_("PKR discount applied via coupon at checkout.")
+)
+
+# Update total_price formula in Order.clean():
+# total_price = subtotal - discount_amount + shipping_fee
+
+# Migration: Safe — orders app not yet migrated.
+# Add fields before first migrate run.
+```
+
+---
+
+### ISSUE-CPN06 — `PERCENTAGE` Coupon Has No Upper Bound on `discount_value`
+
+**Severity:** 🟡 Medium
+**Table:** `coupons_coupon`
+
+**Problem:**
+`discount_value` has `MinValueValidator(0)` but no
+`MaxValueValidator`. For `PERCENTAGE` type coupons a value of
+`150` is accepted — a 150% discount that would produce a
+negative order total. There is no `clean()` that validates
+`discount_value <= 100` when `discount_type == PERCENTAGE`.
+
+**Safe Migration Path:**
+```python
+# Add clean() to Coupon model:
+def clean(self) -> None:
+    if self.discount_type == self.DiscountType.PERCENTAGE:
+        if self.discount_value > Decimal("100.00"):
+            raise ValidationError({
+                "discount_value": _(
+                    "Percentage discount cannot exceed 100%%."
+                )
+            })
+    if self.valid_until <= self.valid_from:
+        raise ValidationError({
+            "valid_until": _(
+                "Expiry date must be after the activation date."
+            )
+        })
+
+# Second check also catches valid_from >= valid_until which is
+# another silent data error currently not validated anywhere.
+# No migration required — Python-level validation only.
+```
+
+---
+
+### ISSUE-CPN07 — `FREE_SHIPPING` Type Makes `discount_value` Meaningless
+
+**Severity:** 🟢 Low
+**Table:** `coupons_coupon`
+
+**Problem:**
+When `discount_type = FREE_SHIPPING`, `discount_value` has no
+meaning — shipping is zeroed regardless of what value is stored.
+Yet `discount_value` is `NOT NULL` with `MinValueValidator(0)`
+so an admin must enter a value (typically `0`) even though it
+is ignored. This is confusing in the Django admin and could
+lead to accidental misreads of coupon data.
+
+**Safe Migration Path:**
+```python
+# Add clean() rule to enforce discount_value=0 for FREE_SHIPPING:
+def clean(self) -> None:
+    if self.discount_type == self.DiscountType.FREE_SHIPPING:
+        if self.discount_value != Decimal("0.00"):
+            raise ValidationError({
+                "discount_value": _(
+                    "Discount value must be 0 for Free Shipping coupons."
+                )
+            })
+
+# Or auto-correct in save():
+def save(self, *args, **kwargs) -> None:
+    self.code = self.code.strip().upper()
+    if self.discount_type == self.DiscountType.FREE_SHIPPING:
+        self.discount_value = Decimal("0.00")
+    super().save(*args, **kwargs)
+
+# No migration required — Python-level logic only.
 ```
 
 ---
