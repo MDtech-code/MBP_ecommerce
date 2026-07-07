@@ -20,7 +20,8 @@
 3. [Cart App Issues](#3-cart-app-issues) ✅
 4. [Orders App Issues](#4-orders-app-issues) ✅
 5. [Reviews App Issues](#5-reviews-app-issues) ✅
-6. [Cross-App Issues](#6-cross-app-issues) *(built after all apps)*
+6. [Contact App Issues](#6-contact-app-issues) ✅
+7. [Cross-App Issues](#7-cross-app-issues) *(built after all apps)*
 
 ---
 
@@ -1226,3 +1227,211 @@ has_purchased = OrderItem.objects.filter(
 # A CANCELLED or PENDING order should not count as a verified purchase.
 # Document this in api_standards.md under review submission rules.
 ```
+
+
+## 6. Contact App Issues
+
+---
+
+### ISSUE-CT01 — No Validation That `resolved_by` Is a Staff or Admin User
+
+**Severity:** 🟡 Medium
+**Table:** `contact_contactmessage`
+
+**Problem:**
+`resolved_by` is a plain FK to `User` with no constraint that the
+resolver actually has staff or admin role. A regular customer account
+could be set as the resolver through a buggy API call or direct ORM
+write. This corrupts the audit trail — resolution records should only
+ever reference admin or staff accounts.
+
+**Safe Migration Path:**
+```python
+# Add clean() validation to ContactMessage:
+from django.core.exceptions import ValidationError
+
+def clean(self) -> None:
+    if self.resolved_by_id:
+        if not self.resolved_by.is_staff and not self.resolved_by.is_admin:
+            raise ValidationError({
+                "resolved_by": _(
+                    "Only staff or admin users can be assigned "
+                    "as ticket resolvers."
+                )
+            })
+
+# Also enforce in the admin view and API serializer — belt and braces.
+# No migration required — Python-level validation only.
+```
+
+---
+
+### ISSUE-CT02 — Resolution Fields Can Be Set Inconsistently
+
+**Severity:** 🟡 Medium
+**Table:** `contact_contactmessage`
+
+**Problem:**
+`is_resolved`, `resolved_by`, and `resolved_at` are three separate
+fields with no constraint tying them together. All of the following
+broken states are currently possible and silently accepted:
+
+- `is_resolved=TRUE` but `resolved_by=NULL` and `resolved_at=NULL`
+- `is_resolved=FALSE` but `resolved_by` set to an admin
+- `resolved_at` set but `is_resolved=FALSE`
+
+For a support ticket system these inconsistent states make admin
+reporting and SLA tracking unreliable.
+
+**Safe Migration Path:**
+```python
+# Add clean() to enforce resolution field consistency:
+def clean(self) -> None:
+    if self.is_resolved:
+        if not self.resolved_by_id:
+            raise ValidationError({
+                "resolved_by": _(
+                    "A resolver must be assigned when marking "
+                    "a ticket as resolved."
+                )
+            })
+        if not self.resolved_at:
+            raise ValidationError({
+                "resolved_at": _(
+                    "A resolution timestamp must be set when "
+                    "marking a ticket as resolved."
+                )
+            })
+    else:
+        # If not resolved, resolution fields must be empty
+        if self.resolved_by_id or self.resolved_at:
+            raise ValidationError(
+                "Resolution fields must be cleared for unresolved tickets."
+            )
+
+# Add a resolve() helper method to ContactMessage:
+def resolve(self, admin_user) -> None:
+    from django.utils import timezone
+    self.is_resolved = True
+    self.resolved_by = admin_user
+    self.resolved_at = timezone.now()
+    self.full_clean()
+    self.save(update_fields=["is_resolved", "resolved_by", "resolved_at"])
+
+# No migration required — Python-level validation only.
+```
+
+---
+
+### ISSUE-CT03 — No Rate Limiting or Spam Protection at Schema Level
+
+**Severity:** 🟡 Medium
+**Table:** `contact_contactmessage`
+
+**Problem:**
+Anonymous visitors can submit unlimited contact messages with no
+throttle at the schema or model level. The contact form is a common
+spam and abuse vector. A single IP could flood the inbox with
+thousands of messages. No field tracks submission IP address so
+even basic abuse analysis is impossible after the fact.
+
+**Safe Migration Path:**
+```python
+# Add IP capture field to ContactMessage:
+ip_address = models.GenericIPAddressField(
+    _("submission IP address"),
+    null=True,
+    blank=True,
+    help_text=_("Captured at submission time for abuse tracking.")
+)
+
+# Populate in the contact form view:
+# message.ip_address = request.META.get("REMOTE_ADDR")
+
+# Add API throttle in core/throttles.py for the contact endpoint:
+# class ContactFormThrottle(AnonRateThrottle):
+#     rate = "5/hour"  # tune to business needs
+
+# Add DB-level index for abuse queries:
+class Meta:
+    indexes = [
+        models.Index(fields=["is_resolved"]),
+        models.Index(fields=["ip_address"]),   # fast abuse lookups
+    ]
+
+# Migration: Safe — new nullable field, no existing data affected.
+```
+
+---
+
+### ISSUE-CT04 — No Admin Reply Tracking
+
+**Severity:** 🟢 Low
+**Table:** `contact_contactmessage`
+
+**Problem:**
+The model tracks whether a ticket is resolved and by whom but has
+no record of what the admin actually replied. There is no way to
+review what response was sent to a customer or audit response
+quality. For a growing Pakistani ecommerce platform where customer
+trust is built through support quality, this is a meaningful gap.
+
+**Proposed New Table — `contact_contactreply`:**
+
+| Column | Type | Constraints | Notes |
+|---|---|---|---|
+| `id` | `BIGINT` | `PK` | — |
+| `message_id` | `BIGINT` | `FK → contact_contactmessage`, `NOT NULL`, `INDEX` | `CASCADE` on delete |
+| `replied_by_id` | `BIGINT` | `FK → accounts_user`, `NULL`, `INDEX` | `SET NULL` on delete — preserve reply history |
+| `body` | `TEXT` | `NOT NULL` | Admin reply content |
+| `created_at` | `TIMESTAMPTZ` | `NOT NULL` | Reply timestamp |
+
+```
+Migration: New table — zero risk to existing data.
+One message can have multiple reply threads.
+Final reply should trigger is_resolved=TRUE via signal or view logic.
+```
+
+---
+
+### ISSUE-CT05 — Cross-App Alignment: Authenticated User `name` and `email` Not Auto-Filled
+
+**Severity:** 🟢 Low
+**Table:** `contact_contactmessage`
+
+**Problem:**
+When `user_id` is set (authenticated submission), `name` and `email`
+are still separate required fields. The form must be pre-filled from
+`user.full_name` and `user.email` at the view layer — but nothing in
+the model enforces or validates that they match. An authenticated user
+could submit with a completely different name and email, creating
+a confusing support record where `user_id` points to one person
+but `name`/`email` describes another.
+
+**Recommendation:**
+```python
+# Add clean() cross-field check for authenticated submissions:
+def clean(self) -> None:
+    if self.user_id and self.email:
+        if self.email != self.user.email:
+            raise ValidationError({
+                "email": _(
+                    "Reply email must match the authenticated "
+                    "user account email."
+                )
+            })
+
+# Or simplify the model — for authenticated users do not store
+# name and email at all, derive them from user FK at read time:
+# @property
+# def sender_name(self):
+#     return self.user.full_name if self.user_id else self.name
+# @property
+# def sender_email(self):
+#     return self.user.email if self.user_id else self.email
+
+# No migration required for clean() approach.
+# Field removal would require a migration — evaluate carefully.
+```
+
+---

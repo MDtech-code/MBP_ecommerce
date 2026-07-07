@@ -15,7 +15,8 @@
 3. [Cart App](#3-cart-app) ✅
 4. [Orders App](#4-orders-app) ✅
 5. [Reviews App](#5-reviews-app) ✅
-6. [Cross-App Relationships](#6-cross-app-relationships) *(built after all apps)*
+6. [Contact App](#6-contact-app) ✅
+7. [Cross-App Relationships](#7-cross-app-relationships) *(built after all apps)*
 
 
 ---
@@ -768,6 +769,66 @@ Verified check at submission:
       order__user=request.user,
       product=product,
   ).exists()
+```
+
+---
+
+## 6. Contact App
+
+**App Label:** `contact`
+**Purpose:** Manages inbound customer support inquiries submitted via
+the contact form. Supports both authenticated users and anonymous
+visitors. Tracks resolution workflow — which admin resolved the
+ticket and when.
+**Status:** 🟡 Not Yet Migrated — schema changes are low risk
+
+---
+
+### 6.1 `contact_contactmessage`
+
+A single customer support inquiry. Can be submitted by an
+authenticated user or an anonymous visitor. Admin resolution
+workflow tracked via `is_resolved`, `resolved_by`, and
+`resolved_at` fields.
+
+| Column | Django Field | DB Type | Constraints | Default | Notes |
+|---|---|---|---|---|---|
+| `id` | `AutoField` (PK) | `BIGINT` | `PK`, `NOT NULL`, `AUTO INCREMENT` | Auto | — |
+| `user_id` | `ForeignKey → User` | `BIGINT` | `NULL`, `FK`, `INDEX` | `NULL` | `SET NULL` on delete. `NULL` = anonymous visitor submission |
+| `name` | `CharField(100)` | `VARCHAR(100)` | `NOT NULL` | — | Sender display name |
+| `email` | `EmailField` | `VARCHAR(254)` | `NOT NULL` | — | Reply-to address for admin responses |
+| `phone` | `CharField(15)` | `VARCHAR(15)` | `NOT NULL` | `''` | Optional contact number |
+| `subject` | `CharField(200)` | `VARCHAR(200)` | `NOT NULL` | — | Inquiry subject title |
+| `message` | `TextField` | `TEXT` | `NOT NULL` | — | Full inquiry message body |
+| `is_resolved` | `BooleanField` | `BOOLEAN` | `NOT NULL` | `FALSE` | Resolution status flag |
+| `resolved_by_id` | `ForeignKey → User` | `BIGINT` | `NULL`, `FK`, `INDEX` | `NULL` | `SET NULL` on delete. Admin who closed the ticket |
+| `resolved_at` | `DateTimeField` | `TIMESTAMPTZ` | `NULL` | `NULL` | Timestamp when ticket was marked resolved |
+| `created_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now_add` | From `TimeStampedModel`. Inquiry submission time |
+| `updated_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now` | From `TimeStampedModel` |
+
+**Indexes:**
+
+| Index Name | Column(s) | Type |
+|---|---|---|
+| `contact_contactmessage_user_idx` | `user_id` | `BTREE` |
+| `contact_contactmessage_resolved_by_idx` | `resolved_by_id` | `BTREE` |
+| `contact_contactmessage_is_resolved_idx` | `is_resolved` | `BTREE` |
+
+**Relationships:**
+
+| Relation | Type | On Delete |
+|---|---|---|
+| `contact_contactmessage` → `accounts_user` (sender) | Many-to-One | `SET NULL` |
+| `contact_contactmessage` → `accounts_user` (resolver) | Many-to-One | `SET NULL` |
+
+**Resolution Workflow:**
+
+```
+Inquiry submitted → is_resolved=FALSE, resolved_by=NULL, resolved_at=NULL
+Admin reviews → marks resolved
+→ is_resolved=TRUE
+→ resolved_by_id = admin user id
+→ resolved_at = timezone.now()
 ```
 
 ---
