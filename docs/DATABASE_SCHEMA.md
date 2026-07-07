@@ -18,7 +18,146 @@
 6. [Contact App](#6-contact-app) ✅
 7. [Coupons App](#7-coupons-app) ✅
 8. [Payments App](#8-payments-app) ✅
-9. [Cross-App Relationships](#9-cross-app-relationships) *(built after all apps)*
+9. [Notifications App](#9-notifications-app) ✅
+10. [Cross-App Relationships](#10-cross-app-relationships) *(built after all apps)*## 9. Notifications App
+
+**App Label:** `notifications`
+**Purpose:** Manages outbound customer notifications across WhatsApp,
+SMS, Email, and In-App channels. Tracks send status and failure
+reasons per notification. Provides a dedicated COD order verification
+flow via WhatsApp Business API to reduce Return-to-Origin (RTO) rates —
+a critical operational concern for Pakistani COD ecommerce.
+**Status:** 🟡 Not Yet Migrated — schema changes are low risk
+
+---
+
+### 9.1 `notifications_notification`
+
+A single outbound notification dispatched to a user or recipient
+across any supported channel. In-App notifications are read via
+the `is_read` flag. SMS and WhatsApp use `recipient_phone`.
+Email uses `recipient_email`. `context_data` carries dynamic
+template variables for message rendering.
+
+| Column | Django Field | DB Type | Constraints | Default | Notes |
+|---|---|---|---|---|---|
+| `id` | `AutoField` (PK) | `BIGINT` | `PK`, `NOT NULL`, `AUTO INCREMENT` | Auto | — |
+| `user_id` | `ForeignKey → User` | `BIGINT` | `NULL`, `FK`, `INDEX` | `NULL` | `CASCADE` on delete. `NULL` = guest/anonymous recipient |
+| `recipient_phone` | `CharField(15)` | `VARCHAR(15)` | `NULL` | `NULL` | Required for `SMS` and `WHATSAPP` channels. Format `+923XXXXXXXXX` |
+| `recipient_email` | `EmailField` | `VARCHAR(254)` | `NULL` | `NULL` | Required for `EMAIL` channel |
+| `channel` | `CharField(15)` | `VARCHAR(15)` | `NOT NULL` | — | See Channel choices below |
+| `notification_type` | `CharField(25)` | `VARCHAR(25)` | `NOT NULL` | — | See Notification Type choices below |
+| `title` | `CharField(150)` | `VARCHAR(150)` | `NOT NULL` | — | Notification headline or subject |
+| `body` | `TextField` | `TEXT` | `NOT NULL` | — | Full notification message body |
+| `context_data` | `JSONField` | `JSONB` | `NULL` | `NULL` | Dynamic template variables e.g. `{"order_id": "MBP-001", "awb": "TCS-99"}` |
+| `is_sent` | `BooleanField` | `BOOLEAN` | `NOT NULL` | `FALSE` | `TRUE` after successful dispatch to gateway |
+| `sent_at` | `DateTimeField` | `TIMESTAMPTZ` | `NULL` | `NULL` | Timestamp of successful dispatch |
+| `is_read` | `BooleanField` | `BOOLEAN` | `NOT NULL` | `FALSE` | Read state for `IN_APP` channel only |
+| `failure_reason` | `TextField` | `TEXT` | `NOT NULL` | `''` | Gateway error detail on failed dispatch |
+| `created_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now_add` | From `TimeStampedModel` |
+| `updated_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now` | From `TimeStampedModel` |
+
+**Indexes:**
+
+| Index Name | Column(s) | Type |
+|---|---|---|
+| `notifications_notif_user_idx` | `user_id` | `BTREE` |
+| `notifications_notif_user_read_idx` | `user_id`, `is_read` | `BTREE` |
+| `notifications_notif_channel_sent_idx` | `channel`, `is_sent`, `created_at` | `BTREE` |
+
+**Channel Choices:**
+
+| Display | DB Value | Recipient Field Used |
+|---|---|---|
+| WhatsApp Business API | `WHATSAPP` | `recipient_phone` |
+| SMS (Local Gateway) | `SMS` | `recipient_phone` |
+| Email | `EMAIL` | `recipient_email` |
+| In-App Push / Bell Icon | `IN_APP` | `user_id` |
+
+**Notification Type Choices:**
+
+| Display | DB Value | Typical Channel |
+|---|---|---|
+| COD Order Verification | `COD_VERIFICATION` | `WHATSAPP` |
+| Order Placed | `ORDER_PLACED` | `EMAIL`, `WHATSAPP` |
+| Order Shipped (AWB Attached) | `ORDER_SHIPPED` | `WHATSAPP`, `SMS` |
+| Rider Out For Delivery | `OUT_FOR_DELIVERY` | `WHATSAPP`, `SMS` |
+| Marketing / Discount Alert | `PROMOTIONAL` | `WHATSAPP`, `EMAIL` |
+| System / Security Alert | `SYSTEM_ALERT` | `EMAIL`, `IN_APP` |
+
+**Relationships:**
+
+| Relation | Type | On Delete |
+|---|---|---|
+| `notifications_notification` → `accounts_user` | Many-to-One | `CASCADE` |
+
+**Channel-Recipient Validation Logic** *(enforced at application layer)*:
+
+```
+channel == WHATSAPP or SMS  → recipient_phone must not be NULL
+channel == EMAIL            → recipient_email must not be NULL
+channel == IN_APP           → user_id must not be NULL
+is_sent == TRUE             → sent_at must not be NULL
+is_sent == FALSE            → sent_at must be NULL
+```
+
+---
+
+### 9.2 `notifications_whatsappcodverification`
+
+Tracks the lifecycle of an automated WhatsApp message sent to
+verify a COD order before dispatch. Prevents RTO by confirming
+customer intent before the order leaves the warehouse. One record
+per order — enforced via `unique=True` on `order_id`.
+
+| Column | Django Field | DB Type | Constraints | Default | Notes |
+|---|---|---|---|---|---|
+| `id` | `AutoField` (PK) | `BIGINT` | `PK`, `NOT NULL`, `AUTO INCREMENT` | Auto | — |
+| `order_id` | `CharField(100)` | `VARCHAR(100)` | `UNIQUE`, `NOT NULL`, `INDEX` | — | Soft reference to `orders_order`. See ISSUE-NOTIF03 |
+| `phone_number` | `CharField(15)` | `VARCHAR(15)` | `NOT NULL` | — | Customer WhatsApp number. Format `+923XXXXXXXXX` |
+| `meta_message_id` | `CharField(150)` | `VARCHAR(150)` | `NULL` | `NULL` | WhatsApp Business API message ID for delivery tracking |
+| `status` | `CharField(20)` | `VARCHAR(20)` | `NOT NULL`, `INDEX` | `'PENDING_REPLY'` | See Verification Status choices below |
+| `customer_reply_text` | `CharField(100)` | `VARCHAR(100)` | `NOT NULL` | `''` | Raw reply text received from customer via webhook |
+| `verified_at` | `DateTimeField` | `TIMESTAMPTZ` | `NULL` | `NULL` | Timestamp when customer confirmed or cancelled |
+| `created_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now_add` | From `TimeStampedModel` |
+| `updated_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now` | From `TimeStampedModel` |
+
+**Indexes:**
+
+| Index Name | Column(s) | Type |
+|---|---|---|
+| `notifications_wacodverif_order_idx` | `order_id` | `UNIQUE BTREE` |
+| `notifications_wacodverif_status_idx` | `status` | `BTREE` |
+
+**Verification Status Choices:**
+
+| Display | DB Value | Notes |
+|---|---|---|
+| Message Sent - Awaiting Reply | `PENDING_REPLY` | Initial state after WhatsApp message dispatched |
+| Customer Confirmed via WhatsApp | `CONFIRMED` | Order proceeds to fulfilment |
+| Customer Cancelled via WhatsApp | `CANCELLED` | Order moves to `CANCELLED` status |
+| No Response (Manual Call Required) | `TIMEOUT` | Celery task triggers after configurable window |
+
+**Verification Lifecycle:**
+
+```
+COD order placed
+→ WhatsApp message sent → record created (PENDING_REPLY)
+→ Customer replies YES  → status = CONFIRMED, verified_at = now()
+                        → Order.status → CONFIRMED
+→ Customer replies NO   → status = CANCELLED, verified_at = now()
+                        → Order.status → CANCELLED
+→ No reply in window   → Celery beat task → status = TIMEOUT
+                        → triggers manual call queue
+```
+
+**Relationships:**
+
+| Relation | Type | On Delete |
+|---|---|---|
+| `notifications_whatsappcodverification` → `orders_order` | Soft reference via `order_id` string | See ISSUE-NOTIF03 |
+
+---
 
 
 ---
@@ -1082,3 +1221,4 @@ and post-incident debugging. Rows are never updated or deleted.
 ```
 
 ---
+

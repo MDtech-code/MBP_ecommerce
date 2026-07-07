@@ -13,9 +13,8 @@
 
 ---
 
-
-
 ## Table of Contents
+
 
 1. [Accounts App Issues](#1-accounts-app-issues) ✅
 2. [Products App Issues](#2-products-app-issues) ✅
@@ -25,7 +24,8 @@
 6. [Contact App Issues](#6-contact-app-issues) ✅
 7. [Coupons App Issues](#7-coupons-app-issues) ✅
 8. [Payments App Issues](#8-payments-app-issues) ✅
-9. [Cross-App Issues](#9-cross-app-issues) *(built after all apps)*
+9. [Notifications App Issues](#9-notifications-app-issues) ✅
+10. [Cross-App Issues](#10-cross-app-issues) *(built after all apps)*
 
 ---
 
@@ -1967,6 +1967,276 @@ with transaction.atomic():
 # Standardise to one convention across both models.
 # Recommended: Option 2 for queryability + strict atomic update rule.
 # Document this invariant in api_standards.md.
+```
+
+---
+
+## 9. Notifications App Issues
+
+---
+
+### ISSUE-NOTIF01 — No Channel-Recipient Consistency Validation
+
+**Severity:** 🔴 High
+**Table:** `notifications_notification`
+
+**Problem:**
+`recipient_phone`, `recipient_email`, and `user_id` are all
+nullable with no `clean()` or DB constraint enforcing that the
+correct recipient field is populated for the selected channel.
+Current silent failure states:
+- `channel=WHATSAPP` with `recipient_phone=NULL` — message sent to nobody
+- `channel=EMAIL` with `recipient_email=NULL` — email dispatch crashes at runtime
+- `channel=IN_APP` with `user_id=NULL` — notification invisible to all users
+- `channel=SMS` with only `recipient_email` set — wrong field populated
+
+At scale these produce silent no-delivery failures with no
+validation error — just `is_sent=FALSE` and a cryptic `failure_reason`.
+
+**Safe Migration Path:**
+```python
+# Add clean() to Notification model:
+from django.core.exceptions import ValidationError
+
+def clean(self) -> None:
+    if self.channel in (self.Channel.WHATSAPP, self.Channel.SMS):
+        if not self.recipient_phone:
+            raise ValidationError({
+                "recipient_phone": _(
+                    "Phone number is required for "
+                    "WhatsApp and SMS notifications."
+                )
+            })
+    if self.channel == self.Channel.EMAIL:
+        if not self.recipient_email:
+            raise ValidationError({
+                "recipient_email": _(
+                    "Email address is required for "
+                    "Email notifications."
+                )
+            })
+    if self.channel == self.Channel.IN_APP:
+        if not self.user_id:
+            raise ValidationError({
+                "user": _(
+                    "A user must be linked for "
+                    "In-App notifications."
+                )
+            })
+
+# No migration required — Python-level validation only.
+```
+
+---
+
+### ISSUE-NOTIF02 — `is_sent` and `sent_at` Can Be Inconsistent
+
+**Severity:** 🟡 Medium
+**Table:** `notifications_notification`
+
+**Problem:**
+`is_sent` and `sent_at` are two separate fields with no constraint
+tying them together. The following broken states are silently accepted:
+- `is_sent=TRUE` with `sent_at=NULL` — sent but no timestamp
+- `is_sent=FALSE` with `sent_at` populated — timestamp set but flagged unsent
+
+This is the same three-field inconsistency pattern seen in
+`contact_contactmessage` resolution fields (ISSUE-CT02) and
+`orders_order` lifecycle timestamps (ISSUE-O05).
+For notification delivery SLA reporting `sent_at` must be
+trustworthy — it cannot be set independently of `is_sent`.
+
+**Safe Migration Path:**
+```python
+# Add consistency check to clean():
+def clean(self) -> None:
+    # ... channel checks above ...
+    if self.is_sent and not self.sent_at:
+        raise ValidationError({
+            "sent_at": _(
+                "sent_at must be set when is_sent is True."
+            )
+        })
+    if not self.is_sent and self.sent_at:
+        raise ValidationError({
+            "sent_at": _(
+                "sent_at must be empty when is_sent is False."
+            )
+        })
+
+# Add a mark_sent() helper method:
+def mark_sent(self) -> None:
+    from django.utils import timezone
+    self.is_sent = True
+    self.sent_at = timezone.now()
+    self.save(update_fields=["is_sent", "sent_at"])
+
+# No migration required — Python-level validation only.
+```
+
+---
+
+### ISSUE-NOTIF03 — `WhatsAppCODVerification.order_id` Is a String Not a Real FK
+
+**Severity:** 🔴 High
+**Table:** `notifications_whatsappcodverification`
+
+**Problem:**
+`order_id` is `CharField(100)` — the fourth occurrence of this
+soft-reference anti-pattern across the codebase. Previously
+identified in `coupons_couponusage` (ISSUE-CPN03) and
+`payments_paymenttransaction` (ISSUE-PAY01) and
+`notifications_whatsappcodverification`. Every app that references
+`orders_order` is using a string instead of a FK.
+This is now confirmed as a systemic pattern requiring correction
+across all three apps before their first migration run.
+
+**Safe Migration Path:**
+```python
+# Replace CharField with a real ForeignKey:
+from apps.orders.models import Order
+
+order = models.OneToOneField(   # unique=True already set — OneToOne is cleaner
+    Order,
+    on_delete=models.PROTECT,
+    related_name="whatsapp_cod_verification",
+    verbose_name=_("order"),
+)
+
+# OneToOneField is correct here — unique=True was already on order_id
+# meaning one verification record per order.
+# PROTECT ensures verification history is not lost if order is somehow deleted.
+# Migration: Safe — not yet migrated. Add before first migrate run.
+```
+
+---
+
+### ISSUE-NOTIF04 — `is_read` Flag Applies Only to `IN_APP` But Exists on All Rows
+
+**Severity:** 🟢 Low
+**Table:** `notifications_notification`
+
+**Problem:**
+`is_read` is meaningful only for `channel=IN_APP` notifications.
+For `WHATSAPP`, `SMS`, and `EMAIL` rows `is_read` defaults `FALSE`
+and never changes — it is stored but meaningless on millions of
+outbound notification rows. This adds noise to the table and
+makes unread count queries (`is_read=FALSE`) return incorrect
+results if not filtered by `channel=IN_APP`.
+
+**Safe Migration Path:**
+```python
+# Option 1 — Always filter by channel in unread count queries:
+unread_count = Notification.objects.filter(
+    user=request.user,
+    channel=Notification.Channel.IN_APP,
+    is_read=False,
+).count()
+
+# Option 2 — Split IN_APP notifications into a separate model:
+# class InAppNotification(TimeStampedModel):
+#     user = FK → User
+#     title, body, context_data
+#     is_read, read_at
+# Keeps the main Notification table clean for outbound dispatch logs.
+
+# Option 3 — Add partial index for performance:
+class Meta:
+    indexes = [
+        models.Index(
+            fields=["user", "is_read"],
+            condition=models.Q(channel="IN_APP"),
+            name="notif_inapp_unread_idx",
+        )
+    ]
+# Recommended short-term: Option 1 — query discipline.
+# Long-term: Option 2 — separate model as volume grows.
+# No migration required for Option 1 or 3.
+```
+
+---
+
+### ISSUE-NOTIF05 — `WhatsAppCODVerification` Has No Link to `Notification` Record
+
+**Severity:** 🟢 Low
+**Tables:** `notifications_whatsappcodverification` ↔ `notifications_notification`
+
+**Problem:**
+`WhatsAppCODVerification` tracks the COD confirmation flow but has
+no FK to the `Notification` record that was created when the
+WhatsApp message was sent. To audit "which WhatsApp message triggered
+this verification flow" you must query across both tables by
+`order_id` and `created_at` proximity — fragile and slow.
+The two models describe the same event from different angles with
+no formal link between them.
+
+**Safe Migration Path:**
+```python
+# Add optional FK to the originating Notification:
+notification = models.OneToOneField(
+    "notifications.Notification",
+    on_delete=models.SET_NULL,
+    null=True,
+    blank=True,
+    related_name="cod_verification",
+    verbose_name=_("originating notification"),
+)
+
+# Set at creation time in the COD verification Celery task:
+# notif = Notification.objects.create(
+#     channel=Notification.Channel.WHATSAPP,
+#     notification_type=Notification.Type.COD_VERIFICATION,
+#     ...
+# )
+# WhatsAppCODVerification.objects.create(
+#     order=order,
+#     notification=notif,
+#     ...
+# )
+
+# Migration: Safe — not yet migrated. Add before first migrate run.
+```
+
+---
+
+### ISSUE-NOTIF06 — No Celery Retry Count Tracking on Failed Notifications
+
+**Severity:** 🟢 Low
+**Table:** `notifications_notification`
+
+**Problem:**
+`is_sent=FALSE` and `failure_reason` record that a notification
+failed but there is no `retry_count` field. Celery retry tasks
+have no way to know how many times a notification has already
+been attempted — they may retry indefinitely or the retry limit
+may be lost after a worker restart. For WhatsApp and SMS
+notifications that fail due to transient gateway errors, a
+capped retry with backoff is standard production practice.
+
+**Safe Migration Path:**
+```python
+# Add retry tracking fields to Notification:
+retry_count = models.PositiveSmallIntegerField(
+    _("retry count"),
+    default=0,
+    help_text=_("Number of dispatch attempts made.")
+)
+max_retries = models.PositiveSmallIntegerField(
+    _("max retries"),
+    default=3,
+    help_text=_("Maximum dispatch attempts before marking permanently failed.")
+)
+
+# Celery task pattern:
+# if notification.retry_count >= notification.max_retries:
+#     notification.failure_reason = "Max retries exceeded"
+#     notification.save(update_fields=["failure_reason"])
+#     return  # stop retrying
+# notification.retry_count += 1
+# notification.save(update_fields=["retry_count"])
+# raise self.retry(countdown=2 ** notification.retry_count)
+
+# Migration: Safe — not yet migrated. Add before first migrate run.
 ```
 
 ---
