@@ -1,33 +1,43 @@
-import {Truck,WalletCards,RotateCcw,PackageSearch,CircleHelp,Phone} from "lucide-react";
+// src/components/layout/TopBar.jsx
+import { Truck, WalletCards, RotateCcw, CircleHelp, Phone } from "lucide-react";
 import Container from "../common/Container";
 
 export default function TopBar() {
-
   return (
-
-    <div className="bg-dark text-white text-sm">
+    <div className="bg-dark text-white text-sm hidden lg:block">
       <Container>
         <div className="h-10 flex items-center justify-between">
-          {/* Left */}
-    <div className="flex items-center gap-6">
-        <span className="flex items-center gap-2"><Truck size={16}/>Delivering Across Pakistan</span>
-        <span className="flex items-center gap-2"><WalletCards size={16}/>Cash on Delivery Available</span>
-        <span className="flex items-center gap-2"><RotateCcw size={16}/>7 Days Easy Returns</span>
-    </div>
 
-          {/* Right */}
+          {/* Left — Trust Signals */}
+          <div className="flex items-center gap-6">
+            <span className="flex items-center gap-2">
+              <Truck size={16} />
+              Delivering Across Pakistan
+            </span>
+            <span className="flex items-center gap-2">
+              <WalletCards size={16} />
+              Cash on Delivery
+            </span>
+            <span className="flex items-center gap-2">
+              <RotateCcw size={16} />
+              7 Days Easy Returns
+            </span>
+          </div>
 
-    <div className="flex items-center gap-6">
-        <span className="flex items-center gap-2"><PackageSearch size={16}/>Track Order</span>
-        <span className="flex items-center gap-2"><CircleHelp size={16}/>Help Center</span>
-        <span className="flex items-center gap-2"><Phone size={16}/>0312 0000000</span>
+          {/* Right — Support */}
+          <div className="flex items-center gap-6">
+            <span className="flex items-center gap-2 cursor-pointer hover:text-gray-300 transition-colors">
+              <CircleHelp size={16} />
+              Help Center
+            </span>
+            <span className="flex items-center gap-2">
+              <Phone size={16} />
+              0312 0000000
+            </span>
+          </div>
 
-
-    </div>
-    </div>
+        </div>
       </Container>
     </div>
-
-  )
-
+  );
 }
