@@ -5,7 +5,9 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.utils.translation import gettext_lazy as _
 
-from .models import EmailVerificationToken, PasswordResetToken, User, UserProfile
+from .models import EmailVerificationToken, PasswordResetToken, User, UserProfile,UserAddress
+
+
 
 
 # ─── Inlines ──────────────────────────────────────────────────────────────────
@@ -13,9 +15,8 @@ from .models import EmailVerificationToken, PasswordResetToken, User, UserProfil
 class UserProfileInline(admin.StackedInline):
     """
     Inline profile editor shown within the User admin page.
-
-    Displays the most commonly edited profile fields.
-    Avatar is excluded — managed via the frontend upload endpoint.
+    Shows personal identity fields only.
+    Address data is managed via UserAddressInline.
     """
 
     model = UserProfile
@@ -25,9 +26,32 @@ class UserProfileInline(admin.StackedInline):
         "phone",
         "date_of_birth",
         "gender",
+        "avatar",
+    ]
+
+
+class UserAddressInline(admin.TabularInline):
+    """
+    Inline address editor shown within the User admin page.
+    Displays all addresses for this user in a compact table.
+    Province and postal_code are read-only — auto-derived from city.
+    Country is read-only — always Pakistan.
+    """
+
+    model = UserAddress
+    extra = 0
+    verbose_name_plural = _("Addresses")
+    fields = [
+        "label",
         "address_line1",
         "address_line2",
         "city",
+        "province",
+        "postal_code",
+        "country",
+        "is_default",
+    ]
+    readonly_fields = [
         "province",
         "postal_code",
         "country",
@@ -46,7 +70,7 @@ class UserAdmin(BaseUserAdmin):
     Email is the USERNAME_FIELD — all forms reflect this.
     """
 
-    inlines = [UserProfileInline]
+    inlines = [UserProfileInline, UserAddressInline]
 
     # ── List view ─────────────────────────────────────────────────────────────
     list_display = [
@@ -57,6 +81,7 @@ class UserAdmin(BaseUserAdmin):
         "is_active",
         "is_staff",
         "date_joined",
+        "updated_at",
     ]
     list_filter = [
         "role",
@@ -69,19 +94,21 @@ class UserAdmin(BaseUserAdmin):
     ordering = ["-date_joined"]
     date_hierarchy = "date_joined"
     list_per_page = 50
-
-    # Prevents expensive COUNT(*) on large user tables
     show_full_result_count = False
 
     # ── Detail view ───────────────────────────────────────────────────────────
     fieldsets = (
         (
             None,
-            {"fields": ("email", "password")},
+            {
+                "fields": ("email", "password"),
+            },
         ),
         (
             _("Personal Information"),
-            {"fields": ("full_name",)},
+            {
+                "fields": ("full_name",),
+            },
         ),
         (
             _("Role & Status"),
@@ -92,25 +119,32 @@ class UserAdmin(BaseUserAdmin):
                     "is_active",
                     "is_staff",
                     "is_superuser",
-                )
+                ),
             },
         ),
         (
             _("Permissions"),
             {
                 "fields": ("groups", "user_permissions"),
-                # Collapsed by default — reduces visual noise
                 "classes": ("collapse",),
             },
         ),
         (
             _("Important Dates"),
             {
-                "fields": ("last_login", "date_joined"),
+                "fields": (
+                    "last_login",
+                    "date_joined",
+                    "updated_at",
+                ),
             },
         ),
     )
-    readonly_fields = ["last_login", "date_joined"]
+    readonly_fields = [
+        "last_login",
+        "date_joined",
+        "updated_at",
+    ]
 
     # ── Add user form ─────────────────────────────────────────────────────────
     add_fieldsets = (
@@ -124,7 +158,7 @@ class UserAdmin(BaseUserAdmin):
                     "password1",
                     "password2",
                     "role",
-                    "is_verified",   # ← allow admin to verify on creation
+                    "is_verified",
                     "is_active",
                     "is_staff",
                 ),
@@ -132,7 +166,6 @@ class UserAdmin(BaseUserAdmin):
         ),
     )
 
-    # Prevents loading ALL groups/permissions into memory as dropdowns
     filter_horizontal = ["groups", "user_permissions"]
 
 
@@ -142,47 +175,47 @@ class UserAdmin(BaseUserAdmin):
 class UserProfileAdmin(admin.ModelAdmin):
     """
     Admin interface for UserProfile.
-
-    list_display uses explicit admin methods for @property fields
-    so Django can render boolean icons and set column headers.
+    Shows personal identity fields only.
+    Address data lives in UserAddress.
     """
 
     list_display = [
         "user",
         "phone",
-        "city",
-        "province",
-        "display_has_complete_address",
+        "gender",
+        "date_of_birth",
+        "display_has_avatar",
     ]
-    search_fields = ["user__email", "user__full_name", "city"]
-    list_filter = ["province", "gender"]
+    search_fields = [
+        "user__email",
+        "user__full_name",
+        "phone",
+    ]
+    list_filter = ["gender"]
     list_per_page = 50
     readonly_fields = ["created_at", "updated_at"]
 
     fieldsets = (
         (
             _("User"),
-            {"fields": ("user",)},
+            {
+                "fields": ("user",),
+            },
         ),
         (
             _("Contact"),
-            {"fields": ("phone",)},
+            {
+                "fields": ("phone",),
+            },
         ),
         (
             _("Personal"),
-            {"fields": ("date_of_birth", "gender", "avatar")},
-        ),
-        (
-            _("Address"),
             {
                 "fields": (
-                    "address_line1",
-                    "address_line2",
-                    "city",
-                    "province",
-                    "postal_code",
-                    "country",
-                )
+                    "date_of_birth",
+                    "gender",
+                    "avatar",
+                ),
             },
         ),
         (
@@ -194,15 +227,284 @@ class UserProfileAdmin(admin.ModelAdmin):
         ),
     )
 
-    @admin.display(boolean=True, description=_("Complete Address"))
-    def display_has_complete_address(self, obj: UserProfile) -> bool:
+    @admin.display(boolean=True, description=_("Has Avatar"))
+    def display_has_avatar(self, obj: UserProfile) -> bool:
         """
-        Render has_complete_address @property as a boolean icon column.
+        Shows a boolean icon indicating whether user has uploaded an avatar.
+        """
+        return bool(obj.avatar)
 
-        @admin.display(boolean=True) renders ✓/✗ icons instead of
-        True/False strings. description sets the column header text.
-        """
-        return obj.has_complete_address
+
+# ─── UserAddress Admin ────────────────────────────────────────────────────────
+
+@admin.register(UserAddress)
+class UserAddressAdmin(admin.ModelAdmin):
+    """
+    Admin interface for UserAddress.
+    Province, postal_code and country are read-only —
+    auto-derived from city selection on save.
+    """
+
+    list_display = [
+        "user",
+        "label",
+        "address_line1",
+        "city",
+        "province",
+        "is_default",
+        "created_at",
+    ]
+    search_fields = [
+        "user__email",
+        "user__full_name",
+        "address_line1",
+        "city",
+    ]
+    list_filter = [
+        "label",
+        "city",
+        "province",
+        "is_default",
+    ]
+    list_per_page = 50
+    readonly_fields = [
+        "province",
+        "postal_code",
+        "country",
+        "created_at",
+        "updated_at",
+    ]
+
+    fieldsets = (
+        (
+            _("User"),
+            {
+                "fields": ("user",),
+            },
+        ),
+        (
+            _("Address"),
+            {
+                "fields": (
+                    "label",
+                    "address_line1",
+                    "address_line2",
+                    "city",
+                    "province",
+                    "postal_code",
+                    "country",
+                ),
+            },
+        ),
+        (
+            _("Default"),
+            {
+                "fields": ("is_default",),
+            },
+        ),
+        (
+            _("Timestamps"),
+            {
+                "fields": ("created_at", "updated_at"),
+                "classes": ("collapse",),
+            },
+        ),
+    )
+# # ─── Inlines ──────────────────────────────────────────────────────────────────
+
+# class UserProfileInline(admin.StackedInline):
+#     """
+#     Inline profile editor shown within the User admin page.
+
+#     Displays the most commonly edited profile fields.
+#     Avatar is excluded — managed via the frontend upload endpoint.
+#     """
+
+#     model = UserProfile
+#     can_delete = False
+#     verbose_name_plural = _("Profile")
+#     fields = [
+#         "phone",
+#         "date_of_birth",
+#         "gender",
+#         "address_line1",
+#         "address_line2",
+#         "city",
+#         "province",
+#         "postal_code",
+#         "country",
+#     ]
+
+
+# # ─── User Admin ───────────────────────────────────────────────────────────────
+
+# @admin.register(User)
+# class UserAdmin(BaseUserAdmin):
+#     """
+#     Admin interface for the custom User model.
+
+#     Overrides BaseUserAdmin completely because the default fieldsets
+#     reference the 'username' field which does not exist on this model.
+#     Email is the USERNAME_FIELD — all forms reflect this.
+#     """
+
+#     inlines = [UserProfileInline]
+
+#     # ── List view ─────────────────────────────────────────────────────────────
+#     list_display = [
+#         "email",
+#         "full_name",
+#         "role",
+#         "is_verified",
+#         "is_active",
+#         "is_staff",
+#         "date_joined",
+#     ]
+#     list_filter = [
+#         "role",
+#         "is_verified",
+#         "is_active",
+#         "is_staff",
+#         "is_superuser",
+#     ]
+#     search_fields = ["email", "full_name"]
+#     ordering = ["-date_joined"]
+#     date_hierarchy = "date_joined"
+#     list_per_page = 50
+
+#     # Prevents expensive COUNT(*) on large user tables
+#     show_full_result_count = False
+
+#     # ── Detail view ───────────────────────────────────────────────────────────
+#     fieldsets = (
+#         (
+#             None,
+#             {"fields": ("email", "password")},
+#         ),
+#         (
+#             _("Personal Information"),
+#             {"fields": ("full_name",)},
+#         ),
+#         (
+#             _("Role & Status"),
+#             {
+#                 "fields": (
+#                     "role",
+#                     "is_verified",
+#                     "is_active",
+#                     "is_staff",
+#                     "is_superuser",
+#                 )
+#             },
+#         ),
+#         (
+#             _("Permissions"),
+#             {
+#                 "fields": ("groups", "user_permissions"),
+#                 # Collapsed by default — reduces visual noise
+#                 "classes": ("collapse",),
+#             },
+#         ),
+#         (
+#             _("Important Dates"),
+#             {
+#                 "fields": ("last_login", "date_joined"),
+#             },
+#         ),
+#     )
+#     readonly_fields = ["last_login", "date_joined"]
+
+#     # ── Add user form ─────────────────────────────────────────────────────────
+#     add_fieldsets = (
+#         (
+#             None,
+#             {
+#                 "classes": ("wide",),
+#                 "fields": (
+#                     "email",
+#                     "full_name",
+#                     "password1",
+#                     "password2",
+#                     "role",
+#                     "is_verified",   # ← allow admin to verify on creation
+#                     "is_active",
+#                     "is_staff",
+#                 ),
+#             },
+#         ),
+#     )
+
+#     # Prevents loading ALL groups/permissions into memory as dropdowns
+#     filter_horizontal = ["groups", "user_permissions"]
+
+
+# # ─── UserProfile Admin ────────────────────────────────────────────────────────
+
+# @admin.register(UserProfile)
+# class UserProfileAdmin(admin.ModelAdmin):
+#     """
+#     Admin interface for UserProfile.
+
+#     list_display uses explicit admin methods for @property fields
+#     so Django can render boolean icons and set column headers.
+#     """
+
+#     list_display = [
+#         "user",
+#         "phone",
+#         "city",
+#         "province",
+#         "display_has_complete_address",
+#     ]
+#     search_fields = ["user__email", "user__full_name", "city"]
+#     list_filter = ["province", "gender"]
+#     list_per_page = 50
+#     readonly_fields = ["created_at", "updated_at"]
+
+#     fieldsets = (
+#         (
+#             _("User"),
+#             {"fields": ("user",)},
+#         ),
+#         (
+#             _("Contact"),
+#             {"fields": ("phone",)},
+#         ),
+#         (
+#             _("Personal"),
+#             {"fields": ("date_of_birth", "gender", "avatar")},
+#         ),
+#         (
+#             _("Address"),
+#             {
+#                 "fields": (
+#                     "address_line1",
+#                     "address_line2",
+#                     "city",
+#                     "province",
+#                     "postal_code",
+#                     "country",
+#                 )
+#             },
+#         ),
+#         (
+#             _("Timestamps"),
+#             {
+#                 "fields": ("created_at", "updated_at"),
+#                 "classes": ("collapse",),
+#             },
+#         ),
+#     )
+
+#     @admin.display(boolean=True, description=_("Complete Address"))
+#     def display_has_complete_address(self, obj: UserProfile) -> bool:
+#         """
+#         Render has_complete_address @property as a boolean icon column.
+
+#         @admin.display(boolean=True) renders ✓/✗ icons instead of
+#         True/False strings. description sets the column header text.
+#         """
+#         return obj.has_complete_address
 
 
 # ─── Email Verification Token Admin ──────────────────────────────────────────

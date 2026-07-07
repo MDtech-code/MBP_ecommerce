@@ -11,8 +11,14 @@ from django.core.validators import RegexValidator
 
 from apps.common.models import TimeStampedModel
 from apps.common.choices.role import Role
+from apps.common.choices.city import City
+from apps.common.choices.city_postal_map import CITY_POSTAL_MAP, CITY_PROVINCE_MAP
+from apps.accounts.choices.gender import Gender
+from apps.accounts.choices.province import Province
+from apps.accounts.choices.address_label import AddressLabel
 
 from .managers import UserManager
+
 
 
 
@@ -100,28 +106,22 @@ class User(AbstractBaseUser, PermissionsMixin):
         return self.full_name.split()[0] if self.full_name else self.email
 
 
+
+
+
+
+
+    
+
 class UserProfile(TimeStampedModel):
     """
-    Extended profile information for a user.
-
+    Extended personal information for a user.
     Separated from User to keep auth concerns clean.
     Created automatically via signal when User is created.
+
+    Address data lives in UserAddress (ISSUE-A02).
+    This model holds personal identity only.
     """
-
-    class Gender(models.TextChoices):
-        MALE = "M", _("Male")
-        FEMALE = "F", _("Female")
-        OTHER = "O", _("Other")
-        PREFER_NOT_TO_SAY = "N", _("Prefer not to say")
-
-    class Province(models.TextChoices):
-        PUNJAB = "PB", _("Punjab")
-        SINDH = "SD", _("Sindh")
-        KPK = "KP", _("Khyber Pakhtunkhwa")
-        BALOCHISTAN = "BL", _("Balochistan")
-        GILGIT_BALTISTAN = "GB", _("Gilgit-Baltistan")
-        AJK = "AK", _("Azad Jammu & Kashmir")
-        ISLAMABAD = "IC", _("Islamabad Capital Territory")
 
     phone_validator = RegexValidator(
         regex=r"^\+?92\d{10}$|^0\d{10}$",
@@ -162,42 +162,6 @@ class UserProfile(TimeStampedModel):
         null=True,
         blank=True,
     )
-    address_line1 = models.CharField(
-        _("address line 1"),
-        max_length=255,
-        blank=True,
-        default="",
-    )
-    address_line2 = models.CharField(
-        _("address line 2"),
-        max_length=255,
-        blank=True,
-        default="",
-    )
-    city = models.CharField(
-        _("city"),
-        max_length=100,
-        blank=True,
-        default="",
-    )
-    province = models.CharField(
-        _("province"),
-        max_length=2,
-        choices=Province.choices,
-        blank=True,
-        default="",
-    )
-    postal_code = models.CharField(
-        _("postal code"),
-        max_length=10,
-        blank=True,
-        default="",
-    )
-    country = models.CharField(
-        _("country"),
-        max_length=100,
-        default="Pakistan",
-    )
 
     class Meta:
         verbose_name = _("user profile")
@@ -207,13 +171,116 @@ class UserProfile(TimeStampedModel):
         return f"{self.user.email} — profile"
 
     @property
-    def has_complete_address(self) -> bool:
-        return all([
-            self.address_line1,
-            self.city,
-            self.province,
-            self.postal_code,
-        ])
+    def default_address(self) -> UserAddress | None:
+        """
+        Returns the user default shipping address or None.
+        Address data lives in UserAddress since ISSUE-A02.
+        """
+        return self.user.addresses.filter(is_default=True).first()
+
+
+class UserAddress(TimeStampedModel):
+    """
+    Stores multiple shipping addresses per user.
+
+    City selection drives province and postal code automatically.
+    Province and postal code are never entered manually by user.
+    Country is always Pakistan — single market platform.
+    One address per user can be marked as default enforced at
+    both DB level and application level.
+    """
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="addresses",
+        verbose_name=_("user"),
+    )
+    label = models.CharField(
+        _("address label"),
+        max_length=10,
+        choices=AddressLabel.choices,
+        default=AddressLabel.HOME,
+    )
+    address_line1 = models.CharField(
+        _("address line 1"),
+        max_length=255,
+        help_text=_("Street address, house number, building name."),
+    )
+    address_line2 = models.CharField(
+        _("address line 2"),
+        max_length=255,
+        blank=True,
+        default="",
+        help_text=_("Apartment, floor, area, landmark. Optional."),
+    )
+    city = models.CharField(
+        _("city"),
+        max_length=50,
+        choices=City.choices,
+        help_text=_("Select your city from the list."),
+    )
+    province = models.CharField(
+        _("province"),
+        max_length=2,
+        choices=Province.choices,
+        editable=False,
+        help_text=_("Auto-derived from selected city."),
+    )
+    postal_code = models.CharField(
+        _("postal code"),
+        max_length=10,
+        editable=False,
+        help_text=_("Auto-derived from selected city."),
+    )
+    country = models.CharField(
+        _("country"),
+        max_length=100,
+        default="Pakistan",
+        editable=False,
+    )
+    is_default = models.BooleanField(
+        _("is default"),
+        default=False,
+        help_text=_("Only one address per user can be default."),
+    )
+
+    class Meta:
+        verbose_name = _("user address")
+        verbose_name_plural = _("user addresses")
+        ordering = ["-is_default", "-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user"],
+                condition=models.Q(is_default=True),
+                name="unique_default_address_per_user",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.get_label_display()} — {self.address_line1}, {self.city}"
+
+    def save(self, *args, **kwargs) -> None:
+        """
+        Auto-derives province and postal_code from city.
+        Enforces single default address per user.
+        """
+        if self.city:
+            self.province    = CITY_PROVINCE_MAP.get(self.city, self.province)
+            self.postal_code = CITY_POSTAL_MAP.get(self.city, self.postal_code)
+
+        if self.is_default:
+            UserAddress.objects.filter(
+                user=self.user,
+                is_default=True,
+            ).exclude(pk=self.pk).update(is_default=False)
+
+        super().save(*args, **kwargs)
+
+    def set_as_default(self) -> None:
+        """Explicit helper — preferred over setting is_default directly."""
+        self.is_default = True
+        self.save()
 
     @property
     def full_address(self) -> str:
@@ -226,7 +293,6 @@ class UserProfile(TimeStampedModel):
             self.country,
         ])
         return ", ".join(parts)
-
 
 class EmailVerificationToken(models.Model):
     """
