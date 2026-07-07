@@ -53,7 +53,6 @@ PROJECT_APPS = [
     'apps.accounts',
     'apps.products',
     'apps.cart',
-    'apps.integration_test',
 ]
 THIRD_PARTY_APPS = [
     'rest_framework',

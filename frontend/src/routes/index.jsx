@@ -3,7 +3,7 @@
 
 import { createBrowserRouter } from "react-router-dom"
 import Home from "../pages/Home"
-import TestintegrationPage from "../pages/TestIntegrationPage"
+
 import Register from "../pages/account/Register"
 import Login from "../pages/account/Login"
 import VerifyEmail from "../pages/account/VerifyEmail"
@@ -20,7 +20,6 @@ import ForgotPasswordSent from "../pages/account/ForgotPasswordSent";
 
 export const router = createBrowserRouter([
   { path: "/",               element: <Home /> },
-  { path: "/testapp",        element: <TestintegrationPage /> },
   { path: "/register",       element: <Register /> },
   { path: "/login",          element: <Login /> },
   { path: "/verify-email",   element: <VerifyEmail /> },
