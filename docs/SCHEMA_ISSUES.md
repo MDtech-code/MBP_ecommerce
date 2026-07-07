@@ -19,7 +19,8 @@
 2. [Products App Issues](#2-products-app-issues) ✅
 3. [Cart App Issues](#3-cart-app-issues) ✅
 4. [Orders App Issues](#4-orders-app-issues) ✅
-5. [Cross-App Issues](#5-cross-app-issues) *(built after all apps)*
+5. [Reviews App Issues](#5-reviews-app-issues) ✅
+6. [Cross-App Issues](#6-cross-app-issues) *(built after all apps)*
 
 ---
 
@@ -978,3 +979,250 @@ conversion contract before implementation begins.
 ```
 
 ---
+
+
+### ISSUE-R01 — `Review` CASCADE on User Delete Destroys Review History
+
+**Severity:** 🟡 Medium
+**Table:** `reviews_review`
+
+**Problem:**
+`user` FK is `on_delete=CASCADE`. If a user account is deleted,
+all their reviews are silently deleted with it. Product rating
+averages can shift significantly if a user who left many reviews
+is removed. Other users who found those reviews helpful lose that
+content permanently. For a motorbike parts store where technical
+compatibility reviews carry real value, this is a meaningful loss.
+
+**Safe Migration Path:**
+```python
+# Change to SET_NULL — preserve reviews even after user deletion:
+user = models.ForeignKey(
+    settings.AUTH_USER_MODEL,
+    on_delete=models.SET_NULL,   # was CASCADE
+    null=True,
+    blank=True,
+    related_name="reviews",
+)
+
+# Display deleted user reviews as "Verified Customer" or "Anonymous"
+# in the frontend — common pattern used by Amazon, Daraz etc.
+
+# Migration: Safe — FK constraint change + add null=True to column.
+# ALTER TABLE reviews_review ALTER COLUMN user_id DROP NOT NULL;
+# Existing rows unaffected — all have valid user_id values.
+```
+
+---
+
+### ISSUE-R02 — `is_approved=True` by Default Bypasses Moderation
+
+**Severity:** 🟡 Medium
+**Table:** `reviews_review`
+
+**Problem:**
+`is_approved` defaults to `TRUE`. Every submitted review is
+immediately publicly visible without any admin moderation step.
+In a Pakistani ecommerce context where competitor sabotage reviews,
+spam, and fake negative reviews are common, auto-approving all
+content exposes the platform to reputation damage from day one
+of real user traffic.
+
+**Safe Migration Path:**
+```python
+# Change default to FALSE — require explicit approval:
+is_approved = models.BooleanField(
+    _("moderation approval flag"),
+    default=False,   # was True
+    help_text=_(
+        "Review is hidden from public until approved by moderator."
+    )
+)
+
+# Options for moderation workflow:
+# Option A — Manual: Admin reviews queue in Django admin and approves
+# Option B — Auto-approve verified purchase reviews only:
+#   if order_item_id is not None:
+#       review.is_approved = True  # trusted — confirmed buyer
+#   else:
+#       review.is_approved = False  # holds for manual review
+
+# Migration: Safe — default value change only.
+# Existing approved reviews are unaffected.
+# New reviews after migration will require approval.
+```
+
+---
+
+### ISSUE-R03 — `order_item_id` Does Not Enforce Product Match
+
+**Severity:** 🔴 High
+**Table:** `reviews_review`
+
+**Problem:**
+`Review` links to both `product_id` and `order_item_id` but there
+is no constraint or `clean()` validation that
+`order_item.product == review.product`. A malicious or buggy request
+could submit a review for `Product A` while citing an `OrderItem`
+for `Product B` as the verified purchase proof. This means
+fake verified purchase badges can be attached to any product
+using any historical order item.
+
+**Safe Migration Path:**
+```python
+# Add clean() to Review model:
+from django.core.exceptions import ValidationError
+
+def clean(self) -> None:
+    if self.order_item_id and self.product_id:
+        if self.order_item.product_id != self.product_id:
+            raise ValidationError({
+                "order_item": _(
+                    "The linked order item does not belong to "
+                    "the product being reviewed."
+                )
+            })
+
+# Also validate that the order_item belongs to the reviewing user:
+def clean(self) -> None:
+    if self.order_item_id and self.user_id:
+        if self.order_item.order.user_id != self.user_id:
+            raise ValidationError({
+                "order_item": _(
+                    "The linked order item does not belong to "
+                    "the reviewing user."
+                )
+            })
+
+# Both checks should run together in a single clean() method.
+# No migration required — Python-level validation only.
+```
+
+---
+
+### ISSUE-R04 — Rating Has No DB-Level Constraint
+
+**Severity:** 🟢 Low
+**Table:** `reviews_review`
+
+**Problem:**
+`rating` uses `MinValueValidator(1)` and `MaxValueValidator(5)`
+which are Python-level validators only. They run during form
+validation and `full_clean()` but not on direct ORM `.save()`,
+`bulk_create()`, or raw SQL. A `rating=0` or `rating=99` can
+be written directly to the database bypassing all validation.
+Rating aggregates used for product score calculations would
+then produce incorrect averages.
+
+**Safe Migration Path:**
+```python
+# Add DB-level CheckConstraint alongside existing validators:
+class Meta:
+    constraints = [
+        models.CheckConstraint(
+            check=models.Q(rating__gte=1) & models.Q(rating__lte=5),
+            name="reviews_review_rating_range",
+        )
+    ]
+
+# This generates:
+# ALTER TABLE reviews_review
+# ADD CONSTRAINT reviews_review_rating_range
+# CHECK (rating >= 1 AND rating <= 5);
+
+# Migration: Safe — new constraint only.
+# Fails only if invalid rating data already exists.
+# Run this first to verify clean data:
+```
+```sql
+SELECT COUNT(*) FROM reviews_review
+WHERE rating < 1 OR rating > 5;
+```
+
+---
+
+### ISSUE-R05 — No Cached Average Rating on Product
+
+**Severity:** 🟡 Medium
+**Tables:** `reviews_review` ↔ `products_product`
+
+**Problem:**
+Product listing pages and search results need to display star ratings.
+Every page load would require:
+```sql
+SELECT AVG(rating), COUNT(*)
+FROM reviews_review
+WHERE product_id = X AND is_approved = TRUE
+```
+As reviews grow this aggregate query runs on every product card
+render. With 1000 products on a listing page this means 1000
+aggregate queries or one large GROUP BY — neither is acceptable
+for a production storefront. This was flagged as ISSUE-P07
+suggestion — now confirmed necessary given the Review model exists.
+
+**Safe Migration Path:**
+```python
+# Add two cached fields to Product model:
+average_rating = models.DecimalField(
+    _("average rating"),
+    max_digits=3,
+    decimal_places=2,
+    default=0,
+    help_text=_("Cached average. Updated via signal on review save/delete.")
+)
+review_count = models.PositiveIntegerField(
+    _("review count"),
+    default=0,
+    help_text=_("Cached count of approved reviews.")
+)
+
+# Update via Django signal on Review post_save and post_delete:
+from django.db.models import Avg, Count
+from django.db.models.signals import post_save, post_delete
+
+def update_product_rating(sender, instance, **kwargs):
+    product = instance.product
+    result = Review.objects.filter(
+        product=product,
+        is_approved=True,
+    ).aggregate(avg=Avg("rating"), count=Count("id"))
+    product.average_rating = result["avg"] or 0
+    product.review_count = result["count"] or 0
+    product.save(update_fields=["average_rating", "review_count"])
+
+post_save.connect(update_product_rating, sender=Review)
+post_delete.connect(update_product_rating, sender=Review)
+
+# Migration: Safe — new fields on Product with defaults.
+# No existing data affected.
+```
+
+---
+
+### ISSUE-R06 — Cross-App Alignment: `Review` Linked to `OrderItem` Not `Order`
+
+**Severity:** 🟢 Low
+**Tables:** `reviews_review` ↔ `orders_orderitem`
+
+**Problem:**
+`Review.order_item` links to `OrderItem` directly rather than `Order`.
+This is architecturally correct — a user reviews a specific product
+from a specific purchase, not the whole order. However it introduces
+a subtle query complexity: to check if a user has purchased a product
+the query must traverse `OrderItem → Order → user` rather than a
+simpler `Order → user` check. This is fine at small scale but worth
+documenting as the join pattern to use consistently across the codebase.
+
+**Recommendation:**
+```python
+# Canonical verified purchase check — use this pattern everywhere:
+has_purchased = OrderItem.objects.filter(
+    product=product,
+    order__user=request.user,
+    order__status=Order.Status.DELIVERED,  # only count completed orders
+).exists()
+
+# Note: filter on status=DELIVERED not just any order status.
+# A CANCELLED or PENDING order should not count as a verified purchase.
+# Document this in api_standards.md under review submission rules.
+```

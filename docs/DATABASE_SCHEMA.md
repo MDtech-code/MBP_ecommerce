@@ -14,7 +14,8 @@
 2. [Products App](#2-products-app) ✅
 3. [Cart App](#3-cart-app) ✅
 4. [Orders App](#4-orders-app) ✅
-5. [Cross-App Relationships](#5-cross-app-relationships) *(built after all apps)*
+5. [Reviews App](#5-reviews-app) ✅
+6. [Cross-App Relationships](#6-cross-app-relationships) *(built after all apps)*
 
 
 ---
@@ -702,6 +703,71 @@ Rows are never updated or deleted — append-only by design.
 - No updated_at field — intentional, this model does not extend TimeStampedModel
 - from_status + to_status must use valid Order.Status values
 - Enforced at application layer — no DB trigger required at this scale
+```
+
+---
+
+
+## 5. Reviews App
+
+**App Label:** `reviews`
+**Purpose:** Manages customer product reviews and star ratings.
+Links reviews to verified purchase order items to distinguish
+genuine buyers from unverified reviewers. Includes moderation
+approval flow before public display.
+**Status:** 🟡 Not Yet Migrated — schema changes are low risk
+
+---
+
+### 5.1 `reviews_review`
+
+Customer product review with star rating, optional headline,
+and review body. One review per user per product enforced at
+DB level. Optionally linked to the exact `OrderItem` that
+triggered the purchase to flag verified reviews.
+
+| Column | Django Field | DB Type | Constraints | Default | Notes |
+|---|---|---|---|---|---|
+| `id` | `AutoField` (PK) | `BIGINT` | `PK`, `NOT NULL`, `AUTO INCREMENT` | Auto | — |
+| `product_id` | `ForeignKey → Product` | `BIGINT` | `NOT NULL`, `FK`, `INDEX` | — | `CASCADE` on delete — reviews deleted if product hard deleted |
+| `user_id` | `ForeignKey → User` | `BIGINT` | `NOT NULL`, `FK`, `INDEX` | — | `CASCADE` on delete — reviews deleted if user deleted |
+| `order_item_id` | `ForeignKey → OrderItem` | `BIGINT` | `NULL`, `FK`, `INDEX` | `NULL` | `SET NULL` on delete. `NULL` = unverified review. Non-null = verified purchase |
+| `rating` | `SmallIntegerField` | `SMALLINT` | `NOT NULL` | — | Range `1–5`. Enforced via `MinValueValidator` / `MaxValueValidator` |
+| `title` | `CharField(100)` | `VARCHAR(100)` | `NOT NULL` | `''` | Optional review headline |
+| `body` | `TextField` | `TEXT` | `NOT NULL` | `''` | Optional full review text |
+| `is_approved` | `BooleanField` | `BOOLEAN` | `NOT NULL` | `TRUE` | Moderation flag. `FALSE` = hidden from public display |
+| `created_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now_add` | From `TimeStampedModel` |
+| `updated_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now` | From `TimeStampedModel` |
+
+**Indexes:**
+
+| Index Name | Column(s) | Type |
+|---|---|---|
+| `reviews_review_product_idx` | `product_id` | `BTREE` |
+| `reviews_review_user_idx` | `user_id` | `BTREE` |
+| `reviews_review_order_item_idx` | `order_item_id` | `BTREE` |
+| `reviews_review_rating_idx` | `rating` | `BTREE` |
+| `reviews_review_product_user_uniq` | `product_id`, `user_id` | `UNIQUE BTREE` |
+
+**Relationships:**
+
+| Relation | Type | On Delete |
+|---|---|---|
+| `reviews_review` → `products_product` | Many-to-One | `CASCADE` |
+| `reviews_review` → `accounts_user` | Many-to-One | `CASCADE` |
+| `reviews_review` → `orders_orderitem` | Many-to-One | `SET NULL` |
+
+**Verified Purchase Logic:**
+
+```
+order_item_id IS NOT NULL → verified purchase review
+order_item_id IS NULL     → unverified / anonymous review
+
+Verified check at submission:
+  OrderItem.objects.filter(
+      order__user=request.user,
+      product=product,
+  ).exists()
 ```
 
 ---
