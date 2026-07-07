@@ -27,7 +27,8 @@
 10. [Logistics App Issues](#10-logistics-app-issues) ✅
 11. [Analytics App Issues](#11-analytics-app-issues) ✅
 12. [Recommendations App Issues](#12-recommendations-app-issues) ✅
-13. [Cross-App Issues](#13-cross-app-issues) *(next)*   
+13. [Cross-App Issues](#13-cross-app-issues) ✅
+
 
 ---
 
@@ -2847,3 +2848,272 @@ def clean(self) -> None:
 ```
 
 ---
+
+
+
+
+
+## 13. Cross-App Issues
+
+---
+
+### ISSUE-CROSS01 — `accounts_user` Is Never Soft-Deleted But Downstream Apps Assume It
+
+**Severity:** 🔴 High
+**Tables:** All tables with `user_id` FK
+
+**Problem:**
+`User.is_active = False` exists for soft-disabling accounts but
+Django provides no built-in soft-delete — `User.objects.delete()`
+performs a hard delete. Multiple downstream apps use `CASCADE`
+on `user_id` meaning a hard user delete destroys:
+- All cart items
+- All reviews
+- All notifications
+- All interaction logs
+- All recommendations
+
+Other apps use `SET NULL` correctly — orders, payments, contact,
+logistics — preserving financial and operational records.
+There is no project-wide policy documenting when to hard delete
+vs soft disable a user account and which FK behaviour is correct
+for each app.
+
+**Safe Migration Path:**
+```python
+# Establish project-wide user deletion policy:
+
+# RULE 1 — Never hard delete users with order history:
+# Check before deletion:
+if user.orders.exists():
+    raise PermissionDenied(
+        "Cannot delete user with order history. "
+        "Set is_active=False instead."
+    )
+
+# RULE 2 — FK behaviour by data sensitivity:
+# Financial / operational data → SET_NULL (orders, payments, logistics)
+# Content data → SET_NULL (reviews, contact messages)
+# Behavioural data → SET_NULL (notifications, interaction logs)
+# Session data → CASCADE (cart — acceptable, cart is transient)
+
+# RULE 3 — Add a UserDeletionService that:
+# 1. Checks for blocking order/payment records
+# 2. Anonymises PII fields (email → deleted_{id}@deleted.mbp)
+# 3. Sets is_active=False
+# 4. Triggers CASCADE only on truly transient data (cart)
+# Document this service in api_standards.md.
+```
+
+---
+
+### ISSUE-CROSS02 — No Wishlist Model Exists Despite `ADD_TO_WISHLIST` Event Type
+
+**Severity:** 🟡 Medium
+**Tables:** `recommendations_userinteractionlog`
+
+**Problem:**
+`UserInteractionLog.EventType` includes `ADD_TO_WISHLIST` as a
+tracked event — implying a wishlist feature exists. But there is
+no `Wishlist` or `WishlistItem` model anywhere in the codebase.
+The event is logged but there is nothing for the user to actually
+see in the frontend. This is either a planned feature logged
+prematurely or a model that was forgotten.
+
+**Proposed New Tables:**
+
+| Table | Column | Type | Constraints |
+|---|---|---|---|
+| `products_wishlist` | `id` | `BIGINT` | `PK` |
+| `products_wishlist` | `user_id` | `BIGINT` | `FK → accounts_user`, `UNIQUE`, `CASCADE` |
+| `products_wishlist` | `created_at` | `TIMESTAMPTZ` | `NOT NULL` |
+| `products_wishlistitem` | `id` | `BIGINT` | `PK` |
+| `products_wishlistitem` | `wishlist_id` | `BIGINT` | `FK → wishlist`, `CASCADE` |
+| `products_wishlistitem` | `product_id` | `BIGINT` | `FK → products_product`, `CASCADE` |
+| `products_wishlistitem` | `created_at` | `TIMESTAMPTZ` | `NOT NULL` |
+
+```
+Unique constraint: one product per wishlist (wishlist_id, product_id).
+Mirror cart pattern — one wishlist per user, multiple items.
+Migration: New tables — zero risk to existing data.
+```
+
+---
+
+### ISSUE-CROSS03 — No Admin Activity Log Across the System
+
+**Severity:** 🟡 Medium
+**Tables:** All admin-writable tables
+
+**Problem:**
+`orders_orderstatuslog` tracks order status changes by admin.
+But no equivalent exists for other high-risk admin actions:
+- Product price changes
+- Coupon creation and deactivation
+- User account suspension
+- Shipment status overrides
+- Settlement reconciliation marking
+
+Django admin provides basic `LogEntry` but it stores only
+model name and action type — not the actual field values
+before and after the change. For a real-user ecommerce platform
+with multiple admins, this is a critical accountability gap.
+
+**Recommendation:**
+```python
+# Use django-auditlog or django-simple-history package:
+# pip install django-auditlog
+
+# Register high-risk models:
+from auditlog.registry import auditlog
+auditlog.register(Product, include_fields=["price", "discount_price", "status", "stock"])
+auditlog.register(Coupon, include_fields=["is_active", "discount_value", "valid_until"])
+auditlog.register(User, include_fields=["is_active", "role", "email"])
+auditlog.register(CourierSettlement, include_fields=["is_reconciled"])
+
+# This adds a system-wide audit trail without custom model development.
+# Alternative: build a generic AdminActionLog model in apps/common/.
+```
+
+---
+
+### ISSUE-CROSS04 — Payment Status and Order Status Are Not Formally State Machines
+
+**Severity:** 🟡 Medium
+**Tables:** `orders_order`, `payments_paymenttransaction`
+
+**Problem:**
+Both `Order.status` and `PaymentTransaction.status` have defined
+choices but no formal transition rules. Any status can jump to
+any other status — `DELIVERED → PENDING` or
+`REFUNDED → CONFIRMED` are both accepted without error.
+Invalid transitions corrupt `OrderStatusLog` audit trails and
+produce nonsensical customer-facing status displays.
+
+**Recommendation:**
+```python
+# Define allowed transitions in orders/state_machine.py:
+
+ORDER_TRANSITIONS = {
+    Order.Status.PENDING:     {Order.Status.CONFIRMED, Order.Status.CANCELLED},
+    Order.Status.CONFIRMED:   {Order.Status.PROCESSING, Order.Status.CANCELLED},
+    Order.Status.PROCESSING:  {Order.Status.SHIPPED, Order.Status.CANCELLED},
+    Order.Status.SHIPPED:     {Order.Status.DELIVERED, Order.Status.RETURN_REQUESTED},
+    Order.Status.DELIVERED:   {Order.Status.REFUNDED},
+    Order.Status.CANCELLED:   set(),   # terminal
+    Order.Status.REFUNDED:    set(),   # terminal
+}
+
+PAYMENT_TRANSITIONS = {
+    PaymentTransaction.Status.PENDING:    {AUTHORIZED, SUCCESS, FAILED},
+    PaymentTransaction.Status.AUTHORIZED: {SUCCESS, FAILED},
+    PaymentTransaction.Status.SUCCESS:    {REFUNDED, PARTIALLY_REFUNDED},
+    PaymentTransaction.Status.FAILED:     {PENDING},  # allow retry
+    PaymentTransaction.Status.REFUNDED:   set(),      # terminal
+    PaymentTransaction.Status.PARTIALLY_REFUNDED: {REFUNDED},
+}
+
+def transition_order(order, new_status, changed_by):
+    allowed = ORDER_TRANSITIONS.get(order.status, set())
+    if new_status not in allowed:
+        raise InvalidTransitionError(
+            f"Cannot transition order from {order.status} to {new_status}."
+        )
+    with transaction.atomic():
+        old_status = order.status
+        order.status = new_status
+        order.save(update_fields=["status"])
+        OrderStatusLog.objects.create(
+            order=order,
+            from_status=old_status,
+            to_status=new_status,
+            changed_by=changed_by,
+        )
+```
+
+---
+
+### ISSUE-CROSS05 — No Centralised `common` App Schema Documented
+
+**Severity:** 🟢 Low
+**Tables:** `TimeStampedModel` base, `Role` choices
+
+**Problem:**
+`apps/common/models.py` provides `TimeStampedModel` which is
+inherited by almost every model in the system — yet it was
+never formally documented in this schema file. `Role` choices
+from `apps/common/choices/role.py` are used by `accounts_user`
+but also assumed by other apps checking admin permissions.
+The common app is the invisible foundation of the entire schema.
+
+**Recommendation — Add to DATABASE_SCHEMA.md as Section 0:**
+```
+## 0. Common App (Foundation)
+
+### TimeStampedModel (Abstract Base)
+Provides created_at and updated_at to all inheriting models.
+Not a DB table — generates no migration of its own.
+
+| Field | Type | Constraint | Notes |
+|---|---|---|---|
+| created_at | TIMESTAMPTZ | NOT NULL, auto_now_add | Record creation time |
+| updated_at | TIMESTAMPTZ | NOT NULL, auto_now | Last modification time |
+
+### Role Choices (apps/common/choices/role.py)
+| Display | DB Value |
+|---|---|
+| Customer | CU |
+| Admin | AD |
+
+### Recommended additions to common/choices/:
+□ courier.py — CourierPartner (ISSUE-LOG03)
+□ gateway.py — PaymentGateway (ISSUE-PAY03)
+```
+
+---
+
+### ISSUE-CROSS06 — Search Is Not Backed by Any DB Structure
+
+**Severity:** 🟡 Medium
+**Tables:** None — missing entirely
+
+**Problem:**
+`UserInteractionLog` tracks `SEARCH_QUERY` events — confirming
+search is a planned feature. But there is no search index,
+no `SearchLog` model, and no full-text search configuration
+in any model. PostgreSQL full-text search on `products_product`
+requires `GinIndex` on `SearchVectorField` or at minimum a
+`GinIndex` on `name` and `description`. Without this, product
+search is a `ILIKE '%query%'` full table scan on every keystroke.
+
+**Recommendation:**
+```python
+# Option 1 — PostgreSQL full-text search (no extra infrastructure):
+from django.contrib.postgres.search import SearchVectorField
+from django.contrib.postgres.indexes import GinIndex
+
+# Add to Product model:
+search_vector = SearchVectorField(null=True, blank=True)
+
+class Meta:
+    indexes = [
+        GinIndex(fields=["search_vector"], name="products_product_search_idx"),
+    ]
+
+# Update search_vector via signal on product save:
+from django.contrib.postgres.search import SearchVector
+
+def update_search_vector(sender, instance, **kwargs):
+    Product.objects.filter(pk=instance.pk).update(
+        search_vector=(
+            SearchVector("name", weight="A") +
+            SearchVector("description", weight="B") +
+            SearchVector("sku", weight="A")
+        )
+    )
+
+# Option 2 — Dedicated search service (Elasticsearch/Meilisearch):
+# Sync product data via Celery on save signals.
+# Better for autocomplete and typo tolerance at scale.
+# Recommended long-term — start with Option 1 for launch.
+```

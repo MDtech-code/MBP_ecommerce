@@ -11,6 +11,7 @@
 ## Table of Contents
 
 
+
 1. [Accounts App](#1-accounts-app) ✅
 2. [Products App](#2-products-app) ✅
 3. [Cart App](#3-cart-app) ✅
@@ -23,7 +24,7 @@
 10. [Logistics App](#10-logistics-app) ✅
 11. [Analytics App](#11-analytics-app) ✅
 12. [Recommendations App](#12-recommendations-app) ✅
-13. [Cross-App Relationships](#13-cross-app-relationships) *(next)*
+13. [Cross-App Relationships](#13-cross-app-relationships) ✅
 
 
 **App Label:** `notifications`
@@ -1585,3 +1586,380 @@ user-product-model_version triplet enforced at DB level.
 | `recommendations_personalizedrecommendation` → `products_product` | Soft reference via `recommended_product_id` string | See ISSUE-REC01 |
 
 ---
+
+
+
+
+
+
+
+
+
+
+
+
+## 13. Cross-App Relationships
+
+> This section documents every relationship that crosses app boundaries.
+> It is the authoritative reference for understanding how the full
+> system connects. Read this before writing any query that joins
+> across apps or before designing a new feature that touches
+> multiple domains.
+
+---
+
+### 13.1 Full Entity Relationship Map
+
+```
+accounts_user
+│
+├── 1:1 ──► accounts_userprofile
+│
+├── 1:M ──► accounts_emailverificationtoken
+├── 1:M ──► accounts_passwordresettoken
+│
+├── 1:1 ──► cart_cart
+│               └── 1:M ──► cart_cartitem
+│                               └── M:1 ──► products_product
+│
+├── 1:M ──► orders_order
+│               ├── 1:M ──► orders_orderitem
+│               │               └── M:1 ──► products_product
+│               ├── 1:M ──► orders_orderstatuslog
+│               ├── 1:1 ──► logistics_shipment
+│               ├── 1:M ──► payments_paymenttransaction
+│               ├── 1:1 ──► notifications_whatsappcodverification
+│               ├── M:1 ──► coupons_coupon
+│               │               └── 1:M ──► coupons_couponusage
+│               └── 1:M ──► reviews_review (via orders_orderitem)
+│
+├── 1:M ──► reviews_review
+│               └── M:1 ──► products_product
+│
+├── 1:M ──► contact_contactmessage
+│
+├── 1:M ──► notifications_notification
+│
+├── 1:M ──► recommendations_userinteractionlog
+│               └── M:1 ──► products_product (soft ref → real FK)
+│
+└── 1:M ──► recommendations_personalizedrecommendation
+                └── M:1 ──► products_product (soft ref → real FK)
+
+products_product
+│
+├── 1:M ──► products_productimage
+├── M:M ──► products_bikemodel
+│               └── M:1 ──► products_brand
+├── M:1 ──► products_category
+├── M:1 ──► products_brand
+└── M:1 ──► accounts_user (created_by)
+
+logistics_couriersettlement
+└── M:M ──► logistics_shipment
+
+analytics_courierperformancemetric
+└── (enum ref) ──► CourierPartner (shared from logistics app)
+
+analytics_dailysalessnapshot
+└── (aggregated from) ──► orders_order
+                          payments_paymenttransaction
+                          logistics_shipment
+```
+
+---
+
+### 13.2 Cross-App FK Reference Table
+
+Every foreign key that crosses an app boundary — in one place.
+
+| From Table | From Column | To Table | Constraint | On Delete |
+|---|---|---|---|---|
+| `cart_cart` | `user_id` | `accounts_user` | `FK` | `CASCADE` |
+| `cart_cartitem` | `cart_id` | `cart_cart` | `FK` | `CASCADE` |
+| `cart_cartitem` | `product_id` | `products_product` | `FK` | `CASCADE` → see ISSUE-C01 |
+| `orders_order` | `user_id` | `accounts_user` | `FK` | `PROTECT` |
+| `orders_order` | `coupon_id` | `coupons_coupon` | `FK` | `SET NULL` → see ISSUE-CPN05 |
+| `orders_orderitem` | `order_id` | `orders_order` | `FK` | `CASCADE` |
+| `orders_orderitem` | `product_id` | `products_product` | `FK` | `PROTECT` |
+| `orders_orderstatuslog` | `order_id` | `orders_order` | `FK` | `CASCADE` |
+| `orders_orderstatuslog` | `changed_by_id` | `accounts_user` | `FK` | `SET NULL` |
+| `reviews_review` | `product_id` | `products_product` | `FK` | `CASCADE` |
+| `reviews_review` | `user_id` | `accounts_user` | `FK` | `CASCADE` → see ISSUE-R01 |
+| `reviews_review` | `order_item_id` | `orders_orderitem` | `FK` | `SET NULL` |
+| `payments_paymenttransaction` | `user_id` | `accounts_user` | `FK` | `SET NULL` |
+| `payments_paymenttransaction` | `order_id` | `orders_order` | `FK` (pending) | `PROTECT` → see ISSUE-PAY01 |
+| `coupons_couponusage` | `coupon_id` | `coupons_coupon` | `FK` | `PROTECT` |
+| `coupons_couponusage` | `user_id` | `accounts_user` | `FK` | `CASCADE` |
+| `coupons_couponusage` | `order_id` | `orders_order` | `FK` (pending) | `PROTECT` → see ISSUE-CPN03 |
+| `contact_contactmessage` | `user_id` | `accounts_user` | `FK` | `SET NULL` |
+| `contact_contactmessage` | `resolved_by_id` | `accounts_user` | `FK` | `SET NULL` |
+| `notifications_notification` | `user_id` | `accounts_user` | `FK` | `CASCADE` |
+| `notifications_whatsappcodverification` | `order_id` | `orders_order` | `FK` (pending) | `PROTECT` → see ISSUE-NOTIF03 |
+| `logistics_shipment` | `order_id` | `orders_order` | `FK` (pending) | `PROTECT` → see ISSUE-LOG01 |
+| `logistics_couriersettlement` | `shipments_included` | `logistics_shipment` | `M2M` | — |
+| `recommendations_userinteractionlog` | `user_id` | `accounts_user` | `FK` | `CASCADE` → see ISSUE-REC02 |
+| `recommendations_userinteractionlog` | `product_id` | `products_product` | `FK` (pending) | `SET NULL` → see ISSUE-REC01 |
+| `recommendations_personalizedrecommendation` | `user_id` | `accounts_user` | `FK` | `CASCADE` |
+| `recommendations_personalizedrecommendation` | `recommended_product_id` | `products_product` | `FK` (pending) | `CASCADE` → see ISSUE-REC01 |
+| `products_product` | `category_id` | `products_category` | `FK` | `PROTECT` |
+| `products_product` | `brand_id` | `products_brand` | `FK` | `SET NULL` |
+| `products_product` | `created_by_id` | `accounts_user` | `FK` | `SET NULL` |
+| `products_productimage` | `product_id` | `products_product` | `FK` | `CASCADE` |
+| `products_bikemodel` | `brand_id` | `products_brand` | `FK` | `CASCADE` |
+| `products_product` | `compatible_bikes` | `products_bikemodel` | `M2M` | — |
+
+> **Legend:**
+> `FK (pending)` = currently a `CharField` soft reference.
+> Must be converted to real FK before first migration of that app.
+> See referenced ISSUE for migration path.
+
+---
+
+### 13.3 The `orders_order` Hub — Central Dependency Map
+
+`orders_order` is the most connected table in the system.
+Every downstream app depends on it. This map shows the
+complete blast radius of any change to `orders_order`.
+
+```
+orders_order (hub)
+│
+├── UPSTREAM dependencies (orders_order depends on these):
+│   ├── accounts_user       (user_id FK — PROTECT)
+│   ├── coupons_coupon      (coupon_id FK — SET NULL)
+│   └── cart_cart           (source data at checkout — no FK after conversion)
+│
+└── DOWNSTREAM dependents (these depend on orders_order):
+    ├── orders_orderitem            (CASCADE — deleted with order)
+    ├── orders_orderstatuslog       (CASCADE — deleted with order)
+    ├── payments_paymenttransaction (PROTECT — blocks order deletion)
+    ├── coupons_couponusage         (PROTECT — blocks order deletion)
+    ├── logistics_shipment          (PROTECT — blocks order deletion)
+    ├── notifications_whatsappcodverification (PROTECT — blocks order deletion)
+    └── reviews_review              (via orderitem — SET NULL)
+```
+
+> **Implication:** `orders_order` rows can never be hard deleted
+> once any payment, coupon usage, or shipment record exists for them.
+> The correct pattern is soft deletion via `status = CANCELLED`
+> or `status = REFUNDED`. Hard deletion is permanently blocked
+> by PROTECT constraints from multiple downstream apps.
+
+---
+
+### 13.4 The `products_product` Hub — Central Dependency Map
+
+`products_product` is the second most connected table.
+
+```
+products_product (hub)
+│
+├── UPSTREAM dependencies:
+│   ├── products_category   (category_id FK — PROTECT)
+│   ├── products_brand      (brand_id FK — SET NULL)
+│   └── accounts_user       (created_by_id FK — SET NULL)
+│
+└── DOWNSTREAM dependents:
+    ├── products_productimage       (CASCADE — deleted with product)
+    ├── products_product_compatible_bikes (M2M junction — CASCADE)
+    ├── cart_cartitem               (CASCADE → should be PROTECT — ISSUE-C01)
+    ├── orders_orderitem            (PROTECT — blocks product deletion)
+    ├── reviews_review              (CASCADE — reviews deleted with product)
+    ├── recommendations_userinteractionlog    (SET NULL — logs preserved)
+    └── recommendations_personalizedrecommendation (CASCADE — stale recs removed)
+```
+
+> **Implication:** `products_product` cannot be hard deleted once
+> it has any order history. Use `status = DISCONTINUED` for
+> retiring products. Hard deletion blocked by `orders_orderitem`
+> PROTECT constraint.
+
+---
+
+### 13.5 Soft-Reference Violations — Complete Project Map
+
+Every `CharField` used as a fake FK across the entire codebase.
+All must be converted to real FKs before their app's first
+migration run.
+
+| Table | Column | Should Reference | Real FK Type | Issue |
+|---|---|---|---|---|
+| `coupons_couponusage` | `order_id` | `orders_order` | `ForeignKey` | ISSUE-CPN03 |
+| `payments_paymenttransaction` | `order_id` | `orders_order` | `ForeignKey` | ISSUE-PAY01 |
+| `notifications_whatsappcodverification` | `order_id` | `orders_order` | `OneToOneField` | ISSUE-NOTIF03 |
+| `logistics_shipment` | `order_id` | `orders_order` | `OneToOneField` | ISSUE-LOG01 |
+| `recommendations_userinteractionlog` | `product_id` | `products_product` | `ForeignKey` | ISSUE-REC01 |
+| `recommendations_personalizedrecommendation` | `recommended_product_id` | `products_product` | `ForeignKey` | ISSUE-REC01 |
+
+> **Action required before running first migrations on any of these apps:**
+> Convert all six soft references to real FKs.
+> Failure to do this means six tables have no referential integrity
+> and will silently accumulate orphaned rows pointing to
+> non-existent orders and products.
+
+---
+
+### 13.6 Shared Enum — `CourierPartner` Usage Map
+
+`CourierPartner` is defined in `apps/logistics/models.py` but
+consumed across three apps. It must be moved to
+`apps/common/choices/courier.py` before first migration.
+
+| App | Model | Field | Current Import |
+|---|---|---|---|
+| `logistics` | `Shipment` | `courier` | Defined here |
+| `logistics` | `CourierSettlement` | `courier` | Defined here |
+| `analytics` | `CourierPerformanceMetric` | `courier` | Imported from `logistics` |
+| `payments` | `WebhookLog` | `gateway` | Free text — should use this enum |
+
+> See ISSUE-LOG03 and ISSUE-PAY03 for migration paths.
+
+---
+
+### 13.7 Append-Only Tables — Immutability Contract
+
+These tables are designed as immutable audit logs or event streams.
+They must never be updated after creation. All currently extend
+`TimeStampedModel` incorrectly — each has an open issue.
+
+| Table | Purpose | Issue | Correct Base |
+|---|---|---|---|
+| `orders_orderstatuslog` | Order state transition audit | *(correctly avoids TimeStampedModel)* | `models.Model` ✅ |
+| `payments_webhooklog` | Gateway webhook audit | ISSUE-PAY04 | `models.Model` |
+| `recommendations_userinteractionlog` | ML event stream | ISSUE-REC05 | `models.Model` |
+
+> **Pattern rule:** Any model documented as immutable or append-only
+> must not extend `TimeStampedModel`. Define only `created_at`
+> with `auto_now_add=True`. Add a `save()` guard that raises
+> `ValueError` on update attempts.
+
+---
+
+### 13.8 Boolean + Timestamp Paired Fields — Consistency Contract
+
+A recurring pattern across the codebase where a boolean flag
+and a timestamp must always be set together. All require a
+`clean()` method and a helper method to set both atomically.
+
+| Table | Boolean Field | Paired Timestamp | Issue |
+|---|---|---|---|
+| `accounts_passwordresettoken` | `is_used` | — *(no timestamp — acceptable)* | — |
+| `accounts_emailverificationtoken` | `is_used` *(missing)* | — | ISSUE-A04 |
+| `contact_contactmessage` | `is_resolved` | `resolved_at` | ISSUE-CT02 |
+| `notifications_notification` | `is_sent` | `sent_at` | ISSUE-NOTIF02 |
+| `recommendations_personalizedrecommendation` | `is_clicked` | `clicked_at` *(missing)* | ISSUE-REC04 |
+| `logistics_couriersettlement` | `is_reconciled` | — *(no timestamp — gap)* | — |
+
+> **Pattern rule:** Every boolean state flag that represents a
+> point-in-time event must have a paired `_at` timestamp field.
+> Both must be set atomically via a dedicated helper method.
+> `clean()` must validate they are never set independently.
+
+---
+
+### 13.9 Race Condition Hotspots — Concurrency Risk Map
+
+Locations where concurrent requests can produce data corruption
+without explicit DB locking. All require `select_for_update()`
+inside `transaction.atomic()`.
+
+| Table | Field | Risk | Issue | Required Pattern |
+|---|---|---|---|---|
+| `products_product` | `stock` | Oversell on concurrent add-to-cart | ISSUE-P04 | `select_for_update()` at checkout |
+| `cart_cartitem` | `quantity` | Stock validation race between cart save and order place | ISSUE-C02 | `select_for_update()` at checkout |
+| `coupons_coupon` | `total_used` | Over-redemption on concurrent coupon use | ISSUE-CPN02 | `select_for_update()` + `F()` expression |
+
+> **Atomic checkout transaction — the correct sequence:**
+> ```
+> with transaction.atomic():
+>   1. select_for_update() on all products in cart
+>   2. select_for_update() on coupon if applied
+>   3. Validate stock for each CartItem
+>   4. Validate coupon limits
+>   5. Create Order
+>   6. Create OrderItems — snapshot prices
+>   7. Create CouponUsage — increment total_used via F()
+>   8. Decrement product.stock via F() for each item
+>   9. Clear CartItems
+>   10. Create PaymentTransaction (PENDING)
+>   11. Create Shipment (LABEL_CREATED)
+> → Commit transaction
+> 12. Send confirmation notification via Celery (outside transaction)
+> 13. Trigger WhatsApp COD verification via Celery (outside transaction)
+> ```
+
+---
+
+### 13.10 Financial Snapshot Integrity — Cross-App Invariants
+
+Financial fields that must be consistent across multiple tables.
+These invariants have no DB-level enforcement — they depend on
+correct application logic.
+
+| Invariant | Tables Involved | Issue |
+|---|---|---|
+| `Order.total_price == Order.subtotal - Order.discount_amount + Order.shipping_fee` | `orders_order` | ISSUE-O03, ISSUE-CPN05 |
+| `OrderItem.subtotal == OrderItem.unit_price × OrderItem.quantity` | `orders_orderitem` | ISSUE-O06 |
+| `Order.payment_status` must mirror latest `PaymentTransaction.status` | `orders_order`, `payments_paymenttransaction` | ISSUE-PAY06 |
+| `CourierSettlement.net_payout_received == total_cod_collected - total_shipping_deducted` | `logistics_couriersettlement` | ISSUE-LOG02 |
+| `DailySalesSnapshot.cod_orders_count + prepaid_orders_count == total_orders` | `analytics_dailysalessnapshot` | ISSUE-ANA01 |
+| `Shipment.cod_amount == Order.total_price` for COD orders | `logistics_shipment`, `orders_order` | ISSUE-LOG04 |
+
+---
+
+### 13.11 Pre-Migration Checklist for Unmigrated Apps
+
+Before running `makemigrations` and `migrate` on any unmigrated
+app, complete this checklist in order.
+
+**Step 1 — Fix all soft references:**
+```
+□ coupons_couponusage.order_id     → ForeignKey(Order, PROTECT)
+□ payments_paymenttransaction.order_id → ForeignKey(Order, PROTECT)
+□ notifications_whatsappcodverification.order_id → OneToOneField(Order, PROTECT)
+□ logistics_shipment.order_id      → OneToOneField(Order, PROTECT)
+□ recommendations_userinteractionlog.product_id → ForeignKey(Product, SET_NULL)
+□ recommendations_personalizedrecommendation.recommended_product_id → ForeignKey(Product, CASCADE)
+```
+
+**Step 2 — Move shared enums to common:**
+```
+□ Move CourierPartner → apps/common/choices/courier.py
+□ Update Gateway choices in payments to include courier names
+□ Update all imports across logistics, analytics, payments
+```
+
+**Step 3 — Fix append-only models:**
+```
+□ payments_webhooklog    → stop extending TimeStampedModel
+□ recommendations_userinteractionlog → stop extending TimeStampedModel
+□ Both → add save() guard against updates
+```
+
+**Step 4 — Add missing fields before first migration:**
+```
+□ orders_order.coupon_id FK         (ISSUE-CPN05)
+□ orders_order.discount_amount      (ISSUE-CPN05)
+□ orders_order.refunded_at          (ISSUE-O05)
+□ payments_paymenttransaction.original_transaction FK  (ISSUE-PAY02)
+□ payments_paymenttransaction.completed_at  (ISSUE-PAY05)
+□ recommendations_personalizedrecommendation.clicked_at (ISSUE-REC04)
+□ recommendations_userinteractionlog → remove updated_at (ISSUE-REC05)
+□ analytics_courierperformancemetric.month_year → DateField (ISSUE-ANA02)
+□ coupons_coupon.save() → uppercase normalisation (ISSUE-CPN01)
+```
+
+**Step 5 — Add DB-level constraints before first migration:**
+```
+□ reviews_review rating CheckConstraint 1–5   (ISSUE-R04)
+□ products_productimage partial UniqueConstraint on is_primary (ISSUE-P06)
+□ recommendations_personalizedrecommendation score CheckConstraint 0–1 (ISSUE-REC03)
+```
+
+**Step 6 — Verify migrated apps before touching:**
+```
+□ accounts  ✅ migrated — all changes require safe migration path
+□ products  ✅ migrated — all changes require safe migration path
+□ cart      ✅ migrated — all changes require safe migration path
+```
