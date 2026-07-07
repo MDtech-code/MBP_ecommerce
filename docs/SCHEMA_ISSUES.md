@@ -26,7 +26,8 @@
 9. [Notifications App Issues](#9-notifications-app-issues) ✅
 10. [Logistics App Issues](#10-logistics-app-issues) ✅
 11. [Analytics App Issues](#11-analytics-app-issues) ✅
-12. [Cross-App Issues](#12-cross-app-issues) *(built after all apps)*
+12. [Recommendations App Issues](#12-recommendations-app-issues) ✅
+13. [Cross-App Issues](#13-cross-app-issues) *(next)*   
 
 ---
 
@@ -2564,6 +2565,285 @@ is_finalised = models.BooleanField(
 # )
 
 # Migration: Safe — not yet migrated. Add before first migrate run.
+```
+
+---
+
+### ISSUE-REC01 — Both Models Use String `product_id` Instead of Real FK
+
+**Severity:** 🔴 High
+**Tables:** `recommendations_userinteractionlog`,
+`recommendations_personalizedrecommendation`
+
+**Problem:**
+Both `UserInteractionLog.product_id` and
+`PersonalizedRecommendation.recommended_product_id` are
+`CharField` soft references to `products_product`. This is the
+sixth and seventh occurrence of the soft-reference anti-pattern
+catalogued across this codebase — now appearing in every app
+that references either orders or products.
+
+Full product soft-reference map:
+- `recommendations_userinteractionlog.product_id` — this issue
+- `recommendations_personalizedrecommendation.recommended_product_id` — this issue
+
+Full order soft-reference map:
+- `coupons_couponusage.order_id` — ISSUE-CPN03
+- `payments_paymenttransaction.order_id` — ISSUE-PAY01
+- `notifications_whatsappcodverification.order_id` — ISSUE-NOTIF03
+- `logistics_shipment.order_id` — ISSUE-LOG01
+
+**However** — for `UserInteractionLog` specifically, a real FK
+may be an intentional architectural choice given the table's
+high write throughput. See recommended approach below.
+
+**Safe Migration Path:**
+```python
+# For PersonalizedRecommendation — use a real FK:
+# Write volume is low (batch ML job inserts), reads are frequent.
+from apps.products.models import Product
+
+recommended_product = models.ForeignKey(
+    Product,
+    on_delete=models.CASCADE,
+    related_name="recommendations",
+    db_index=True,
+)
+# CASCADE: if product deleted, stale recommendations auto-removed.
+
+# For UserInteractionLog — two valid options:
+
+# Option A: Real FK (simpler, correct for current scale):
+product = models.ForeignKey(
+    Product,
+    on_delete=models.SET_NULL,
+    null=True,
+    blank=True,
+    db_index=True,
+)
+# SET_NULL preserves historical interaction logs even if product deleted.
+# ML training pipelines handle NULL product_id by filtering them out.
+
+# Option B: Keep CharField but add periodic integrity check (high scale):
+# At very high event volumes (millions/day) FK constraint on
+# every INSERT adds lock overhead. In this case keep CharField
+# but run a nightly Celery task to validate all product_id values
+# exist in products_product and flag orphaned rows.
+# Only consider Option B if INSERT benchmarks show FK overhead is
+# measurable — at current MBP scale Option A is correct.
+
+# Migration: Safe — not yet migrated. Add before first migrate run.
+```
+
+---
+
+### ISSUE-REC02 — `UserInteractionLog` CASCADE on User Delete Destroys ML Training Data
+
+**Severity:** 🟡 Medium
+**Table:** `recommendations_userinteractionlog`
+
+**Problem:**
+`user` FK is `on_delete=CASCADE`. Deleting a user account wipes
+all their interaction history. This data is the training corpus
+for the ML recommendation model — losing it degrades model
+quality over time as user churn accumulates. Unlike reviews
+or orders where CASCADE is debatable, ML event logs have no
+personal data sensitivity requirement that justifies deletion
+since they can be anonymised instead of destroyed.
+
+**Safe Migration Path:**
+```python
+# Change to SET_NULL — anonymise rather than delete:
+user = models.ForeignKey(
+    settings.AUTH_USER_MODEL,
+    on_delete=models.SET_NULL,   # was CASCADE
+    null=True,
+    blank=True,
+    related_name="interaction_logs",
+)
+
+# On user deletion: user_id becomes NULL but session_key,
+# event_type, product_id, and metadata are preserved.
+# ML pipeline treats NULL user_id rows as anonymous interactions —
+# still valid training signal for item-based collaborative filtering.
+
+# Migration: Safe — not yet migrated. Add before first migrate run.
+```
+
+---
+
+### ISSUE-REC03 — `score` Uses `FloatField` for ML Confidence Score
+
+**Severity:** 🟡 Medium
+**Table:** `recommendations_personalizedrecommendation`
+
+**Problem:**
+`score` is `FloatField` (IEEE 754 double precision float). For a
+confidence score in range `0.0–1.0` this introduces floating point
+imprecision. Scores like `0.7` may be stored as
+`0.6999999999999998`. Sorting recommendations by score — the
+primary query pattern given `ordering = ['-score']` — produces
+inconsistent ordering for scores that are close in value.
+Additionally there is no validator enforcing `0.0 <= score <= 1.0`
+at the DB level.
+
+**Safe Migration Path:**
+```python
+# Option 1 — Use DecimalField for precision:
+score = models.DecimalField(
+    max_digits=5,
+    decimal_places=4,    # e.g. 0.9876
+    validators=[
+        MinValueValidator(Decimal("0.0000")),
+        MaxValueValidator(Decimal("1.0000")),
+    ]
+)
+
+# Option 2 — Keep FloatField but add DB CheckConstraint:
+class Meta:
+    constraints = [
+        models.CheckConstraint(
+            check=models.Q(score__gte=0.0) & models.Q(score__lte=1.0),
+            name="rec_recommendation_score_range",
+        )
+    ]
+
+# Recommended: Option 1 — DecimalField eliminates imprecision entirely.
+# Migration: Safe — not yet migrated. Apply before first migrate run.
+```
+
+---
+
+### ISSUE-REC04 — No `clicked_at` Timestamp on `PersonalizedRecommendation`
+
+**Severity:** 🟢 Low
+**Table:** `recommendations_personalizedrecommendation`
+
+**Problem:**
+`is_clicked` records whether a recommendation was clicked but
+there is no `clicked_at` timestamp. Click-through rate analysis
+and time-to-click measurement — important ML model evaluation
+metrics — require knowing exactly when the click happened relative
+to when the recommendation was generated (`created_at`). Without
+`clicked_at`, the only data available is a binary clicked/not-clicked
+flag with no temporal dimension.
+
+**Safe Migration Path:**
+```python
+# Add clicked_at timestamp:
+clicked_at = models.DateTimeField(
+    _("clicked at"),
+    null=True,
+    blank=True,
+    help_text=_("Timestamp when user clicked this recommendation.")
+)
+
+# Add consistency validation matching ISSUE-NOTIF02 pattern:
+def clean(self) -> None:
+    if self.is_clicked and not self.clicked_at:
+        raise ValidationError({
+            "clicked_at": _(
+                "clicked_at must be set when is_clicked is True."
+            )
+        })
+
+# Add mark_clicked() helper:
+def mark_clicked(self) -> None:
+    from django.utils import timezone
+    self.is_clicked = True
+    self.clicked_at = timezone.now()
+    self.save(update_fields=["is_clicked", "clicked_at"])
+
+# Migration: Safe — not yet migrated. Add before first migrate run.
+```
+
+---
+
+### ISSUE-REC05 — `UserInteractionLog` Is Append-Only But Extends `TimeStampedModel`
+
+**Severity:** 🟢 Low
+**Table:** `recommendations_userinteractionlog`
+
+**Problem:**
+`UserInteractionLog` is documented as a high-throughput append-only
+event log — rows are never updated after creation. Extending
+`TimeStampedModel` adds `updated_at` with `auto_now=True` which
+auto-updates on every `.save()` call. This contradicts immutability
+and adds an unnecessary write to an already write-heavy table.
+This is the same pattern flagged in `payments_webhooklog`
+(ISSUE-PAY04) and `orders_orderstatuslog`.
+
+**Safe Migration Path:**
+```python
+# Stop extending TimeStampedModel — define only created_at:
+class UserInteractionLog(models.Model):   # not TimeStampedModel
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        db_index=True,    # index for time-range ML pipeline queries
+    )
+    # No updated_at — append-only by design
+
+# Also add save() guard to enforce immutability:
+def save(self, *args, **kwargs) -> None:
+    if self.pk:
+        raise ValueError(
+            "UserInteractionLog records are immutable "
+            "and cannot be updated."
+        )
+    super().save(*args, **kwargs)
+
+# Migration: Safe — not yet migrated. Apply before first migrate run.
+# Consistent with OrderStatusLog and WebhookLog immutability pattern.
+```
+
+---
+
+### ISSUE-REC06 — No Event Validation That `product_id` Is Required for Product Events
+
+**Severity:** 🟡 Medium
+**Table:** `recommendations_userinteractionlog`
+
+**Problem:**
+`product_id` is nullable but five of six event types
+(`VIEW_PRODUCT`, `ADD_TO_CART`, `REMOVE_FROM_CART`,
+`ADD_TO_WISHLIST`, `PURCHASED`) require a product reference
+to be meaningful. Only `SEARCH_QUERY` events legitimately
+have `product_id=NULL`. A `VIEW_PRODUCT` event logged with
+`product_id=NULL` is a corrupt training record — the ML
+pipeline cannot use it and it pollutes the dataset.
+Similarly `SEARCH_QUERY` events with `search_query=NULL`
+are meaningless.
+
+**Safe Migration Path:**
+```python
+# Add clean() to UserInteractionLog:
+PRODUCT_REQUIRED_EVENTS = {
+    UserInteractionLog.EventType.VIEW_PRODUCT,
+    UserInteractionLog.EventType.ADD_TO_CART,
+    UserInteractionLog.EventType.REMOVE_FROM_CART,
+    UserInteractionLog.EventType.ADD_TO_WISHLIST,
+    UserInteractionLog.EventType.PURCHASED,
+}
+
+def clean(self) -> None:
+    if self.event_type in PRODUCT_REQUIRED_EVENTS:
+        if not self.product_id:
+            raise ValidationError({
+                "product_id": _(
+                    "product_id is required for "
+                    "%(event)s events."
+                ) % {"event": self.event_type}
+            })
+    if self.event_type == self.EventType.SEARCH_QUERY:
+        if not self.search_query:
+            raise ValidationError({
+                "search_query": _(
+                    "search_query is required for "
+                    "SEARCH_QUERY events."
+                )
+            })
+
+# No migration required — Python-level validation only.
 ```
 
 ---
