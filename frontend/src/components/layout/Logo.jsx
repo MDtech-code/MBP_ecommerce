@@ -1,3 +1,4 @@
+// src/components/layout/Logo.jsx
 import logo from "../../assets/images/logo/logo.png";
 import auth_logo from "../../assets/images/logo/auth_banner_logo.png";
 
@@ -18,6 +19,12 @@ export default function Logo({ variant = "light", size = "md" }) {
       img: "w-20 h-20",
       title: "text-3xl",
       tagline: "text-sm"
+    },
+    // NEW — responsive size, small on mobile grows on laptop
+    responsive: {
+      img: "w-8 h-8 md:w-15 md:h-10",
+      title: "text-lg md:text-xl",
+      tagline: "text-[10px] md:text-xs"
     }
   }
 
@@ -40,20 +47,17 @@ export default function Logo({ variant = "light", size = "md" }) {
   const s = sizes[size]
 
   return (
-    <div className="flex items-center ">
-      
+    <div className="flex items-center">
       <img
         src={v.logo}
         alt="BikeXpress Logo"
         className={`${s.img} object-contain`}
       />
-
       <div>
         <h1 className={`font-black leading-none ${s.title}`}>
           <span className={v.bike}>BIKE</span>
           <span className={v.express}>XPRESS</span>
         </h1>
-
         <p className={`${s.tagline} ${v.taglineColor}`}>
           Quality Parts. Smooth Rides.
         </p>
@@ -61,6 +65,3 @@ export default function Logo({ variant = "light", size = "md" }) {
     </div>
   )
 }
-
-
-
