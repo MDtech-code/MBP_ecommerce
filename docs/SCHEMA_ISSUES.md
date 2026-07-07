@@ -14,6 +14,7 @@
 ---
 
 
+
 ## Table of Contents
 
 1. [Accounts App Issues](#1-accounts-app-issues) ✅
@@ -23,7 +24,8 @@
 5. [Reviews App Issues](#5-reviews-app-issues) ✅
 6. [Contact App Issues](#6-contact-app-issues) ✅
 7. [Coupons App Issues](#7-coupons-app-issues) ✅
-8. [Cross-App Issues](#8-cross-app-issues) *(built after all apps)*
+8. [Payments App Issues](#8-payments-app-issues) ✅
+9. [Cross-App Issues](#9-cross-app-issues) *(built after all apps)*
 
 ---
 
@@ -1704,6 +1706,267 @@ def save(self, *args, **kwargs) -> None:
     super().save(*args, **kwargs)
 
 # No migration required — Python-level logic only.
+```
+
+---
+
+
+
+
+## 8. Payments App Issues
+
+---
+
+### ISSUE-PAY01 — `PaymentTransaction.order_id` Is a String Not a Real FK
+
+**Severity:** 🔴 High
+**Table:** `payments_paymenttransaction`
+
+**Problem:**
+`order_id` is `CharField(100)` described as a reference to
+`orders_order`. This is the exact same soft-reference anti-pattern
+as `CouponUsage.order_id` flagged in ISSUE-CPN03. There is no
+FK constraint, no referential integrity, and no cascade behaviour.
+A payment transaction can reference a non-existent order ID with
+no error. For financial records this is a critical audit gap —
+payments must be provably tied to real orders.
+This pattern now appears in both `coupons` and `payments` apps —
+confirming it is a systemic design decision that needs correction
+before first migration.
+
+**Safe Migration Path:**
+```python
+# Replace CharField with a real ForeignKey to orders_order:
+from apps.orders.models import Order
+
+order = models.ForeignKey(
+    Order,
+    on_delete=models.PROTECT,
+    related_name="payment_transactions",
+    verbose_name=_("order"),
+)
+
+# PROTECT ensures payment records are never orphaned by order deletion.
+# One order can have multiple PaymentTransaction rows:
+#   - Initial attempt (PENDING)
+#   - Retry after failure (PENDING → FAILED → new PENDING)
+#   - Refund transaction (REFUNDED)
+
+# Migration: Safe — not yet migrated.
+# Add FK before first migrate run.
+# Also update indexes — order_id BTREE becomes a proper FK index.
+```
+
+---
+
+### ISSUE-PAY02 — No `PaymentTransaction` to `PaymentTransaction` Refund Link
+
+**Severity:** 🟡 Medium
+**Table:** `payments_paymenttransaction`
+
+**Problem:**
+`Status` includes `REFUNDED` and `PARTIALLY_REFUNDED` but there is
+no field linking a refund transaction back to the original `SUCCESS`
+transaction it is refunding. This means you cannot answer:
+- "Which original payment does this refund correspond to?"
+- "How much of this payment has already been partially refunded?"
+- "Is this a duplicate refund attempt?"
+Without this link, refund reconciliation requires scanning all
+transactions for the same `order_id` and inferring the relationship
+from amounts and timestamps — fragile and error-prone.
+
+**Safe Migration Path:**
+```python
+# Add self-referencing FK for refund linkage:
+original_transaction = models.ForeignKey(
+    "self",
+    on_delete=models.SET_NULL,
+    null=True,
+    blank=True,
+    related_name="refund_transactions",
+    verbose_name=_("original transaction"),
+    help_text=_("Set on refund transactions — points to the SUCCESS transaction being refunded.")
+)
+
+# Refund flow:
+# original = PaymentTransaction.objects.get(order=order, status=SUCCESS)
+# refund = PaymentTransaction.objects.create(
+#     order=order,
+#     original_transaction=original,
+#     status=REFUNDED,
+#     amount_pkr=refund_amount,
+#     gateway=original.gateway,
+# )
+
+# Migration: Safe — not yet migrated. Add before first migrate run.
+```
+
+---
+
+### ISSUE-PAY03 — `WebhookLog.gateway` Is Free Text With No Choices Constraint
+
+**Severity:** 🟡 Medium
+**Table:** `payments_webhooklog`
+
+**Problem:**
+`WebhookLog.gateway` is a plain `CharField(50)` with no `choices`
+constraint while `PaymentTransaction.gateway` uses a controlled
+`Gateway.TextChoices` enum. The same gateway can appear as
+`"JAZZCASH"`, `"jazzcash"`, `"JazzCash"`, or `"jazz_cash"` in
+webhook logs — making JOIN queries between `WebhookLog` and
+`PaymentTransaction` by gateway unreliable and breaking any
+dashboard that aggregates webhook success rates by gateway.
+
+**Safe Migration Path:**
+```python
+# Reuse PaymentTransaction.Gateway choices on WebhookLog:
+gateway = models.CharField(
+    max_length=20,           # match PaymentTransaction field length
+    choices=PaymentTransaction.Gateway.choices,
+    db_index=True,
+)
+
+# For courier webhooks (PostEx, TCS, Leopards) that do not map
+# to payment gateways, extend Gateway choices to include them:
+class Gateway(models.TextChoices):
+    COD = 'COD', _('Cash on Delivery')
+    SAFEPAY = 'SAFEPAY', _('Safepay')
+    PAYFAST = 'PAYFAST', _('PayFast')
+    JAZZCASH = 'JAZZCASH', _('JazzCash')
+    EASYPAISA = 'EASYPAISA', _('Easypaisa')
+    RAAST = 'RAAST', _('Raast')
+    XPAY = 'XPAY', _('XPay by PostEx')
+    POSTEX = 'POSTEX', _('PostEx Courier')     # extend here
+    LEOPARDS = 'LEOPARDS', _('Leopards Courier')
+
+# Move Gateway enum to apps/common/choices/gateway.py
+# so both models import from one source of truth.
+# Migration: Safe — not yet migrated. Apply before first migrate run.
+```
+
+---
+
+### ISSUE-PAY04 — `WebhookLog` Has `updated_at` But Is Meant to Be Immutable
+
+**Severity:** 🟢 Low
+**Table:** `payments_webhooklog`
+
+**Problem:**
+`WebhookLog` extends `TimeStampedModel` which adds `updated_at`
+with `auto_now=True`. The model docstring explicitly states it is
+an immutable audit log. Having `updated_at` auto-updating on every
+save contradicts immutability — any accidental `.save()` call
+silently updates the timestamp, creating a false impression that
+the record was intentionally modified. The same issue exists in
+`orders_orderstatuslog` which correctly does not extend
+`TimeStampedModel` for this reason.
+
+**Safe Migration Path:**
+```python
+# Option 1 — Stop extending TimeStampedModel, define only created_at:
+class WebhookLog(models.Model):
+    created_at = models.DateTimeField(auto_now_add=True)
+    # No updated_at — immutable by design
+
+# Option 2 — Keep TimeStampedModel but override save() to block updates:
+def save(self, *args, **kwargs) -> None:
+    if self.pk:
+        raise ValueError(
+            "WebhookLog records are immutable and cannot be updated."
+        )
+    super().save(*args, **kwargs)
+
+# Recommended: Option 1 — consistent with OrderStatusLog pattern.
+# Migration: Safe — not yet migrated. Apply before first migrate run.
+```
+
+---
+
+### ISSUE-PAY05 — No `PaymentTransaction` Timestamp for Status Transitions
+
+**Severity:** 🟡 Medium
+**Table:** `payments_paymenttransaction`
+
+**Problem:**
+`PaymentTransaction` tracks `created_at` (initiation) and
+`updated_at` (last change) but has no dedicated timestamp for
+when the transaction reached its terminal state (`SUCCESS`,
+`FAILED`, `REFUNDED`). For payment reconciliation and SLA
+reporting you need to know exactly when a payment was confirmed —
+not just when the record was last touched. `updated_at` changes
+on any field save and is not a reliable proxy for confirmation time.
+
+**Safe Migration Path:**
+```python
+# Add terminal state timestamp:
+completed_at = models.DateTimeField(
+    _("completed at"),
+    null=True,
+    blank=True,
+    help_text=_(
+        "Timestamp when transaction reached a terminal state "
+        "(SUCCESS, FAILED, REFUNDED, PARTIALLY_REFUNDED)."
+    )
+)
+
+# Set in status transition logic:
+TERMINAL_STATUSES = {
+    PaymentTransaction.Status.SUCCESS,
+    PaymentTransaction.Status.FAILED,
+    PaymentTransaction.Status.REFUNDED,
+    PaymentTransaction.Status.PARTIALLY_REFUNDED,
+}
+
+if new_status in TERMINAL_STATUSES and not transaction.completed_at:
+    transaction.completed_at = timezone.now()
+
+# Migration: Safe — not yet migrated. Add before first migrate run.
+```
+
+---
+
+### ISSUE-PAY06 — Cross-App: `Order.payment_status` and `PaymentTransaction.status` Can Diverge
+
+**Severity:** 🔴 High
+**Tables:** `orders_order` ↔ `payments_paymenttransaction`
+
+**Problem:**
+`Order` has its own `payment_status` field (`pending`, `paid`,
+`failed`, `refunded`). `PaymentTransaction` has its own `status`
+field (`PENDING`, `SUCCESS`, `FAILED`, `REFUNDED`,
+`PARTIALLY_REFUNDED`). These two fields can silently diverge:
+- A `PaymentTransaction` marked `SUCCESS` while `Order.payment_status`
+  stays `pending` due to a webhook processing failure
+- A `PaymentTransaction` marked `REFUNDED` while `Order.payment_status`
+  stays `paid`
+There is no DB constraint or application-level invariant enforcing
+their consistency. Financial dashboards reading `Order.payment_status`
+will show stale data while the truth lives in `PaymentTransaction`.
+
+**Safe Migration Path:**
+```python
+# Define a single source of truth: PaymentTransaction.status
+# Derive Order.payment_status from it — never store independently.
+
+# Option 1 — Remove Order.payment_status, compute it as a property:
+# @property
+# def payment_status(self):
+#     latest = self.payment_transactions.order_by("-created_at").first()
+#     return latest.status if latest else PaymentTransaction.Status.PENDING
+
+# Option 2 — Keep Order.payment_status but always update it
+# inside the same atomic transaction that updates PaymentTransaction:
+with transaction.atomic():
+    txn.status = PaymentTransaction.Status.SUCCESS
+    txn.save(update_fields=["status"])
+    txn.order.payment_status = Order.PaymentStatus.PAID
+    txn.order.save(update_fields=["payment_status"])
+
+# Also align status value naming — Order uses lowercase ('paid')
+# while PaymentTransaction uses uppercase ('SUCCESS').
+# Standardise to one convention across both models.
+# Recommended: Option 2 for queryability + strict atomic update rule.
+# Document this invariant in api_standards.md.
 ```
 
 ---

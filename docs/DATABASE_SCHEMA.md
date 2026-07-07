@@ -17,7 +17,8 @@
 5. [Reviews App](#5-reviews-app) ✅
 6. [Contact App](#6-contact-app) ✅
 7. [Coupons App](#7-coupons-app) ✅
-8. [Cross-App Relationships](#8-cross-app-relationships) *(built after all apps)*
+8. [Payments App](#8-payments-app) ✅
+9. [Cross-App Relationships](#9-cross-app-relationships) *(built after all apps)*
 
 
 ---
@@ -951,6 +952,133 @@ user_usage_count = CouponUsage.objects.filter(
 
 if user_usage_count >= coupon.usage_limit_per_user:
     raise CouponLimitExceeded()
+```
+
+---
+
+## 8. Payments App
+
+**App Label:** `payments`
+**Purpose:** Records every payment transaction attempt against an order
+across multiple Pakistani payment gateways. Logs all inbound webhook
+payloads from gateways for cryptographic verification, debugging, and
+audit. Supports idempotency to prevent double-charging on retries.
+**Status:** 🟡 Not Yet Migrated — schema changes are low risk
+
+---
+
+### 8.1 `payments_paymenttransaction`
+
+A single payment attempt against an order. Multiple transactions
+can exist per order — initial attempt, retry, refund. Gateway
+transaction reference and idempotency key prevent duplicate
+processing. COD orders generate a transaction record in `PENDING`
+state that resolves to `SUCCESS` on delivery confirmation.
+
+| Column | Django Field | DB Type | Constraints | Default | Notes |
+|---|---|---|---|---|---|
+| `id` | `AutoField` (PK) | `BIGINT` | `PK`, `NOT NULL`, `AUTO INCREMENT` | Auto | — |
+| `order_id` | `CharField(100)` | `VARCHAR(100)` | `NOT NULL`, `INDEX` | — | Soft reference to `orders_order`. See ISSUE-PAY01 |
+| `user_id` | `ForeignKey → User` | `BIGINT` | `NULL`, `FK`, `INDEX` | `NULL` | `SET NULL` on delete — preserve transaction records if user deleted |
+| `gateway` | `CharField(20)` | `VARCHAR(20)` | `NOT NULL` | `'COD'` | See Gateway choices below |
+| `status` | `CharField(20)` | `VARCHAR(20)` | `NOT NULL`, `INDEX` | `'PENDING'` | See Transaction Status choices below |
+| `amount_pkr` | `DecimalField(12,2)` | `NUMERIC(12,2)` | `NOT NULL` | — | Transaction amount in PKR. Min `0.00` |
+| `transaction_reference` | `CharField(150)` | `VARCHAR(150)` | `UNIQUE`, `NULL` | `NULL` | Gateway-assigned transaction ID. `NULL` for COD until confirmed |
+| `idempotency_key` | `UUIDField` | `UUID` | `UNIQUE`, `NULL` | `NULL` | Client-generated key to prevent double-charging on retries |
+| `error_message` | `TextField` | `TEXT` | `NOT NULL` | `''` | Gateway error detail on failed transactions |
+| `created_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now_add` | From `TimeStampedModel`. Transaction initiation time |
+| `updated_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now` | From `TimeStampedModel`. Last status update time |
+
+**Indexes:**
+
+| Index Name | Column(s) | Type |
+|---|---|---|
+| `payments_txn_order_idx` | `order_id` | `BTREE` |
+| `payments_txn_user_idx` | `user_id` | `BTREE` |
+| `payments_txn_status_idx` | `status` | `BTREE` |
+| `payments_txn_transaction_ref_idx` | `transaction_reference` | `UNIQUE BTREE` |
+| `payments_txn_idempotency_idx` | `idempotency_key` | `UNIQUE BTREE` |
+| `payments_txn_order_status_idx` | `order_id`, `status` | `BTREE` |
+| `payments_txn_gateway_status_idx` | `gateway`, `status` | `BTREE` |
+
+**Gateway Choices:**
+
+| Display | DB Value | Notes |
+|---|---|---|
+| Cash on Delivery | `COD` | Default. No online payment processing |
+| Safepay | `SAFEPAY` | Card processing gateway |
+| PayFast | `PAYFAST` | Pakistani payment gateway |
+| JazzCash Mobile Wallet / Card | `JAZZCASH` | Mobile wallet and card |
+| Easypaisa | `EASYPAISA` | Mobile wallet |
+| Raast Instant Transfer | `RAAST` | SBP interbank instant transfer |
+| XPay by PostEx | `XPAY` | PostEx integrated payment |
+
+**Transaction Status Choices:**
+
+| Display | DB Value | Notes |
+|---|---|---|
+| Pending | `PENDING` | Initial state. COD stays here until delivery |
+| Authorized | `AUTHORIZED` | Payment authorised but not yet captured |
+| Success | `SUCCESS` | Payment captured and confirmed |
+| Failed | `FAILED` | Payment attempt failed |
+| Refunded | `REFUNDED` | Full refund processed |
+| Partially Refunded | `PARTIALLY_REFUNDED` | Partial refund processed |
+
+**Relationships:**
+
+| Relation | Type | On Delete |
+|---|---|---|
+| `payments_paymenttransaction` → `accounts_user` | Many-to-One | `SET NULL` |
+| `payments_paymenttransaction` → `orders_order` | Soft reference via `order_id` string | See ISSUE-PAY01 |
+
+**Idempotency Flow:**
+
+```
+Client generates UUID idempotency_key before checkout request
+→ Server checks: PaymentTransaction.objects.filter(
+      idempotency_key=key).exists()
+→ If exists: return existing transaction — do not charge again
+→ If not: create new transaction and initiate gateway charge
+```
+
+---
+
+### 8.2 `payments_webhooklog`
+
+Immutable append-only audit log for all inbound webhook payloads
+from payment gateways and courier services. Stores raw payload
+and headers to enable cryptographic signature re-verification
+and post-incident debugging. Rows are never updated or deleted.
+
+| Column | Django Field | DB Type | Constraints | Default | Notes |
+|---|---|---|---|---|---|
+| `id` | `AutoField` (PK) | `BIGINT` | `PK`, `NOT NULL`, `AUTO INCREMENT` | Auto | — |
+| `gateway` | `CharField(50)` | `VARCHAR(50)` | `NOT NULL`, `INDEX` | — | Gateway name e.g. `JAZZCASH`, `EASYPAISA`. Free text — see ISSUE-PAY03 |
+| `payload` | `JSONField` | `JSONB` | `NOT NULL` | — | Raw JSON body from gateway webhook request |
+| `headers` | `JSONField` | `JSONB` | `NOT NULL` | — | HTTP request headers. Used for HMAC signature verification |
+| `ip_address` | `GenericIPAddressField` | `INET` | `NULL` | `NULL` | Webhook sender IP. Used for gateway IP allowlist verification |
+| `is_verified` | `BooleanField` | `BOOLEAN` | `NOT NULL` | `FALSE` | `TRUE` if HMAC signature matched gateway secret |
+| `processed_successfully` | `BooleanField` | `BOOLEAN` | `NOT NULL` | `FALSE` | `TRUE` if webhook triggered successful business logic |
+| `exception_trace` | `TextField` | `TEXT` | `NOT NULL` | `''` | Full Python traceback if processing raised an exception |
+| `created_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now_add` | From `TimeStampedModel`. Webhook receipt timestamp |
+| `updated_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now` | From `TimeStampedModel` |
+
+**Indexes:**
+
+| Index Name | Column(s) | Type |
+|---|---|---|
+| `payments_webhooklog_gateway_idx` | `gateway` | `BTREE` |
+| `payments_webhooklog_created_at_idx` | `created_at` | `BTREE` |
+
+**Immutability Rules:**
+
+```
+- Rows are INSERT only — no UPDATE, no DELETE after creation
+- updated_at exists via TimeStampedModel but should never change
+- is_verified and processed_successfully are set once at processing time
+- exception_trace captured at processing time — never overwritten
+- Celery task to purge records older than 180 days recommended
+  to prevent unbounded table growth
 ```
 
 ---
