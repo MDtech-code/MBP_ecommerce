@@ -18,7 +18,8 @@
 1. [Accounts App Issues](#1-accounts-app-issues) ✅
 2. [Products App Issues](#2-products-app-issues) ✅
 3. [Cart App Issues](#3-cart-app-issues) ✅
-4. [Cross-App Issues](#4-cross-app-issues) *(built after all apps)*
+4. [Orders App Issues](#4-orders-app-issues) ✅
+5. [Cross-App Issues](#5-cross-app-issues) *(built after all apps)*
 
 ---
 
@@ -670,5 +671,310 @@ Cart and order line items should follow the same field naming:
 `product_id`, `quantity`, `price_at_add` (or `unit_price`).
 This makes cart-to-order conversion logic clean and symmetrical.
 Document this decision in `api_standards.md` under line item conventions.
+
+---
+
+
+## 4. Orders App Issues
+
+---
+
+### ISSUE-O01 — `placed_at` Duplicates `created_at` from `TimeStampedModel`
+
+**Severity:** 🟢 Low
+**Table:** `orders_order`
+
+**Problem:**
+`Order` extends `TimeStampedModel` which provides `created_at`
+with `auto_now_add=True`. The model also defines `placed_at` with
+`auto_now_add=True`. Both fields will always hold the exact same
+timestamp value — they are redundant. This adds an unnecessary
+column to the table and creates confusion about which field to
+use in queries and API responses.
+
+**Safe Migration Path:**
+```python
+# Option 1 — Remove placed_at, use created_at as the order timestamp:
+# Rename created_at → placed_at in API serializer output only
+# No schema change needed — just serializer field aliasing
+
+# Option 2 — Keep placed_at, stop extending TimeStampedModel:
+# If you want placed_at as the explicit business name, drop TimeStampedModel
+# and define only placed_at + updated_at manually
+# This is acceptable since Order has its own lifecycle timestamps anyway
+
+# Recommended: Option 1 — remove placed_at, alias created_at in serializer.
+# Migration: Remove the field — safe since it holds no unique data.
+# Run after verifying no existing queries reference placed_at directly.
+```
+
+---
+
+### ISSUE-O02 — `order_number` Has No Generation Strategy Defined
+
+**Severity:** 🔴 High
+**Table:** `orders_order`
+
+**Problem:**
+`order_number` is `unique` and required but has no `default` and no
+auto-generation logic in `save()` or the model. Nothing in the model
+defines how `MBP-20240001` format is generated. If the checkout view
+forgets to pass `order_number`, the database raises an `IntegrityError`
+with a confusing message. In concurrent checkouts, two requests could
+generate the same number before either saves.
+
+**Safe Migration Path:**
+```python
+# Add generation in Order.save() using date + zero-padded sequence:
+import uuid
+from django.utils import timezone
+
+def generate_order_number() -> str:
+    date_str = timezone.now().strftime("%Y%m%d")
+    unique_suffix = str(uuid.uuid4().int)[:6]
+    return f"MBP-{date_str}-{unique_suffix}"
+
+def save(self, *args, **kwargs) -> None:
+    if not self.order_number:
+        self.order_number = generate_order_number()
+    super().save(*args, **kwargs)
+
+# For guaranteed sequential numbers use a DB sequence:
+# CREATE SEQUENCE order_number_seq START 1000;
+# Then: SELECT nextval('order_number_seq') in a transaction
+# This is the safest approach for concurrent checkouts.
+# No migration needed for the UUID approach — logic only.
+```
+
+---
+
+### ISSUE-O03 — `total_price` Is Not Validated Against `subtotal + shipping_fee`
+
+**Severity:** 🟡 Medium
+**Table:** `orders_order`
+
+**Problem:**
+`subtotal`, `shipping_fee`, and `total_price` are all stored
+separately with no constraint or `clean()` validation that
+`total_price == subtotal + shipping_fee`. A bug in checkout logic
+could write an inconsistent record where these three values do not
+add up. Financial records with internal inconsistencies are
+extremely difficult to reconcile for COD accounting.
+
+**Safe Migration Path:**
+```python
+# Add clean() to Order model:
+from django.core.exceptions import ValidationError
+
+def clean(self) -> None:
+    expected_total = self.subtotal + self.shipping_fee
+    if self.total_price != expected_total:
+        raise ValidationError({
+            "total_price": _(
+                "total_price (%(total)s) must equal "
+                "subtotal (%(sub)s) + shipping_fee (%(ship)s)."
+            ) % {
+                "total": self.total_price,
+                "sub": self.subtotal,
+                "ship": self.shipping_fee,
+            }
+        })
+
+# Or derive total_price as a property and remove the stored field:
+# @property
+# def total_price(self) -> Decimal:
+#     return self.subtotal + self.shipping_fee
+# Removing stored total_price simplifies schema but loses queryability.
+# Recommended: Keep stored field + add clean() validation.
+# No migration required — clean() is Python-level only.
+```
+
+---
+
+### ISSUE-O04 — `OrderStatusLog.from_status` / `to_status` Are Free Text
+
+**Severity:** 🟡 Medium
+**Table:** `orders_orderstatuslog`
+
+**Problem:**
+`from_status` and `to_status` are plain `CharField` with no
+`choices` constraint. Any string can be written as a status value
+in the log including typos like `"shiped"` or `"cancled"`.
+This breaks audit trail integrity and makes log queries unreliable.
+The model docstring says it is an immutable audit trace — free text
+fields undermine that guarantee.
+
+**Safe Migration Path:**
+```python
+# Add choices matching Order.Status to both fields:
+from_status = models.CharField(
+    _("previous status"),
+    max_length=20,
+    choices=Order.Status.choices,   # reuse Order.Status enum
+)
+to_status = models.CharField(
+    _("new status"),
+    max_length=20,
+    choices=Order.Status.choices,
+)
+
+# Also add clean() to validate transition is not a no-op:
+def clean(self) -> None:
+    if self.from_status == self.to_status:
+        raise ValidationError(
+            "Status transition must be between two different statuses."
+        )
+
+# Migration: Safe — adding choices is metadata only, no DB constraint added.
+# No existing data affected.
+```
+
+---
+
+### ISSUE-O05 — No `refunded_at` Timestamp for Refund Lifecycle
+
+**Severity:** 🟡 Medium
+**Table:** `orders_order`
+
+**Problem:**
+`Order.Status` includes `REFUNDED` and `PaymentStatus` includes
+`REFUNDED` but there is no `refunded_at` timestamp field to record
+when the refund occurred. Every other major status transition has a
+dedicated timestamp (`confirmed_at`, `shipped_at`, `delivered_at`,
+`cancelled_at`) but refund — which is the most financially sensitive
+state — has none. This makes refund reconciliation and reporting
+impossible without parsing the `OrderStatusLog`.
+
+**Safe Migration Path:**
+```python
+# Add alongside other lifecycle timestamps in Order model:
+refunded_at = models.DateTimeField(
+    _("refunded at"),
+    null=True,
+    blank=True,
+)
+
+# Set it in the order status transition logic:
+# if new_status == Order.Status.REFUNDED:
+#     order.refunded_at = timezone.now()
+
+# Migration: Safe — nullable field, no existing data affected.
+# ALTER TABLE orders_order ADD COLUMN refunded_at TIMESTAMPTZ NULL;
+```
+
+---
+
+### ISSUE-O06 — `OrderItem.subtotal` Is Stored But Should Be Validated
+
+**Severity:** 🟡 Medium
+**Table:** `orders_orderitem`
+
+**Problem:**
+`OrderItem.subtotal` is stored as `unit_price × quantity` but there
+is no `clean()` or `save()` logic that enforces this calculation.
+A bug in checkout serializer could write `unit_price=500`,
+`quantity=2`, `subtotal=800` — mathematically wrong but accepted
+silently. Since these are financial snapshots used for accounting
+and COD reconciliation, silent corruption here is serious.
+
+**Safe Migration Path:**
+```python
+# Add clean() to OrderItem:
+def clean(self) -> None:
+    expected = self.unit_price * self.quantity
+    if self.subtotal != expected:
+        raise ValidationError({
+            "subtotal": _(
+                "subtotal (%(sub)s) must equal "
+                "unit_price (%(price)s) × quantity (%(qty)s)."
+            ) % {
+                "sub": self.subtotal,
+                "price": self.unit_price,
+                "qty": self.quantity,
+            }
+        })
+
+# Or compute and set in save() instead of accepting from caller:
+def save(self, *args, **kwargs) -> None:
+    self.subtotal = self.unit_price * self.quantity
+    super().save(*args, **kwargs)
+
+# Recommended: compute in save() — removes human error entirely.
+# No migration required — logic change only.
+```
+
+---
+
+### ISSUE-O07 — No Discount Amount Captured in Order Financial Snapshot
+
+**Severity:** 🟡 Medium
+**Table:** `orders_order` / `orders_orderitem`
+
+**Problem:**
+`OrderItem.unit_price` snapshots `product.current_price` which already
+applies the discount. But there is no record of what the original price
+was or how much discount was applied. For business reporting — total
+discounts given, discount impact on revenue — this data is permanently
+lost once the order is placed. Pakistani ecommerce businesses running
+seasonal promotions on Eid or Independence Day need this for analytics.
+
+**Safe Migration Path:**
+```python
+# Add to OrderItem model:
+original_price = models.DecimalField(
+    _("original price snapshot"),
+    max_digits=10,
+    decimal_places=2,
+    help_text=_("product.price at order time — before any discount.")
+)
+discount_amount = models.DecimalField(
+    _("discount amount"),
+    max_digits=10,
+    decimal_places=2,
+    default=0,
+    help_text=_("original_price - unit_price per unit.")
+)
+
+# At order placement:
+# item.original_price = product.price          (always the base price)
+# item.unit_price     = product.current_price  (after discount)
+# item.discount_amount = original_price - unit_price
+
+# Migration: Safe — new nullable fields, no existing data affected.
+```
+
+---
+
+### ISSUE-O08 — Cross-App Alignment: Cart-to-Order Conversion Pattern
+
+**Severity:** 🟡 Medium
+**Tables:** `cart_cartitem` ↔ `orders_orderitem`
+
+**Problem:**
+`CartItem` has no `price_at_add` snapshot (noted in ISSUE-C04).
+`OrderItem` has `unit_price` snapshot. When converting a cart to an
+order the checkout logic must use `product.current_price` at that
+exact moment — but if the price changed between cart-add and checkout,
+the user sees a different price than expected with no warning.
+The cart-to-order conversion has no defined atomicity boundary.
+
+**Recommendation:**
+```
+The entire cart-to-order conversion must run inside a single
+atomic transaction:
+
+  with transaction.atomic():
+    1. Lock all products via select_for_update()
+    2. Validate stock for each CartItem
+    3. Create Order record
+    4. Create OrderItem records — snapshot prices at this exact moment
+    5. Decrement product.stock for each item
+    6. Clear CartItems
+    7. Trigger confirmation email via Celery (outside transaction)
+
+This sequence must be implemented in the orders app checkout service.
+Defining it here ensures cart and orders apps are aligned on the
+conversion contract before implementation begins.
+```
 
 ---

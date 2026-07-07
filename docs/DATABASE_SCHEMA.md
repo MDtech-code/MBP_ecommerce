@@ -13,7 +13,9 @@
 1. [Accounts App](#1-accounts-app) ✅
 2. [Products App](#2-products-app) ✅
 3. [Cart App](#3-cart-app) ✅
-4. [Cross-App Relationships](#cross-app-relationships) *(built after all apps)*
+4. [Orders App](#4-orders-app) ✅
+5. [Cross-App Relationships](#5-cross-app-relationships) *(built after all apps)*
+
 
 ---
 
@@ -512,5 +514,194 @@ quantity at the view layer rather than inserting a duplicate row.
 | Property | Returns | Notes |
 |---|---|---|
 | `subtotal` | `Decimal` | `product.current_price × quantity`. Requires `select_related('product')` |
+
+---
+
+
+---
+
+## 4. Orders App
+
+**App Label:** `orders`
+**Purpose:** Manages customer orders from placement through delivery.
+Captures full address and pricing snapshots at order time to protect
+historical accuracy against future data changes. Tracks order lifecycle
+via status timestamps and an immutable audit log.
+**Status:** 🟡 Not Yet Migrated — schema changes are low risk
+
+---
+
+### 4.1 `orders_order`
+
+Core order record. Created from cart contents at checkout.
+Stores a full snapshot of shipping address and financial totals
+at the moment of order placement. Live product/user data changes
+do not affect historical order records.
+
+| Column | Django Field | DB Type | Constraints | Default | Notes |
+|---|---|---|---|---|---|
+| `id` | `AutoField` (PK) | `BIGINT` | `PK`, `NOT NULL`, `AUTO INCREMENT` | Auto | — |
+| `user_id` | `ForeignKey → User` | `BIGINT` | `NOT NULL`, `FK`, `INDEX` | — | `PROTECT` on delete — user cannot be deleted while orders exist |
+| `order_number` | `CharField(20)` | `VARCHAR(20)` | `UNIQUE`, `NOT NULL`, `INDEX` | — | Human-readable order reference e.g. `MBP-20240001` |
+| `status` | `CharField(20)` | `VARCHAR(20)` | `NOT NULL` | `'pending'` | See Order Status choices below |
+| `payment_method` | `CharField(20)` | `VARCHAR(20)` | `NOT NULL` | — | See Payment Method choices below |
+| `payment_status` | `CharField(20)` | `VARCHAR(20)` | `NOT NULL` | `'pending'` | See Payment Status choices below |
+| `subtotal` | `DecimalField(10,2)` | `NUMERIC(10,2)` | `NOT NULL` | — | Sum of all line item subtotals before shipping |
+| `shipping_fee` | `DecimalField(10,2)` | `NUMERIC(10,2)` | `NOT NULL` | `0` | Shipping cost added at checkout |
+| `total_price` | `DecimalField(10,2)` | `NUMERIC(10,2)` | `NOT NULL` | — | `subtotal + shipping_fee` |
+| `shipping_full_name` | `CharField(255)` | `VARCHAR(255)` | `NOT NULL` | — | Recipient name snapshot |
+| `shipping_phone` | `CharField(15)` | `VARCHAR(15)` | `NOT NULL` | — | Recipient phone snapshot |
+| `shipping_address_line1` | `CharField(255)` | `VARCHAR(255)` | `NOT NULL` | — | Street address snapshot |
+| `shipping_address_line2` | `CharField(255)` | `VARCHAR(255)` | `NOT NULL` | `''` | Apartment / floor snapshot |
+| `shipping_city` | `CharField(100)` | `VARCHAR(100)` | `NOT NULL` | — | City snapshot |
+| `shipping_province` | `CharField(2)` | `VARCHAR(2)` | `NOT NULL` | — | Province code snapshot. Same choices as `accounts_userprofile.province` |
+| `shipping_postal_code` | `CharField(10)` | `VARCHAR(10)` | `NOT NULL` | — | Postal code snapshot |
+| `notes` | `TextField` | `TEXT` | `NOT NULL` | `''` | Customer delivery instructions |
+| `placed_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now_add` | Order submission timestamp |
+| `confirmed_at` | `DateTimeField` | `TIMESTAMPTZ` | `NULL` | `NULL` | Set when status → `confirmed` |
+| `shipped_at` | `DateTimeField` | `TIMESTAMPTZ` | `NULL` | `NULL` | Set when status → `shipped` |
+| `delivered_at` | `DateTimeField` | `TIMESTAMPTZ` | `NULL` | `NULL` | Set when status → `delivered` |
+| `cancelled_at` | `DateTimeField` | `TIMESTAMPTZ` | `NULL` | `NULL` | Set when status → `cancelled` |
+| `created_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now_add` | From `TimeStampedModel` |
+| `updated_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now` | From `TimeStampedModel` |
+
+> **Note on `placed_at` vs `created_at`:** Both are `auto_now_add`.
+> `placed_at` is the business-facing order timestamp shown to customers.
+> `created_at` is the technical record creation timestamp from `TimeStampedModel`.
+> These will always hold the same value — see ISSUE-O01 in SCHEMA_ISSUES.md.
+
+**Indexes:**
+
+| Index Name | Column(s) | Type |
+|---|---|---|
+| `orders_order_order_number_idx` | `order_number` | `UNIQUE BTREE` |
+| `orders_order_user_idx` | `user_id` | `BTREE` |
+| `orders_order_status_idx` | `status` | `BTREE` |
+| `orders_order_placed_at_idx` | `placed_at` | `BTREE` |
+
+**Order Status Choices:**
+
+| Display | DB Value | Timestamp Field Set |
+|---|---|---|
+| Pending | `pending` | `placed_at` |
+| Confirmed | `confirmed` | `confirmed_at` |
+| Processing | `processing` | — |
+| Shipped | `shipped` | `shipped_at` |
+| Delivered | `delivered` | `delivered_at` |
+| Cancelled | `cancelled` | `cancelled_at` |
+| Refunded | `refunded` | — |
+
+**Payment Method Choices:**
+
+| Display | DB Value |
+|---|---|
+| Cash on Delivery | `cash_on_delivery` |
+| Bank Transfer | `bank_transfer` |
+
+**Payment Status Choices:**
+
+| Display | DB Value |
+|---|---|
+| Pending | `pending` |
+| Paid | `paid` |
+| Failed | `failed` |
+| Refunded | `refunded` |
+
+**Relationships:**
+
+| Relation | Type | On Delete |
+|---|---|---|
+| `orders_order` → `accounts_user` | Many-to-One | `PROTECT` |
+| `orders_order` → `orders_orderitem` | One-to-Many | `CASCADE` |
+| `orders_order` → `orders_orderstatuslog` | One-to-Many | `CASCADE` |
+
+---
+
+### 4.2 `orders_orderitem`
+
+Individual product line within an order. Fully snapshotted at order
+placement time — product name, SKU, and unit price are copied from
+the live product so historical orders remain accurate even if the
+product is later renamed, repriced, or deleted.
+
+| Column | Django Field | DB Type | Constraints | Default | Notes |
+|---|---|---|---|---|---|
+| `id` | `AutoField` (PK) | `BIGINT` | `PK`, `NOT NULL`, `AUTO INCREMENT` | Auto | — |
+| `order_id` | `ForeignKey → Order` | `BIGINT` | `NOT NULL`, `FK`, `INDEX` | — | `CASCADE` on delete |
+| `product_id` | `ForeignKey → Product` | `BIGINT` | `NOT NULL`, `FK`, `INDEX` | — | `PROTECT` on delete — product cannot be hard deleted while in orders |
+| `product_name` | `CharField(255)` | `VARCHAR(255)` | `NOT NULL` | — | Product name snapshot at order time |
+| `product_sku` | `CharField(50)` | `VARCHAR(50)` | `NOT NULL` | — | SKU snapshot at order time |
+| `unit_price` | `DecimalField(10,2)` | `NUMERIC(10,2)` | `NOT NULL` | — | Price per unit snapshot at order time |
+| `quantity` | `PositiveIntegerField` | `INTEGER` | `NOT NULL` | — | Units ordered |
+| `subtotal` | `DecimalField(10,2)` | `NUMERIC(10,2)` | `NOT NULL` | — | `unit_price × quantity` — snapshotted at order time |
+| `created_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now_add` | From `TimeStampedModel` |
+| `updated_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now` | From `TimeStampedModel` |
+
+**Indexes:**
+
+| Index Name | Column(s) | Type |
+|---|---|---|
+| `orders_orderitem_order_idx` | `order_id` | `BTREE` |
+| `orders_orderitem_product_idx` | `product_id` | `BTREE` |
+
+**Relationships:**
+
+| Relation | Type | On Delete |
+|---|---|---|
+| `orders_orderitem` → `orders_order` | Many-to-One | `CASCADE` |
+| `orders_orderitem` → `products_product` | Many-to-One | `PROTECT` |
+
+**Snapshot Strategy:**
+
+```
+At order placement:
+  product_name  ← product.name
+  product_sku   ← product.sku
+  unit_price    ← product.current_price   (discount_price if active, else price)
+  subtotal      ← unit_price × quantity
+```
+
+> Once written these snapshot fields must never be updated.
+> They represent the exact state of the transaction at purchase time.
+
+---
+
+### 4.3 `orders_orderstatuslog`
+
+Immutable audit trail of every order status transition.
+Records who made the change, when, and optionally why.
+Rows are never updated or deleted — append-only by design.
+
+| Column | Django Field | DB Type | Constraints | Default | Notes |
+|---|---|---|---|---|---|
+| `id` | `AutoField` (PK) | `BIGINT` | `PK`, `NOT NULL`, `AUTO INCREMENT` | Auto | — |
+| `order_id` | `ForeignKey → Order` | `BIGINT` | `NOT NULL`, `FK`, `INDEX` | — | `CASCADE` on delete |
+| `from_status` | `CharField(20)` | `VARCHAR(20)` | `NOT NULL` | — | Status before transition |
+| `to_status` | `CharField(20)` | `VARCHAR(20)` | `NOT NULL` | — | Status after transition |
+| `changed_by_id` | `ForeignKey → User` | `BIGINT` | `NULL`, `FK`, `INDEX` | `NULL` | `SET NULL` on delete — preserve log even if admin user deleted |
+| `note` | `TextField` | `TEXT` | `NOT NULL` | `''` | Internal trace note — reason for transition |
+| `created_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now_add` | Transition timestamp — immutable |
+
+**Indexes:**
+
+| Index Name | Column(s) | Type |
+|---|---|---|
+| `orders_orderstatuslog_order_idx` | `order_id` | `BTREE` |
+| `orders_orderstatuslog_changed_by_idx` | `changed_by_id` | `BTREE` |
+
+**Relationships:**
+
+| Relation | Type | On Delete |
+|---|---|---|
+| `orders_orderstatuslog` → `orders_order` | Many-to-One | `CASCADE` |
+| `orders_orderstatuslog` → `accounts_user` | Many-to-One | `SET NULL` |
+
+**Immutability Rules:**
+```
+- Rows are INSERT only — no UPDATE, no DELETE
+- No updated_at field — intentional, this model does not extend TimeStampedModel
+- from_status + to_status must use valid Order.Status values
+- Enforced at application layer — no DB trigger required at this scale
+```
 
 ---
