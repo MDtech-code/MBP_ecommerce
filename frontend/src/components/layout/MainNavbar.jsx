@@ -15,12 +15,13 @@ return (
 
 <div className="hidden lg:flex items-center gap-7 font-semibold">
 
-<a className="text-primary">Home</a>
-<a className="flex items-center gap-1">Bike Parts<ChevronDown size={15}/></a>
-<a className="flex items-center gap-1">Accessories<ChevronDown size={15}/></a>
-<a>Brands</a>
-<a >Offers</a>
-<a>Contact Us</a>
+
+<Link to='/' className="text-primary">Home</Link>
+<a className="flex items-center gap-1 link">Bike Parts<ChevronDown size={15}/></a>
+<a className="flex items-center gap-1 link">Accessories<ChevronDown size={15}/></a>
+<a className="link">Brands</a>
+<a className="link" >Offers</a>
+<a className="link">Contact Us</a>
 </div>
 {/* Search */}
 
@@ -33,10 +34,7 @@ return (
 
 <div className="flex gap-6 items-center">
       {/* Account */}
-      {/* <div className="flex items-center gap-1 font-semibold">
-        <User className="w-5 h-5" />
-        <span>Account</span>
-      </div> */}
+      
       <Link
   to="/register"
   className="flex items-center gap-1 font-semibold hover:text-primary transition-colors"

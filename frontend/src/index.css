@@ -1,6 +1,11 @@
 @import "tailwindcss";
 
 
+
+.link {
+  @apply text-dark hover:text-primary active:text-primary;
+}
+
 @theme {
 
     --color-primary: #DC2626;
@@ -35,3 +40,4 @@ body {
     background: white;
 
 }
+
