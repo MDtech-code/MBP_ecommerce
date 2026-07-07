@@ -15,7 +15,6 @@
 
 ## Table of Contents
 
-
 1. [Accounts App Issues](#1-accounts-app-issues) ✅
 2. [Products App Issues](#2-products-app-issues) ✅
 3. [Cart App Issues](#3-cart-app-issues) ✅
@@ -25,7 +24,9 @@
 7. [Coupons App Issues](#7-coupons-app-issues) ✅
 8. [Payments App Issues](#8-payments-app-issues) ✅
 9. [Notifications App Issues](#9-notifications-app-issues) ✅
-10. [Cross-App Issues](#10-cross-app-issues) *(built after all apps)*
+10. [Logistics App Issues](#10-logistics-app-issues) ✅
+11. [Analytics App Issues](#11-analytics-app-issues) ✅
+12. [Cross-App Issues](#12-cross-app-issues) *(built after all apps)*
 
 ---
 
@@ -2235,6 +2236,332 @@ max_retries = models.PositiveSmallIntegerField(
 # notification.retry_count += 1
 # notification.save(update_fields=["retry_count"])
 # raise self.retry(countdown=2 ** notification.retry_count)
+
+# Migration: Safe — not yet migrated. Add before first migrate run.
+```
+
+---
+
+
+## 10. Logistics App Issues
+
+---
+
+### ISSUE-LOG01 — `Shipment.order_id` Is a String Not a Real FK
+
+**Severity:** 🔴 High
+**Table:** `logistics_shipment`
+
+**Problem:**
+`order_id` is `CharField(100)` — the fifth and final occurrence
+of this soft-reference anti-pattern across the codebase.
+Full occurrence map:
+- `coupons_couponusage.order_id` — ISSUE-CPN03
+- `payments_paymenttransaction.order_id` — ISSUE-PAY01
+- `notifications_whatsappcodverification.order_id` — ISSUE-NOTIF03
+- `logistics_shipment.order_id` — this issue
+
+Every app that touches an order uses a string reference instead
+of a FK. One order cannot answer "what is my shipment?" with
+a proper ORM join — it requires a raw string match with no
+integrity guarantee.
+
+**Safe Migration Path:**
+```python
+# Replace CharField with OneToOneField — unique=True already set:
+from apps.orders.models import Order
+
+order = models.OneToOneField(
+    Order,
+    on_delete=models.PROTECT,
+    related_name="shipment",
+    verbose_name=_("order"),
+)
+
+# OneToOneField is correct — one shipment per order is the business rule.
+# PROTECT prevents order deletion while shipment record exists.
+# Access pattern becomes clean:
+#   order.shipment          → Shipment instance
+#   shipment.order          → Order instance
+#   shipment.order.user     → Customer
+
+# Migration: Safe — not yet migrated. Add before first migrate run.
+```
+
+---
+
+### ISSUE-LOG02 — `CourierSettlement` Financial Invariant Not Validated
+
+**Severity:** 🟡 Medium
+**Table:** `logistics_couriersettlement`
+
+**Problem:**
+`net_payout_received` should always equal
+`total_cod_collected - total_shipping_deducted` but there is no
+`clean()` or `save()` logic enforcing this. A data entry error
+or courier remittance discrepancy can be silently written as a
+valid record. For COD business reconciliation where every rupee
+must be accountable, silent financial inconsistency is serious.
+
+**Safe Migration Path:**
+```python
+# Add clean() to CourierSettlement:
+def clean(self) -> None:
+    expected = self.total_cod_collected - self.total_shipping_deducted
+    if self.net_payout_received != expected:
+        raise ValidationError({
+            "net_payout_received": _(
+                "net_payout_received (%(net)s) must equal "
+                "total_cod_collected (%(cod)s) minus "
+                "total_shipping_deducted (%(ship)s)."
+            ) % {
+                "net": self.net_payout_received,
+                "cod": self.total_cod_collected,
+                "ship": self.total_shipping_deducted,
+            }
+        })
+
+# Or compute net_payout_received automatically in save():
+def save(self, *args, **kwargs) -> None:
+    self.net_payout_received = (
+        self.total_cod_collected - self.total_shipping_deducted
+    )
+    super().save(*args, **kwargs)
+
+# Recommended: compute in save() — removes human error entirely.
+# No migration required — logic change only.
+```
+
+---
+
+### ISSUE-LOG03 — `CourierPartner` Enum Defined in `logistics` but Used in `analytics`
+
+**Severity:** 🟡 Medium
+**Tables:** `logistics_shipment`, `analytics_courierperformancemetric`
+
+**Problem:**
+`CourierPartner` is a module-level `TextChoices` class defined in
+`apps/logistics/models.py`. The `analytics` app imports it directly
+from there. This creates a hard dependency from `analytics` on
+`logistics` at the model import level. If `logistics` is ever
+refactored, renamed, or split, `analytics` breaks silently.
+Additionally `payments_webhooklog.gateway` (ISSUE-PAY03) needs
+the same courier names for webhook source identification —
+three apps now share courier name strings with no single
+source of truth.
+
+**Safe Migration Path:**
+```python
+# Move CourierPartner to shared choices module:
+# apps/common/choices/courier.py
+
+class CourierPartner(models.TextChoices):
+    POSTEX = 'POSTEX', _('PostEx')
+    TCS = 'TCS', _('TCS Courier')
+    LEOPARDS = 'LEOPARDS', _('Leopards Courier')
+    TRAX = 'TRAX', _('Trax Logistics')
+    INSTAWORLD = 'INSTAWORLD', _('InstaWorld')
+    MOVEX = 'MOVEX', _('Movex')
+    SELF_DELIVERY = 'SELF_DELIVERY', _('In-House Fleet')
+
+# Then import in all apps from one place:
+# from apps.common.choices.courier import CourierPartner
+
+# Migration: Safe — TextChoices is not a DB table.
+# No DB change required — only import path changes.
+```
+
+---
+
+### ISSUE-LOG04 — `Shipment` Has No Link Back to `PaymentTransaction`
+
+**Severity:** 🟡 Medium
+**Tables:** `logistics_shipment` ↔ `payments_paymenttransaction`
+
+**Problem:**
+For COD orders the `cod_amount` on `Shipment` must match the
+`amount_pkr` on the corresponding `PaymentTransaction`. There is
+no FK or validation linking them. A COD amount mismatch between
+shipment and payment records produces incorrect settlement
+reconciliation — courier remits one amount while payment records
+show another with no automatic detection of the discrepancy.
+
+**Recommendation:**
+```python
+# At shipment creation in the booking service — enforce alignment:
+with transaction.atomic():
+    order = Order.objects.select_for_update().get(pk=order_id)
+    payment_txn = order.payment_transactions.filter(
+        status=PaymentTransaction.Status.PENDING,
+        gateway=PaymentTransaction.Gateway.COD,
+    ).latest("created_at")
+
+    shipment = Shipment.objects.create(
+        order=order,
+        cod_amount=order.total_price,   # always derive from order
+        ...
+    )
+    # Never accept cod_amount from external input — always derive
+    # from order.total_price to prevent tampering.
+
+# Document this invariant in api_standards.md under shipment creation rules.
+```
+
+---
+
+### ISSUE-LOG05 — `Shipment.actual_delivery_date` Type Mismatch with `estimated_delivery_date`
+
+**Severity:** 🟢 Low
+**Table:** `logistics_shipment`
+
+**Problem:**
+`estimated_delivery_date` is `DateField` (date only — no time).
+`actual_delivery_date` is `DateTimeField` (date + time).
+This asymmetry is intentional — estimates are day-level, actuals
+are precise timestamps. However it makes date comparison queries
+awkward — you cannot directly compare `estimated_delivery_date`
+against `actual_delivery_date` without casting. Analytics queries
+measuring on-time delivery rate will require explicit `DATE()` casts.
+
+**Recommendation:**
+```sql
+-- On-time delivery query requires explicit cast:
+SELECT COUNT(*) FROM logistics_shipment
+WHERE DATE(actual_delivery_date) <= estimated_delivery_date
+AND status = 'DELIVERED';
+
+-- Document this cast pattern in analytics Celery task comments
+-- so future developers do not write incorrect comparisons.
+-- No schema change required — asymmetry is acceptable and intentional.
+```
+
+---
+
+## 11. Analytics App Issues
+
+---
+
+### ISSUE-ANA01 — `DailySalesSnapshot` Has No Validation of Internal Metric Consistency
+
+**Severity:** 🟡 Medium
+**Table:** `analytics_dailysalessnapshot`
+
+**Problem:**
+Several fields must logically be consistent with each other:
+- `cod_orders_count + prepaid_orders_count` should equal `total_orders`
+- `rto_orders_count` cannot exceed `total_orders`
+- `net_revenue_pkr` should be less than or equal to `total_gmv_pkr`
+
+None of these relationships are validated. A buggy Celery aggregation
+task can write inconsistent snapshots that silently corrupt the
+analytics dashboard. Business decisions made on bad dashboard
+data are the most expensive kind of data integrity failure.
+
+**Safe Migration Path:**
+```python
+# Add clean() to DailySalesSnapshot:
+def clean(self) -> None:
+    if self.cod_orders_count + self.prepaid_orders_count != self.total_orders:
+        raise ValidationError(
+            "cod_orders_count + prepaid_orders_count must equal total_orders."
+        )
+    if self.rto_orders_count > self.total_orders:
+        raise ValidationError(
+            "rto_orders_count cannot exceed total_orders."
+        )
+    if self.net_revenue_pkr > self.total_gmv_pkr:
+        raise ValidationError(
+            "net_revenue_pkr cannot exceed total_gmv_pkr."
+        )
+
+# Call full_clean() in the Celery aggregation task before saving:
+# snapshot.full_clean()
+# snapshot.save()
+# This ensures bad aggregation data is caught at write time
+# not discovered weeks later during financial review.
+# No migration required — Python-level validation only.
+```
+
+---
+
+### ISSUE-ANA02 — `CourierPerformanceMetric.month_year` Is a String Not a Date
+
+**Severity:** 🟡 Medium
+**Table:** `analytics_courierperformancemetric`
+
+**Problem:**
+`month_year` is `CharField(7)` storing `"YYYY-MM"` format strings.
+This means:
+- No DB-level date validation — `"2026-99"` or `"abcd-ef"` accepted
+- Sorting by `month_year` works only because `YYYY-MM` is
+  lexicographically sortable — fragile and undocumented
+- Range queries like "last 6 months" require string manipulation
+  instead of proper date arithmetic
+- No `unique_together` includes a date type so PostgreSQL cannot
+  use date-range index optimisation
+
+**Safe Migration Path:**
+```python
+# Replace CharField with DateField storing first day of the month:
+month_year = models.DateField(
+    _("month"),
+    help_text=_("First day of the month this metric covers. e.g. 2026-07-01")
+)
+
+# Query patterns become clean date arithmetic:
+# last_6_months = CourierPerformanceMetric.objects.filter(
+#     month_year__gte=date.today().replace(day=1) - relativedelta(months=6)
+# )
+
+# Update unique_together to use the new DateField:
+class Meta:
+    unique_together = ('courier', 'city', 'month_year')
+
+# Migration: Safe — not yet migrated. Apply before first migrate run.
+```
+
+---
+
+### ISSUE-ANA03 — No Snapshot Versioning or Regeneration Audit
+
+**Severity:** 🟢 Low
+**Table:** `analytics_dailysalessnapshot`
+
+**Problem:**
+`DailySalesSnapshot` uses `update_or_create` so snapshots can be
+regenerated. But there is no field tracking how many times a
+snapshot was regenerated, when it was last recalculated, or
+whether it represents final or provisional data. A snapshot
+generated at midnight may be recalculated at noon the next day
+after late-arriving courier webhook data updates RTO counts.
+Without a regeneration counter, there is no audit trail of
+how many times a day's numbers changed.
+
+**Safe Migration Path:**
+```python
+# Add regeneration tracking fields:
+regeneration_count = models.PositiveSmallIntegerField(
+    _("regeneration count"),
+    default=0,
+    help_text=_("Number of times this snapshot was recalculated.")
+)
+is_finalised = models.BooleanField(
+    _("is finalised"),
+    default=False,
+    help_text=_(
+        "TRUE after the 48-hour RTO settlement window closes "
+        "and numbers are considered final."
+    )
+)
+
+# Celery task increments regeneration_count on each update_or_create:
+# DailySalesSnapshot.objects.update_or_create(
+#     date=target_date,
+#     defaults={
+#         ...metrics...,
+#         "regeneration_count": F("regeneration_count") + 1,
+#     }
+# )
 
 # Migration: Safe — not yet migrated. Add before first migrate run.
 ```

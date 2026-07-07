@@ -10,6 +10,8 @@
 
 ## Table of Contents
 
+## Table of Contents
+
 1. [Accounts App](#1-accounts-app) ✅
 2. [Products App](#2-products-app) ✅
 3. [Cart App](#3-cart-app) ✅
@@ -19,7 +21,10 @@
 7. [Coupons App](#7-coupons-app) ✅
 8. [Payments App](#8-payments-app) ✅
 9. [Notifications App](#9-notifications-app) ✅
-10. [Cross-App Relationships](#10-cross-app-relationships) *(built after all apps)*## 9. Notifications App
+10. [Logistics App](#10-logistics-app) ✅
+11. [Analytics App](#11-analytics-app) ✅
+12. [Cross-App Relationships](#12-cross-app-relationships) *(built after all apps)*
+
 
 **App Label:** `notifications`
 **Purpose:** Manages outbound customer notifications across WhatsApp,
@@ -1222,3 +1227,252 @@ and post-incident debugging. Rows are never updated or deleted.
 
 ---
 
+---
+
+## 10. Logistics App
+
+**App Label:** `logistics`
+**Purpose:** Manages outbound shipments from warehouse to customer across
+multiple Pakistani courier partners. Tracks full shipment lifecycle
+including RTO and loss events. Handles COD financial reconciliation
+via courier settlement records. `CourierPartner` is a shared enum
+imported by the analytics app.
+**Status:** 🟡 Not Yet Migrated — schema changes are low risk
+
+---
+
+### Shared Enum — `CourierPartner`
+
+Defined as a module-level `TextChoices` class in `logistics/models.py`.
+Not a DB table — imported directly by `Shipment`, `CourierSettlement`,
+and `analytics.CourierPerformanceMetric`.
+
+| Display | DB Value |
+|---|---|
+| PostEx | `POSTEX` |
+| TCS Courier | `TCS` |
+| Leopards Courier | `LEOPARDS` |
+| Trax Logistics | `TRAX` |
+| InstaWorld | `INSTAWORLD` |
+| Movex | `MOVEX` |
+| In-House Fleet | `SELF_DELIVERY` |
+
+> **Architectural Note:** `CourierPartner` is a plain `TextChoices`
+> class — not a Django model. It produces no DB table. It is a shared
+> enum imported across `logistics` and `analytics` apps.
+> See ISSUE-LOG03 for centralisation recommendation.
+
+---
+
+### 10.1 `logistics_shipment`
+
+A single physical shipment for an order dispatched via a courier
+partner. One shipment per order enforced via `unique=True` on
+`order_id`. Tracks full courier lifecycle from label creation
+through delivery or RTO. Stores raw courier API response for
+debugging and webhook reconciliation.
+
+| Column | Django Field | DB Type | Constraints | Default | Notes |
+|---|---|---|---|---|---|
+| `id` | `AutoField` (PK) | `BIGINT` | `PK`, `NOT NULL`, `AUTO INCREMENT` | Auto | — |
+| `order_id` | `CharField(100)` | `VARCHAR(100)` | `UNIQUE`, `NOT NULL`, `INDEX` | — | Soft reference to `orders_order`. See ISSUE-LOG01 |
+| `courier` | `CharField(20)` | `VARCHAR(20)` | `NOT NULL` | — | See `CourierPartner` enum above |
+| `tracking_number` | `CharField(100)` | `VARCHAR(100)` | `UNIQUE`, `NOT NULL`, `INDEX` | — | Airway Bill (AWB) number assigned by courier |
+| `status` | `CharField(25)` | `VARCHAR(25)` | `NOT NULL`, `INDEX` | `'LABEL_CREATED'` | See Shipment Status choices below |
+| `is_cod` | `BooleanField` | `BOOLEAN` | `NOT NULL` | `TRUE` | COD flag — determines if courier collects cash on delivery |
+| `cod_amount` | `DecimalField(10,2)` | `NUMERIC(10,2)` | `NOT NULL` | `0.00` | PKR amount courier must collect. `0.00` for prepaid orders |
+| `shipping_cost_pkr` | `DecimalField(8,2)` | `NUMERIC(8,2)` | `NOT NULL` | — | Courier fee charged to seller per shipment |
+| `destination_city` | `CharField(100)` | `VARCHAR(100)` | `NOT NULL`, `INDEX` | — | Delivery city e.g. `Lahore`, `Karachi`, `Rawalpindi` |
+| `weight_kg` | `DecimalField(5,2)` | `NUMERIC(5,2)` | `NOT NULL` | `0.50` | Parcel weight. Used for courier rate calculation |
+| `estimated_delivery_date` | `DateField` | `DATE` | `NULL` | `NULL` | Courier-provided estimated delivery date |
+| `actual_delivery_date` | `DateTimeField` | `TIMESTAMPTZ` | `NULL` | `NULL` | Confirmed delivery timestamp from courier webhook |
+| `raw_courier_response` | `JSONField` | `JSONB` | `NULL` | `NULL` | Raw courier API booking response for debugging |
+| `created_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now_add` | From `TimeStampedModel` |
+| `updated_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now` | From `TimeStampedModel` |
+
+**Indexes:**
+
+| Index Name | Column(s) | Type |
+|---|---|---|
+| `logistics_shipment_order_idx` | `order_id` | `UNIQUE BTREE` |
+| `logistics_shipment_tracking_idx` | `tracking_number` | `UNIQUE BTREE` |
+| `logistics_shipment_status_idx` | `status` | `BTREE` |
+| `logistics_shipment_courier_status_idx` | `courier`, `status` | `BTREE` |
+| `logistics_shipment_city_status_idx` | `destination_city`, `status` | `BTREE` |
+
+**Shipment Status Choices:**
+
+| Display | DB Value | Notes |
+|---|---|---|
+| Label Created / Booked | `LABEL_CREATED` | Initial state after courier booking API call |
+| Picked Up by Courier | `PICKED_UP` | Courier collected parcel from warehouse |
+| In Transit | `IN_TRANSIT` | Parcel moving between courier hubs |
+| Out for Delivery | `OUT_FOR_DELIVERY` | Last-mile rider dispatched |
+| Delivered | `DELIVERED` | Successfully delivered to customer |
+| Return Requested | `RETURN_REQUESTED` | Customer or courier initiated return |
+| Returned to Origin (In Transit) | `RTO_IN_TRANSIT` | Parcel returning to seller |
+| Returned to Seller Warehouse | `RTO_DELIVERED` | RTO completed — parcel back at warehouse |
+| Lost in Transit | `LOST` | Parcel confirmed lost by courier |
+
+**Relationships:**
+
+| Relation | Type | On Delete |
+|---|---|---|
+| `logistics_shipment` → `orders_order` | Soft reference via `order_id` string | See ISSUE-LOG01 |
+| `logistics_shipment` ↔ `logistics_couriersettlement` | Many-to-Many | Via junction table |
+
+---
+
+### 10.2 `logistics_couriersettlement`
+
+Reconciles COD cash deposits received from courier partners
+against delivered orders. Tracks the full financial lifecycle
+of COD revenue — from courier collection to seller bank account.
+Links to all `Shipment` records included in the settlement batch.
+
+| Column | Django Field | DB Type | Constraints | Default | Notes |
+|---|---|---|---|---|---|
+| `id` | `AutoField` (PK) | `BIGINT` | `PK`, `NOT NULL`, `AUTO INCREMENT` | Auto | — |
+| `courier` | `CharField(20)` | `VARCHAR(20)` | `NOT NULL` | — | See `CourierPartner` enum above |
+| `settlement_reference` | `CharField(100)` | `VARCHAR(100)` | `UNIQUE`, `NOT NULL` | — | Bank transfer ID or courier advice number |
+| `total_cod_collected` | `DecimalField(12,2)` | `NUMERIC(12,2)` | `NOT NULL` | — | Total PKR collected from customers by courier |
+| `total_shipping_deducted` | `DecimalField(10,2)` | `NUMERIC(10,2)` | `NOT NULL` | — | Courier shipping fees deducted from COD remittance |
+| `net_payout_received` | `DecimalField(12,2)` | `NUMERIC(12,2)` | `NOT NULL` | — | Actual PKR deposited to seller bank account |
+| `payout_date` | `DateField` | `DATE` | `NOT NULL` | — | Date bank deposit was received |
+| `is_reconciled` | `BooleanField` | `BOOLEAN` | `NOT NULL` | `FALSE` | `TRUE` after amounts verified against bank statement |
+| `created_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now_add` | From `TimeStampedModel` |
+| `updated_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now` | From `TimeStampedModel` |
+
+**Indexes:**
+
+| Index Name | Column(s) | Type |
+|---|---|---|
+| `logistics_settlement_ref_idx` | `settlement_reference` | `UNIQUE BTREE` |
+| `logistics_settlement_courier_idx` | `courier` | `BTREE` |
+| `logistics_settlement_payout_date_idx` | `payout_date` | `BTREE` |
+
+**Junction Table — `logistics_couriersettlement_shipments_included`:**
+
+| Column | DB Type | Constraints |
+|---|---|---|
+| `id` | `BIGINT` | `PK`, `NOT NULL` |
+| `couriersettlement_id` | `BIGINT` | `FK → logistics_couriersettlement`, `NOT NULL`, `INDEX` |
+| `shipment_id` | `BIGINT` | `FK → logistics_shipment`, `NOT NULL`, `INDEX` |
+
+> Auto-generated by Django for `shipments_included` ManyToManyField.
+> Pair `(couriersettlement_id, shipment_id)` is implicitly unique.
+
+**Settlement Financial Validation** *(enforced at application layer)*:
+
+```
+Expected invariant:
+  net_payout_received == total_cod_collected - total_shipping_deducted
+
+Reconciliation flow:
+  Settlement received from courier
+  → create CourierSettlement record (is_reconciled=FALSE)
+  → attach all Shipment records in this batch
+  → verify net_payout_received matches bank statement
+  → set is_reconciled=TRUE
+```
+
+**Relationships:**
+
+| Relation | Type | On Delete |
+|---|---|---|
+| `logistics_couriersettlement` ↔ `logistics_shipment` | Many-to-Many | Via junction table |
+
+---
+
+## 11. Analytics App
+
+**App Label:** `analytics`
+**Purpose:** Stores pre-aggregated daily sales metrics and per-courier
+performance metrics generated by nightly Celery jobs. Designed to
+serve dashboard queries without touching live production order tables.
+Depends on `logistics.CourierPartner` enum for courier choices.
+**Status:** 🟡 Not Yet Migrated — schema changes are low risk
+
+---
+
+### 11.1 `analytics_dailysalessnapshot`
+
+Pre-aggregated daily business metrics. One record per calendar day
+enforced via `unique=True` on `date`. Generated by a nightly
+Celery beat task that aggregates from `orders_order`,
+`payments_paymenttransaction`, and `logistics_shipment` tables.
+
+| Column | Django Field | DB Type | Constraints | Default | Notes |
+|---|---|---|---|---|---|
+| `id` | `AutoField` (PK) | `BIGINT` | `PK`, `NOT NULL`, `AUTO INCREMENT` | Auto | — |
+| `date` | `DateField` | `DATE` | `UNIQUE`, `NOT NULL`, `INDEX` | — | Calendar date this snapshot covers |
+| `total_orders` | `PositiveIntegerField` | `INTEGER` | `NOT NULL` | `0` | Total orders placed on this date |
+| `total_gmv_pkr` | `DecimalField(14,2)` | `NUMERIC(14,2)` | `NOT NULL` | `0.00` | Gross Merchandise Value — sum of all order totals |
+| `net_revenue_pkr` | `DecimalField(14,2)` | `NUMERIC(14,2)` | `NOT NULL` | `0.00` | GMV minus discounts, refunds, and RTO losses |
+| `cod_orders_count` | `PositiveIntegerField` | `INTEGER` | `NOT NULL` | `0` | Orders paid via Cash on Delivery |
+| `prepaid_orders_count` | `PositiveIntegerField` | `INTEGER` | `NOT NULL` | `0` | Orders paid via online gateway |
+| `total_discount_given_pkr` | `DecimalField(12,2)` | `NUMERIC(12,2)` | `NOT NULL` | `0.00` | Total coupon and promotional discounts applied |
+| `rto_orders_count` | `PositiveIntegerField` | `INTEGER` | `NOT NULL` | `0` | Orders returned to origin on this date |
+| `rto_losses_pkr` | `DecimalField(12,2)` | `NUMERIC(12,2)` | `NOT NULL` | `0.00` | Wasted shipping fees due to RTO events |
+| `created_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now_add` | From `TimeStampedModel`. Snapshot generation timestamp |
+| `updated_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now` | From `TimeStampedModel`. Last recalculation timestamp |
+
+**Indexes:**
+
+| Index Name | Column(s) | Type |
+|---|---|---|
+| `analytics_dailysnapshot_date_idx` | `date` | `UNIQUE BTREE` |
+
+**Snapshot Generation Contract:**
+
+```
+Celery beat task runs nightly at 00:05 PKT (UTC+5):
+  → Aggregates previous day's orders, payments, shipments
+  → Creates or updates DailySalesSnapshot for that date
+  → Uses update_or_create(date=yesterday) — safe for reruns
+  → Never reads from this table during aggregation — avoids deadlock
+```
+
+---
+
+### 11.2 `analytics_courierperformancemetric`
+
+Monthly per-courier per-city delivery performance metrics.
+Used by the smart courier routing system to assign couriers
+based on historical success rates — e.g. route Lahore orders
+to Trax and rural Sindh orders to TCS based on tracked
+delivery success rates and average delivery times.
+
+| Column | Django Field | DB Type | Constraints | Default | Notes |
+|---|---|---|---|---|---|
+| `id` | `AutoField` (PK) | `BIGINT` | `PK`, `NOT NULL`, `AUTO INCREMENT` | Auto | — |
+| `courier` | `CharField(20)` | `VARCHAR(20)` | `NOT NULL` | — | See `CourierPartner` enum in logistics app |
+| `city` | `CharField(100)` | `VARCHAR(100)` | `NOT NULL`, `INDEX` | — | Destination city name e.g. `Lahore`, `Karachi` |
+| `month_year` | `CharField(7)` | `VARCHAR(7)` | `NOT NULL` | — | Format `YYYY-MM` e.g. `2026-07`. See ISSUE-ANA02 |
+| `total_assigned` | `PositiveIntegerField` | `INTEGER` | `NOT NULL` | `0` | Total shipments assigned to this courier in this city/month |
+| `delivered_successfully` | `PositiveIntegerField` | `INTEGER` | `NOT NULL` | `0` | Shipments reaching `DELIVERED` status |
+| `rto_count` | `PositiveIntegerField` | `INTEGER` | `NOT NULL` | `0` | Shipments reaching `RTO_DELIVERED` status |
+| `avg_delivery_time_hours` | `DecimalField(6,2)` | `NUMERIC(6,2)` | `NOT NULL` | `0.00` | Average hours from `PICKED_UP` to `DELIVERED` |
+| `created_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now_add` | From `TimeStampedModel` |
+| `updated_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now` | From `TimeStampedModel` |
+
+**Indexes:**
+
+| Index Name | Column(s) | Type |
+|---|---|---|
+| `analytics_couriermetric_city_courier_idx` | `city`, `courier` | `BTREE` |
+| `analytics_couriermetric_unique` | `courier`, `city`, `month_year` | `UNIQUE BTREE` |
+
+**Computed Properties** *(Python level — not stored in DB)*:
+
+| Property | Returns | Notes |
+|---|---|---|
+| `delivery_success_rate` | `float` | `(delivered_successfully / total_assigned) × 100`. Returns `0.0` if `total_assigned == 0` |
+
+**Relationships:**
+
+| Relation | Type | Notes |
+|---|---|---|
+| `analytics_courierperformancemetric.courier` | Enum reference to `CourierPartner` | Not a FK — shares enum values only |
+
+---
