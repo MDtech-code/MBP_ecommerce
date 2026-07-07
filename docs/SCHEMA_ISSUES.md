@@ -36,47 +36,7 @@
 
 
 
----
 
-### ISSUE-A02 — Single Address on `UserProfile` Blocks Multi-Address Shipping
-
-**Severity:** 🔴 High
-**Table:** `accounts_userprofile`
-
-**Problem:**
-`UserProfile` stores only one address. Pakistani ecommerce users
-commonly ship to multiple locations (home, office, family). The
-`orders` app will have no way to support address selection at
-checkout without this being resolved first.
-
-**Proposed New Table — `accounts_useraddress`:**
-
-| Column | Type | Constraints | Notes |
-|---|---|---|---|
-| `id` | `BIGINT` | `PK` | — |
-| `user_id` | `BIGINT` | `FK → accounts_user`, `NOT NULL`, `INDEX` | `CASCADE` on delete |
-| `label` | `VARCHAR(50)` | `NOT NULL` | e.g. `Home`, `Office`, `Other` |
-| `address_line1` | `VARCHAR(255)` | `NOT NULL` | — |
-| `address_line2` | `VARCHAR(255)` | `NOT NULL` | Default `''` |
-| `city` | `VARCHAR(100)` | `NOT NULL` | — |
-| `province` | `VARCHAR(2)` | `NOT NULL` | Same Province choices as `UserProfile` |
-| `postal_code` | `VARCHAR(10)` | `NOT NULL` | — |
-| `country` | `VARCHAR(100)` | `NOT NULL` | Default `'Pakistan'` |
-| `is_default` | `BOOLEAN` | `NOT NULL` | Default `FALSE` |
-| `created_at` | `TIMESTAMPTZ` | `NOT NULL` | — |
-| `updated_at` | `TIMESTAMPTZ` | `NOT NULL` | — |
-
-**Safe Migration Path:**
-```
-Step 1 → Create UserAddress model (new table — zero risk to existing data)
-Step 2 → Write data migration to copy UserProfile address fields
-         into a new UserAddress row per user with is_default=True
-Step 3 → Verify data copied correctly in staging environment
-Step 4 → Remove address fields from UserProfile in a separate migration
-Step 5 → Orders app FKs to UserAddress or snapshots address at order time
-```
-
----
 
 ### ISSUE-A03 — `phone` Field Not Unique and Not Indexed
 
