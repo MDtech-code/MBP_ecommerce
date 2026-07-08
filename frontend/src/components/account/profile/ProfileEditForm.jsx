@@ -11,16 +11,7 @@ const GENDER_OPTIONS = [
   { value: "N", label: "Prefer not to say" },
 ]
 
-const PROVINCE_OPTIONS = [
-  { value: "",   label: "Select province" },
-  { value: "PB", label: "Punjab" },
-  { value: "SD", label: "Sindh" },
-  { value: "KP", label: "Khyber Pakhtunkhwa" },
-  { value: "BL", label: "Balochistan" },
-  { value: "GB", label: "Gilgit-Baltistan" },
-  { value: "AK", label: "Azad Jammu & Kashmir" },
-  { value: "IC", label: "Islamabad Capital Territory" },
-]
+
 
 export default function ProfileEditForm({ onCancel }) {
   const {
@@ -125,77 +116,13 @@ export default function ProfileEditForm({ onCancel }) {
         </div>
       </div>
 
-      {/* Address */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-        <h3 className="font-black text-gray-900 text-sm uppercase tracking-wide mb-5">
-          Address
-        </h3>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-
-          <ProfileEditField
-            label="Address Line 1"
-            name="address_line1"
-            value={form.address_line1}
-            onChange={handleChange}
-            error={fieldErrors.address_line1}
-          />
-
-          <ProfileEditField
-            label="Address Line 2"
-            name="address_line2"
-            value={form.address_line2}
-            onChange={handleChange}
-            error={fieldErrors.address_line2}
-          />
-
-          <ProfileEditField
-            label="City"
-            name="city"
-            value={form.city}
-            onChange={handleChange}
-            error={fieldErrors.city}
-          />
-
-          <ProfileEditField
-            label="Province"
-            name="province"
-            error={fieldErrors.province}
-          >
-            <select
-              name="province"
-              value={form.province}
-              onChange={handleChange}
-              className={`
-                w-full border rounded-lg px-3 py-2.5 text-sm text-gray-800
-                outline-none transition-colors bg-white
-                focus:border-primary focus:ring-1 focus:ring-primary/20
-                ${fieldErrors.province ? "border-red-400" : "border-gray-200"}
-              `}
-            >
-              {PROVINCE_OPTIONS.map(({ value, label }) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
-            </select>
-          </ProfileEditField>
-
-          <ProfileEditField
-            label="Postal Code"
-            name="postal_code"
-            value={form.postal_code}
-            onChange={handleChange}
-            error={fieldErrors.postal_code}
-          />
-
-          <ProfileEditField
-            label="Country"
-            name="country"
-            value={form.country}
-            onChange={handleChange}
-            error={fieldErrors.country}
-          />
-
-        </div>
+      {/* Address section removed — managed via AddressManager component */}
+      <div className="bg-gray-50 rounded-2xl border border-dashed border-gray-200 p-5 text-center">
+        <p className="text-sm text-gray-400">
+          Manage your shipping addresses separately from the
+          <span className="font-semibold text-primary"> Addresses </span>
+          section on your profile.
+        </p>
       </div>
 
     </form>

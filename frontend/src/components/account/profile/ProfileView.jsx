@@ -3,8 +3,9 @@ import { UserRound, Camera, Mail, Phone, MapPin, Calendar, Venus, Edit3 } from "
 import ProfileInfoRow from "./ProfileInfoRow"
 import { getMediaUrl } from "../../../utils/media"
 
-export default function ProfileView({ user, onEdit, onAvatarClick }) {
-  const fullAddress = user?.profile?.full_address || null
+export default function ProfileView({ user, onEdit, onAvatarClick , onManageAddresses}) {
+  // Address now comes from user.addresses — not user.profile
+  const defaultAddress = user?.default_address || null
 
   return (
     <div className="space-y-6">
@@ -79,22 +80,48 @@ export default function ProfileView({ user, onEdit, onAvatarClick }) {
         </div>
 
         {/* Address */}
+                {/* Address — now from default_address not profile */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-          <h3 className="font-black text-gray-900 text-sm uppercase tracking-wide mb-4">
-            Address
-          </h3>
-          <ProfileInfoRow icon={MapPin} label="Address Line 1" value={user?.profile?.address_line1} />
-          <ProfileInfoRow icon={MapPin} label="Address Line 2" value={user?.profile?.address_line2} />
-          <ProfileInfoRow icon={MapPin} label="City"           value={user?.profile?.city} />
-          <ProfileInfoRow icon={MapPin} label="Province"       value={user?.profile?.province_display} />
-          <ProfileInfoRow icon={MapPin} label="Postal Code"    value={user?.profile?.postal_code} />
-          <ProfileInfoRow icon={MapPin} label="Country"        value={user?.profile?.country} />
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-black text-gray-900 text-sm uppercase tracking-wide">
+              Default Address
+            </h3>
+            <button
+              onClick={onManageAddresses}
+              className="text-xs font-bold text-primary hover:underline"
+            >
+              Manage Addresses
+            </button>
+          </div>
+
+          {defaultAddress ? (
+            <>
+              <ProfileInfoRow icon={MapPin} label="Label"          value={defaultAddress?.label_display} />
+              <ProfileInfoRow icon={MapPin} label="Address Line 1" value={defaultAddress?.address_line1} />
+              <ProfileInfoRow icon={MapPin} label="Address Line 2" value={defaultAddress?.address_line2} />
+              <ProfileInfoRow icon={MapPin} label="City"           value={defaultAddress?.city} />
+              <ProfileInfoRow icon={MapPin} label="Province"       value={defaultAddress?.province_display} />
+              <ProfileInfoRow icon={MapPin} label="Postal Code"    value={defaultAddress?.postal_code} />
+            </>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-6 gap-2">
+              <MapPin size={24} className="text-gray-200" />
+              <p className="text-sm text-gray-400">No address added yet.</p>
+              <button
+                onClick={onManageAddresses}
+                className="text-xs font-bold text-primary hover:underline mt-1"
+              >
+                Add your first address
+              </button>
+            </div>
+          )}
         </div>
+       
 
       </div>
 
-      {/* Full Address Banner */}
-      {fullAddress && (
+        {/* Full Address Banner — from default_address */}
+      {defaultAddress?.full_address && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
             <MapPin size={16} className="text-primary" />
@@ -104,12 +131,11 @@ export default function ProfileView({ user, onEdit, onAvatarClick }) {
               Full Address
             </p>
             <p className="text-sm font-semibold text-gray-800 mt-0.5">
-              {fullAddress}
+              {defaultAddress.full_address}
             </p>
           </div>
         </div>
       )}
-
     </div>
   )
 }

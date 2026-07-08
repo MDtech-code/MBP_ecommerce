@@ -11,6 +11,9 @@ from .views import (
     ProfileView,
     ChangePasswordView,
     AvatarUploadView,
+    AddressListCreateView,
+    AddressDetailView,
+    AddressSetDefaultView,
 )
 
 app_name = "accounts"
@@ -34,4 +37,9 @@ urlpatterns = [
     # ─── Profile ──────────────────────────────────────
     path("profile/", ProfileView.as_view(), name="profile"),
     path("profile/avatar/", AvatarUploadView.as_view(), name="avatar-upload"),
+
+    # ─── Addresses ────────────────────────────────────────────
+    path("addresses/",                    AddressListCreateView.as_view(), name="address-list-create"),
+    path("addresses/<int:pk>/",           AddressDetailView.as_view(),     name="address-detail"),
+    path("addresses/<int:pk>/set-default/", AddressSetDefaultView.as_view(), name="address-set-default"),
 ]

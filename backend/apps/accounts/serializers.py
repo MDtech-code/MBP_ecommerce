@@ -8,40 +8,21 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 from django.utils import timezone
 from apps.core.api.serializers import BaseModelSerializer
-from .models import User, UserProfile
+from .models import User, UserProfile,UserAddress
 from .validators import validate_email_unique,validate_full_name,validate_image_file,validate_pakistani_phone,validate_passwords_match,validate_strong_password
 logger = logging.getLogger("apps.accounts")
 
 
 # ─── User Profile Serializer ───────────────────────────────────────────────────────
-class UserProfileSerializer(serializers.ModelSerializer):
-    """
-    Read-only + partial-update serializer for ``UserProfile``.
+class UserProfileSerializer(BaseModelSerializer):
+    
 
-    Read-only fields:
-        province_display, gender_display, full_address,
-        has_complete_address, created_at, updated_at, avatar.
-
-    Writable fields (all optional — partial update):
-        phone, date_of_birth, gender, address_line1,
-        address_line2, city, province, postal_code, country.
-
-    Note:
-        ``avatar`` is intentionally read-only here.
-        Avatar upload is handled by the dedicated ``AvatarUploadView``
-        which uses ``MultiPartParser`` and separate validation.
-    """
-
-    province_display = serializers.CharField(
-        source="get_province_display",
-        read_only=True,
-    )
+    
     gender_display = serializers.CharField(
         source="get_gender_display",
         read_only=True,
     )
-    full_address = serializers.CharField(read_only=True)
-    has_complete_address = serializers.BooleanField(read_only=True)
+    
 
     class Meta:
         model = UserProfile
@@ -51,15 +32,6 @@ class UserProfileSerializer(serializers.ModelSerializer):
             "gender",
             "gender_display",
             "avatar",
-            "address_line1",
-            "address_line2",
-            "city",
-            "province",
-            "province_display",
-            "postal_code",
-            "country",
-            "full_address",
-            "has_complete_address",
             "created_at",
             "updated_at",
         ]
@@ -94,43 +66,65 @@ class UserProfileSerializer(serializers.ModelSerializer):
                 _("Date of birth must be in the past.")
             )
         return value
-# class UserProfileSerializer(BaseModelSerializer):
-#     """Read/update profile information."""
 
-#     province_display = serializers.CharField(
-#         source="get_province_display",
-#         read_only=True,
-#     )
-#     gender_display = serializers.CharField(
-#         source="get_gender_display",
-#         read_only=True,
-#     )
-#     full_address = serializers.CharField(read_only=True)
-#     has_complete_address = serializers.BooleanField(read_only=True)
 
-#     class Meta:
-#         model = UserProfile
-#         fields = [
-#             "phone",
-#             "date_of_birth",
-#             "gender",
-#             "gender_display",
-#             "avatar",
-#             "address_line1",
-#             "address_line2",
-#             "city",
-#             "province",
-#             "province_display",
-#             "postal_code",
-#             "country",
-#             "full_address",
-#             "has_complete_address",
-#             "created_at",
-#             "updated_at",
-#         ]
-#         extra_kwargs = {
-#             "avatar": {"read_only": True},  # handled by separate upload endpoint
-#         }
+class UserAddressSerializer(BaseModelSerializer):
+    """
+    Shipping address serializer.
+
+    province, postal_code, country are read-only —
+    auto-derived from city selection on save().
+    label_display and province_display for frontend rendering.
+    full_address computed property exposed for display banner.
+    """
+    label_display    = serializers.CharField(
+        source="get_label_display",
+        read_only=True,
+    )
+    province_display = serializers.CharField(
+        source="get_province_display",
+        read_only=True,
+    )
+
+    full_address     = serializers.CharField(
+        read_only=True,
+    )
+    class Meta:
+        model  = UserAddress
+        fields = [
+            "id",
+            "label",
+            "label_display",
+            "address_line1",
+            "address_line2",
+            "city",
+            "province",
+            "province_display",
+            "postal_code",
+            "country",
+            "is_default",
+            "full_address",
+            "created_at",
+            "updated_at",
+        ]
+        extra_kwargs = {
+            "province":    {"read_only": True},
+            "postal_code": {"read_only": True},
+            "country":     {"read_only": True},
+            "created_at":  {"read_only": True},
+            "updated_at":  {"read_only": True},
+        }
+
+    def validate_address_line1(self, value):
+        if not value or not value.strip():
+            raise serializers.ValidationError(
+                _("Address line 1 is required.")
+            )
+        return value.strip()
+
+
+
+
 
 
 # ─── User Serializer ──────────────────────────────────────────────────────────
@@ -139,6 +133,8 @@ class UserSerializer(BaseModelSerializer):
     """Read-only user representation returned in responses."""
 
     profile = UserProfileSerializer(read_only=True)
+    addresses       = UserAddressSerializer(many=True, read_only=True)
+    default_address = serializers.SerializerMethodField()
     role_display = serializers.CharField(
         source="get_role_display",
         read_only=True,
@@ -157,8 +153,22 @@ class UserSerializer(BaseModelSerializer):
             "is_verified",
             "date_joined",
             "profile",
+            "addresses",
+            "default_address",
         ]
         read_only_fields = fields
+    def get_default_address(self, obj):
+         """
+         Returns the single default address or None.
+         Avoids re-querying if addresses are prefetched.
+         """
+         default = next(
+             (addr for addr in obj.addresses.all() if addr.is_default),
+             None,
+         )
+         if default:
+             return UserAddressSerializer(default).data
+         return None
 
 
 # ─── Registration Serializer ──────────────────────────────────────────────────

@@ -21,7 +21,7 @@ from django.middleware.csrf import get_token
 from apps.core.api.views import BaseAPIView
 from apps.accounts.utils import log_login_activity
 from apps.core.permissions import IsNotAuthenticated, IsVerified
-from .models import User, EmailVerificationToken, PasswordResetToken,UserProfile
+from .models import User, EmailVerificationToken, PasswordResetToken,UserProfile,UserAddress
 from .serializers import (
     RegisterSerializer,
     LoginSerializer,
@@ -33,6 +33,7 @@ from .serializers import (
     ChangePasswordSerializer,
     ProfileUpdateSerializer,
     AvatarUploadSerializer,
+    UserAddressSerializer,
 )
 from .tasks import (
     send_verification_email_task,
@@ -1206,6 +1207,10 @@ class ChangePasswordView(BaseAPIView):
 
 
 # ─── Profile ──────────────────────────────────────────────────────────────────
+
+
+
+
 class ProfileView(BaseAPIView):
     """
     GET   /api/accounts/profile/ → Retrieve own profile.
@@ -1237,21 +1242,40 @@ class ProfileView(BaseAPIView):
 
     permission_classes = [IsAuthenticated]
 
-    def _get_user_with_profile(self, user_id: int) -> User:
+
+    def _get_user_with_profile_address(self, user_id: int) -> User:
         """
-        Fetch user with profile in a single JOIN query.
+        Fetch user with profile and address in a single JOIN query.
 
         Args:
             user_id: PK of the user to fetch.
 
         Returns:
-            ``User`` instance with ``profile`` pre-fetched.
+            ``User`` instance with ``profile`` & ``useraddress`` pre-fetched.
+        """
+        return (
+            User.objects
+            .select_related("profile")
+            .prefetch_related("addresses")
+            .get(pk=user_id)
+        )
+    def _get_user_with_profile(self, user_id: int) -> User:
+        """
+        Fetch user with profile  in a single JOIN query.
+
+        Args:
+            user_id: PK of the user to fetch.
+
+        Returns:
+            ``User`` instance with ``profile``  pre-fetched.
         """
         return (
             User.objects
             .select_related("profile")
             .get(pk=user_id)
         )
+
+    
 
     def get(self, request: Request) -> Response:
         log_context = {
@@ -1260,7 +1284,7 @@ class ProfileView(BaseAPIView):
         }
 
         try:
-            user = self._get_user_with_profile(request.user.id)
+            user = self._get_user_with_profile_address(request.user.id)
         except Exception:
             logger.exception(
                 "Unexpected error fetching profile",
@@ -1335,6 +1359,7 @@ class ProfileView(BaseAPIView):
         # ── Save ──────────────────────────────────────────────────────────────
         try:
             serializer.save()
+
         except Exception:
             logger.exception(
                 "Unexpected error saving profile update",
@@ -1351,7 +1376,7 @@ class ProfileView(BaseAPIView):
         )
 
         # Re-fetch to ensure response reflects saved state
-        user = self._get_user_with_profile(request.user.id)
+        user = self._get_user_with_profile_address(request.user.id)
         return self.success_response(
             data=UserSerializer(user).data,
             message=_("Profile updated successfully."),
@@ -1359,6 +1384,10 @@ class ProfileView(BaseAPIView):
 
     # Support PUT as alias for PATCH — both do partial update
     put = patch
+
+
+
+
 
 # class ProfileView(BaseAPIView):
 #     """
@@ -1397,7 +1426,136 @@ class ProfileView(BaseAPIView):
 #             message=_("Profile updated successfully."),
 #         )
 
+# accounts/views.py
 
+class AddressListCreateView(BaseAPIView):
+    """
+    GET  /api/accounts/addresses/        — list all user addresses
+    POST /api/accounts/addresses/        — create new address
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request: Request) -> Response:
+        addresses = request.user.addresses.all()
+        serializer = UserAddressSerializer(addresses, many=True)
+        return self.success_response(data=serializer.data)
+
+    def post(self, request: Request) -> Response:
+        log_context = {"request_id": request.id}
+
+        serializer = UserAddressSerializer(
+            data=request.data,
+            context={"request": request},
+        )
+
+        if not serializer.is_valid():
+            return self.error_response(
+                message=_("Address creation failed."),
+                errors=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer.save(user=request.user)
+
+        logger.info(
+            "Address created",
+            extra={**log_context, "user_id": request.user.id},
+        )
+
+        return self.success_response(
+            data=serializer.data,
+            message=_("Address added successfully."),
+            status_code=status.HTTP_201_CREATED,
+        )
+
+
+class AddressDetailView(BaseAPIView):
+    """
+    PUT    /api/accounts/addresses/<id>/   — update address
+    DELETE /api/accounts/addresses/<id>/   — delete address
+    PATCH  /api/accounts/addresses/<id>/set-default/ — set as default
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self, request, pk):
+        """
+        Fetch address — enforce ownership.
+        User can only touch their own addresses.
+        """
+        try:
+            return request.user.addresses.get(pk=pk)
+        except UserAddress.DoesNotExist:
+            return None
+
+    def put(self, request: Request, pk: int) -> Response:
+        address = self.get_object(request, pk)
+        if not address:
+            return self.error_response(
+                message=_("Address not found."),
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = UserAddressSerializer(
+            address,
+            data=request.data,
+            partial=True,
+            context={"request": request},
+        )
+
+        if not serializer.is_valid():
+            return self.error_response(
+                message=_("Address update failed."),
+                errors=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer.save()
+
+        return self.success_response(
+            data=serializer.data,
+            message=_("Address updated successfully."),
+        )
+
+    def delete(self, request: Request, pk: int) -> Response:
+        address = self.get_object(request, pk)
+        if not address:
+            return self.error_response(
+                message=_("Address not found."),
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        address.delete()
+
+        return self.success_response(
+            message=_("Address deleted successfully."),
+        )
+
+
+class AddressSetDefaultView(BaseAPIView):
+    """
+    PATCH /api/accounts/addresses/<id>/set-default/
+    Sets the specified address as the user default.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request: Request, pk: int) -> Response:
+        try:
+            address = request.user.addresses.get(pk=pk)
+        except UserAddress.DoesNotExist:
+            return self.error_response(
+                message=_("Address not found."),
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        address.set_as_default()
+
+        return self.success_response(
+            data=UserAddressSerializer(address).data,
+            message=_("Default address updated."),
+        )
 
 
 # ─── Avatar Upload ────────────────────────────────────────────────────────────

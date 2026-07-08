@@ -95,6 +95,52 @@ export const accountService = {
     return extractResponse(response);
   },
 
+  // src/services/accountService.js
+  // Add these after changePassword — address section
+
+  /**
+   * POST /api/accounts/addresses/
+   * Create a new shipping address
+   * @param {{ label, address_line1, address_line2, city }} payload
+   */
+  createAddress: async (payload) => {
+    const response = await api.post("/api/accounts/addresses/", payload);
+    return extractResponse(response);
+  },
+
+  /**
+   * PUT /api/accounts/addresses/:id/
+   * Update an existing address
+   * @param {number} id
+   * @param {{ label, address_line1, address_line2, city }} payload
+   */
+  updateAddress: async (id, payload) => {
+    const response = await api.put(`/api/accounts/addresses/${id}/`, payload);
+    return extractResponse(response);
+  },
+
+  /**
+   * DELETE /api/accounts/addresses/:id/
+   * Delete an address — cannot delete default if it is the only address
+   * @param {number} id
+   */
+  deleteAddress: async (id) => {
+    const response = await api.delete(`/api/accounts/addresses/${id}/`);
+    return extractResponse(response);
+  },
+
+  /**
+   * PATCH /api/accounts/addresses/:id/set-default/
+   * Set address as user default shipping address
+   * @param {number} id
+   */
+  setDefaultAddress: async (id) => {
+    const response = await api.patch(
+      `/api/accounts/addresses/${id}/set-default/`,
+    );
+    return extractResponse(response);
+  },
+
   /**
    * POST /api/accounts/password-reset/
    * Sends reset link to email — always returns success message
