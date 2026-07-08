@@ -330,6 +330,15 @@ class EmailVerificationToken(models.Model):
     expires_at = models.DateTimeField(
         _("expires at"),
     )
+    is_used = models.BooleanField(
+        _("is used"),
+        default=False,
+        help_text=_(
+            "Token is marked used immediately after successful "
+            "verification. Used tokens are rejected even if "
+            "they have not yet expired."
+        ),
+    )
 
     class Meta:
         verbose_name = _("email verification token")
@@ -350,7 +359,27 @@ class EmailVerificationToken(models.Model):
 
     @property
     def is_valid(self) -> bool:
+        """
+        Token is valid only if:
+        - Not yet used (is_used=False)
+        - Not yet expired (within 24 hour window)
+        Mirrors PasswordResetToken.is_valid pattern.
+        """
         return not self.is_expired
+    
+    def mark_used(self) -> None:
+        """
+        Marks token as consumed after successful email verification.
+        Call this immediately after setting User.is_verified=True.
+        Prevents replay attacks within the 24 hour expiry window.
+
+        Usage in verification view:
+            token.mark_used()
+            user.is_verified = True
+            user.save(update_fields=["is_verified"])
+        """
+        self.is_used = True
+        self.save(update_fields=["is_used"])
 
     @classmethod
     def create_for_user(cls, user: User) -> "EmailVerificationToken":
@@ -426,5 +455,6 @@ class PasswordResetToken(models.Model):
         return cls.objects.create(user=user)
 
     def mark_used(self) -> None:
+      
         self.is_used = True
         self.save(update_fields=["is_used"])

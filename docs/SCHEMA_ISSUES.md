@@ -38,42 +38,6 @@
 
 
 
----
-
-### ISSUE-A04 — `EmailVerificationToken` Has No `is_used` Flag
-
-**Severity:** 🟡 Medium
-**Table:** `accounts_emailverificationtoken`
-
-**Problem:**
-`PasswordResetToken` correctly uses `is_used=True` to prevent replay
-attacks. `EmailVerificationToken` has no such flag. After a user
-verifies their email the token stays valid in the database until it
-expires — up to 24 hours. A captured token could be replayed within
-that window.
-
-**Safe Migration Path:**
-```python
-# Add field to EmailVerificationToken:
-is_used = models.BooleanField(
-    _("is used"),
-    default=False,
-    help_text=_("Token becomes invalid after successful verification.")
-)
-
-# Add method matching PasswordResetToken pattern:
-def mark_used(self) -> None:
-    self.is_used = True
-    self.save(update_fields=["is_used"])
-```
-```
-Update verification view logic:
-  1. Check is_used before accepting token
-  2. Call token.mark_used() after User.is_verified = True
-
-Migration risk: None — new column with default=False,
-no existing data affected.
-```
 
 ---
 

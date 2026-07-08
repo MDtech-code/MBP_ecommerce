@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 
 from django.conf import settings
+
+from django.db import transaction
 from django.utils.translation import gettext_lazy as _
 from rest_framework import status
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -310,9 +312,11 @@ class VerifyEmailView(BaseAPIView):
         # Both operations in one try block — they are one atomic unit.
         # If save() fails, token is NOT deleted (consistent state preserved).
         try:
-            user.is_verified = True
-            user.save(update_fields=["is_verified"])
-            token_obj.delete()
+            with transaction.atomic(): 
+             token_obj.mark_used()
+             user.is_verified = True
+             user.save(update_fields=["is_verified"])
+             token_obj.delete()
         except Exception:
             logger.exception(
                 "Unexpected error while marking user as verified",
