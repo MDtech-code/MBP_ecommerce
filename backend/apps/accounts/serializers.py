@@ -13,7 +13,7 @@ from .validators import validate_email_unique,validate_full_name,validate_image_
 logger = logging.getLogger("apps.accounts")
 
 
-# ─── Profile Serializer ───────────────────────────────────────────────────────
+# ─── User Profile Serializer ───────────────────────────────────────────────────────
 class UserProfileSerializer(serializers.ModelSerializer):
     """
     Read-only + partial-update serializer for ``UserProfile``.
@@ -255,54 +255,6 @@ class RegisterSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 {"email": _("An account with this email already exists.")}
             )
-# class RegisterSerializer(serializers.Serializer):
-#     """Handles new user registration input validation."""
-
-#     full_name = serializers.CharField(
-#         max_length=255,
-#         error_messages={"blank": _("Full name is required.")},
-#     )
-#     email = serializers.EmailField(
-#         error_messages={
-#             "blank": _("Email address is required."),
-#             "invalid": _("Enter a valid email address."),
-#         }
-#     )
-#     password = serializers.CharField(
-#         write_only=True,
-#         min_length=8,
-#         error_messages={
-#             "blank": _("Password is required."),
-#             "min_length": _("Password must be at least 8 characters."),
-#         },
-#     )
-#     confirm_password = serializers.CharField(
-#         write_only=True,
-#         error_messages={"blank": _("Please confirm your password.")},
-#     )
-
-#     def validate_email(self, value):
-#         return validate_email_unique(value)
-
-#     def validate_full_name(self, value):
-#         return validate_full_name(value)
-
-#     def validate_password(self, value):
-#         return validate_strong_password(value)
-
-#     def validate(self, attrs):
-#         validate_passwords_match(attrs["password"], attrs["confirm_password"])
-#         return attrs
-
-#     def create(self, validated_data: dict) -> User:
-#         validated_data.pop("confirm_password")
-#         user = User.objects.create_user(
-#             email=validated_data["email"],
-#             full_name=validated_data["full_name"],
-#             password=validated_data["password"],
-#         )
-#         logger.info("New user registered: %s", user.email)
-#         return user
 
 
 # ─── Login Serializer ─────────────────────────────────────────────────────────
@@ -379,41 +331,7 @@ class LoginSerializer(serializers.Serializer):
 
         attrs["user"] = user
         return attrs
-# class LoginSerializer(serializers.Serializer):
-#     """Validates login credentials."""
 
-#     email = serializers.EmailField(
-#         error_messages={"blank": _("Email address is required.")}
-#     )
-#     password = serializers.CharField(
-#         write_only=True,
-#         error_messages={"blank": _("Password is required.")}
-#     )
-
-#     def validate(self, attrs: dict) -> dict:
-#         email = attrs["email"].lower().strip()
-#         password = attrs["password"]
-
-#         user = authenticate(
-#             request=self.context.get("request"),
-#             username=email,
-#             password=password,
-#         )
-
-#         if not user:
-#             raise serializers.ValidationError(
-#                 {"error": _("Invalid email or password.")},
-#                 code="invalid_credentials",
-#             )
-
-#         if not user.is_active:
-#             raise serializers.ValidationError(
-#                 {"error": _("Your account has been deactivated. Contact support.")},
-#                 code="account_inactive",
-#             )
-
-#         attrs["user"] = user
-#         return attrs
 
 
 # ─── Email Verification Serializer ───────────────────────────────────────────
@@ -601,78 +519,7 @@ class ChangePasswordSerializer(serializers.Serializer):
             )
         return attrs
 
-# class PasswordResetRequestSerializer(serializers.Serializer):
-#     """Accepts email for password reset request."""
 
-#     email = serializers.EmailField(
-#         error_messages={"blank": _("Email address is required.")}
-#     )
-
-#     def validate_email(self, value: str) -> str:
-#         return value.lower().strip()
-
-
-# # ─── Password Reset Confirm Serializer ───────────────────────────────────────
-
-# class PasswordResetConfirmSerializer(serializers.Serializer):
-#     """Accepts token and new password for password reset."""
-
-#     token = serializers.UUIDField(
-#         error_messages={"invalid": _("Invalid reset token.")}
-#     )
-#     password = serializers.CharField(
-#         write_only=True,
-#         min_length=8,
-#         error_messages={
-#             "min_length": _("Password must be at least 8 characters."),
-#             "blank": _("Password is required."),
-#         },
-#     )
-#     confirm_password = serializers.CharField(
-#         write_only=True,
-#         error_messages={"blank": _("Please confirm your password.")},
-#     )
-
-#     def validate_password(self, value):
-#         return validate_strong_password(value)
-
-#     def validate(self, attrs):
-#         validate_passwords_match(attrs["password"], attrs["confirm_password"])
-#         return attrs
-
-
-
-# # ─── Change Password Serializer ───────────────────────────────────────────────
-
-# class ChangePasswordSerializer(serializers.Serializer):
-#     """Allows authenticated user to change their password."""
-
-#     current_password = serializers.CharField(
-#         write_only=True,
-#         error_messages={"blank": _("Current password is required.")},
-#     )
-#     new_password = serializers.CharField(
-#         write_only=True,
-#         min_length=8,
-#         error_messages={
-#             "min_length": _("New password must be at least 8 characters."),
-#             "blank": _("New password is required."),
-#         },
-#     )
-#     confirm_new_password = serializers.CharField(
-#         write_only=True,
-#         error_messages={"blank": _("Please confirm your new password.")},
-#     )
-
-#     def validate_password(self, value):
-#         return validate_strong_password(value)
-
-#     def validate(self, attrs):
-#         if attrs["new_password"] != attrs["confirm_new_password"]:
-#             raise serializers.ValidationError(
-#                 {"confirm_new_password": _("Passwords do not match.")}
-#             )
-#         return attrs
 
 
 # ─── Profile Update Serializer ───────────────────────────────────────────────
