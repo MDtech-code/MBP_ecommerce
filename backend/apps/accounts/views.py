@@ -19,6 +19,7 @@ from django.contrib.auth.signals import user_logged_in,user_logged_out
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
 from django.middleware.csrf import get_token
 from apps.core.api.views import BaseAPIView
+from apps.accounts.utils import log_login_activity
 from apps.core.permissions import IsNotAuthenticated, IsVerified
 from .models import User, EmailVerificationToken, PasswordResetToken,UserProfile
 from .serializers import (
@@ -590,13 +591,33 @@ class LoginView(BaseAPIView):
                     "errors": serializer.errors,
                 },
             )
+            # ── Log failed attempt — validation error ─────────────────────
+            # Extract email best-effort — may be missing or malformed
+            email_attempted = request.data.get("email", "")
+            if email_attempted:
+                log_login_activity(
+                    request=request,
+                    email=email_attempted,
+                    was_successful=False,
+                    failure_reason="invalid_credentials",
+                )
             return self.error_response(
-                message=_("Login failed."),
+                message=_("Invalid email or password."),
                 errors=serializer.errors,
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
+           
 
         user = serializer.validated_data["user"]
+        failure_reason = serializer.validated_data.get("failure_reason", "")
+        # ── Log the outcome ───────────────────────────────────────────────
+        log_login_activity(
+            request=request,
+            email=user.email,
+            was_successful=True,
+            user=user,
+            failure_reason="",
+        )
 
         user_logged_in.send(
             sender=user.__class__,

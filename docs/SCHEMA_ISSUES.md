@@ -15,7 +15,7 @@
 
 ## Table of Contents
 
-1. [Accounts App Issues](#1-accounts-app-issues) ✅
+
 2. [Products App Issues](#2-products-app-issues) ✅
 3. [Cart App Issues](#3-cart-app-issues) ✅
 4. [Orders App Issues](#4-orders-app-issues) ✅
@@ -30,52 +30,7 @@
 13. [Cross-App Issues](#13-cross-app-issues) ✅
 
 
----
 
-## 1. Accounts App Issues
-
-
-
-
-
-
----
-
-
----
-
-### ISSUE-A06 — No Login Activity Tracking
-
-**Severity:** 🟢 Low
-**Table:** `accounts_userloginactivity` *(does not exist yet)*
-
-**Problem:**
-No record of login history, IP addresses, or failed attempts exists.
-For a real-user Pakistani ecommerce platform this matters for fraud
-detection on COD orders, new device login security emails, and
-failed login rate limiting beyond throttle resets.
-
-**Proposed New Table — `accounts_userloginactivity`:**
-
-| Column | Type | Constraints | Notes |
-|---|---|---|---|
-| `id` | `BIGINT` | `PK` | — |
-| `user_id` | `BIGINT` | `FK → accounts_user`, `NULL`, `INDEX` | `SET NULL` on delete — preserve logs even if user deleted |
-| `ip_address` | `INET` | `NOT NULL` | Django `GenericIPAddressField` |
-| `user_agent` | `TEXT` | `NOT NULL` | Browser / device string |
-| `was_successful` | `BOOLEAN` | `NOT NULL` | Login success or failure |
-| `created_at` | `TIMESTAMPTZ` | `NOT NULL` | Login attempt timestamp |
-
-**Safe Migration Path:**
-```
-New table — zero risk to existing data.
-Add Celery periodic task to purge records older than 90 days
-to prevent unbounded table growth.
-```
-
----
-
----
 
 ## 2. Products App Issues
 

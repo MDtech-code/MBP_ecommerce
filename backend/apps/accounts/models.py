@@ -458,3 +458,106 @@ class PasswordResetToken(models.Model):
       
         self.is_used = True
         self.save(update_fields=["is_used"])
+
+
+
+class UserLoginActivity(models.Model):
+    """
+    Immutable append-only log of every login attempt.
+
+    Records both successful and failed attempts with IP
+    and user agent for fraud detection and security auditing.
+
+    Rows are never updated after creation — INSERT only.
+    No TimeStampedModel — updated_at contradicts immutability.
+
+    Celery periodic task should purge records older than
+    90 days to prevent unbounded table growth.
+    """
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="login_activity",
+        verbose_name=_("user"),
+        help_text=_(
+            "SET NULL on delete — preserve security logs "
+            "even if user account is deleted."
+        ),
+    )
+    email_attempted = models.EmailField(
+        _("email attempted"),
+        help_text=_(
+            "Email submitted in the login form. "
+            "Stored separately from user FK — captures "
+            "attempts against non-existent accounts too."
+        ),
+    )
+    ip_address = models.GenericIPAddressField(
+        _("IP address"),
+        null=True,
+        blank=True,
+        help_text=_("Remote IP of the login request."),
+    )
+    user_agent = models.TextField(
+        _("user agent"),
+        blank=True,
+        default="",
+        help_text=_("Browser and device string from request headers."),
+    )
+    was_successful = models.BooleanField(
+        _("was successful"),
+        help_text=_("True if credentials were valid and user logged in."),
+    )
+    failure_reason = models.CharField(
+        _("failure reason"),
+        max_length=50,
+        blank=True,
+        default="",
+        help_text=_(
+            "Short code for failed attempts. "
+            "e.g. invalid_credentials, account_inactive, email_not_verified"
+        ),
+    )
+    created_at = models.DateTimeField(
+        _("created at"),
+        auto_now_add=True,
+        db_index=True,
+    )
+
+    class Meta:
+        verbose_name = _("user login activity")
+        verbose_name_plural = _("user login activities")
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(
+                fields=["user", "created_at"],
+                name="acc_user_created_idx",
+            ),
+            models.Index(
+                fields=["ip_address", "created_at"],
+                name="acc_ip_created_idx",
+            ),
+            models.Index(
+                fields=["was_successful", "created_at"],
+                name="acc_success_created_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        status = "success" if self.was_successful else "failed"
+        return f"{self.email_attempted} — {status} — {self.created_at}"
+
+    def save(self, *args, **kwargs) -> None:
+        """
+        Guard against updates — this model is append-only.
+        Existing rows must never be modified.
+        """
+        if self.pk:
+            raise ValueError(
+                "UserLoginActivity records are immutable "
+                "and cannot be updated."
+            )
+        super().save(*args, **kwargs)

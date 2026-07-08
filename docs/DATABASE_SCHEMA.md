@@ -27,159 +27,32 @@
 13. [Cross-App Relationships](#13-cross-app-relationships) ✅
 
 
-**App Label:** `notifications`
-**Purpose:** Manages outbound customer notifications across WhatsApp,
-SMS, Email, and In-App channels. Tracks send status and failure
-reasons per notification. Provides a dedicated COD order verification
-flow via WhatsApp Business API to reduce Return-to-Origin (RTO) rates —
-a critical operational concern for Pakistani COD ecommerce.
-**Status:** 🟡 Not Yet Migrated — schema changes are low risk
 
----
-
-### 9.1 `notifications_notification`
-
-A single outbound notification dispatched to a user or recipient
-across any supported channel. In-App notifications are read via
-the `is_read` flag. SMS and WhatsApp use `recipient_phone`.
-Email uses `recipient_email`. `context_data` carries dynamic
-template variables for message rendering.
-
-| Column | Django Field | DB Type | Constraints | Default | Notes |
-|---|---|---|---|---|---|
-| `id` | `AutoField` (PK) | `BIGINT` | `PK`, `NOT NULL`, `AUTO INCREMENT` | Auto | — |
-| `user_id` | `ForeignKey → User` | `BIGINT` | `NULL`, `FK`, `INDEX` | `NULL` | `CASCADE` on delete. `NULL` = guest/anonymous recipient |
-| `recipient_phone` | `CharField(15)` | `VARCHAR(15)` | `NULL` | `NULL` | Required for `SMS` and `WHATSAPP` channels. Format `+923XXXXXXXXX` |
-| `recipient_email` | `EmailField` | `VARCHAR(254)` | `NULL` | `NULL` | Required for `EMAIL` channel |
-| `channel` | `CharField(15)` | `VARCHAR(15)` | `NOT NULL` | — | See Channel choices below |
-| `notification_type` | `CharField(25)` | `VARCHAR(25)` | `NOT NULL` | — | See Notification Type choices below |
-| `title` | `CharField(150)` | `VARCHAR(150)` | `NOT NULL` | — | Notification headline or subject |
-| `body` | `TextField` | `TEXT` | `NOT NULL` | — | Full notification message body |
-| `context_data` | `JSONField` | `JSONB` | `NULL` | `NULL` | Dynamic template variables e.g. `{"order_id": "MBP-001", "awb": "TCS-99"}` |
-| `is_sent` | `BooleanField` | `BOOLEAN` | `NOT NULL` | `FALSE` | `TRUE` after successful dispatch to gateway |
-| `sent_at` | `DateTimeField` | `TIMESTAMPTZ` | `NULL` | `NULL` | Timestamp of successful dispatch |
-| `is_read` | `BooleanField` | `BOOLEAN` | `NOT NULL` | `FALSE` | Read state for `IN_APP` channel only |
-| `failure_reason` | `TextField` | `TEXT` | `NOT NULL` | `''` | Gateway error detail on failed dispatch |
-| `created_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now_add` | From `TimeStampedModel` |
-| `updated_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now` | From `TimeStampedModel` |
-
-**Indexes:**
-
-| Index Name | Column(s) | Type |
-|---|---|---|
-| `notifications_notif_user_idx` | `user_id` | `BTREE` |
-| `notifications_notif_user_read_idx` | `user_id`, `is_read` | `BTREE` |
-| `notifications_notif_channel_sent_idx` | `channel`, `is_sent`, `created_at` | `BTREE` |
-
-**Channel Choices:**
-
-| Display | DB Value | Recipient Field Used |
-|---|---|---|
-| WhatsApp Business API | `WHATSAPP` | `recipient_phone` |
-| SMS (Local Gateway) | `SMS` | `recipient_phone` |
-| Email | `EMAIL` | `recipient_email` |
-| In-App Push / Bell Icon | `IN_APP` | `user_id` |
-
-**Notification Type Choices:**
-
-| Display | DB Value | Typical Channel |
-|---|---|---|
-| COD Order Verification | `COD_VERIFICATION` | `WHATSAPP` |
-| Order Placed | `ORDER_PLACED` | `EMAIL`, `WHATSAPP` |
-| Order Shipped (AWB Attached) | `ORDER_SHIPPED` | `WHATSAPP`, `SMS` |
-| Rider Out For Delivery | `OUT_FOR_DELIVERY` | `WHATSAPP`, `SMS` |
-| Marketing / Discount Alert | `PROMOTIONAL` | `WHATSAPP`, `EMAIL` |
-| System / Security Alert | `SYSTEM_ALERT` | `EMAIL`, `IN_APP` |
-
-**Relationships:**
-
-| Relation | Type | On Delete |
-|---|---|---|
-| `notifications_notification` → `accounts_user` | Many-to-One | `CASCADE` |
-
-**Channel-Recipient Validation Logic** *(enforced at application layer)*:
-
-```
-channel == WHATSAPP or SMS  → recipient_phone must not be NULL
-channel == EMAIL            → recipient_email must not be NULL
-channel == IN_APP           → user_id must not be NULL
-is_sent == TRUE             → sent_at must not be NULL
-is_sent == FALSE            → sent_at must be NULL
-```
-
----
-
-### 9.2 `notifications_whatsappcodverification`
-
-Tracks the lifecycle of an automated WhatsApp message sent to
-verify a COD order before dispatch. Prevents RTO by confirming
-customer intent before the order leaves the warehouse. One record
-per order — enforced via `unique=True` on `order_id`.
-
-| Column | Django Field | DB Type | Constraints | Default | Notes |
-|---|---|---|---|---|---|
-| `id` | `AutoField` (PK) | `BIGINT` | `PK`, `NOT NULL`, `AUTO INCREMENT` | Auto | — |
-| `order_id` | `CharField(100)` | `VARCHAR(100)` | `UNIQUE`, `NOT NULL`, `INDEX` | — | Soft reference to `orders_order`. See ISSUE-NOTIF03 |
-| `phone_number` | `CharField(15)` | `VARCHAR(15)` | `NOT NULL` | — | Customer WhatsApp number. Format `+923XXXXXXXXX` |
-| `meta_message_id` | `CharField(150)` | `VARCHAR(150)` | `NULL` | `NULL` | WhatsApp Business API message ID for delivery tracking |
-| `status` | `CharField(20)` | `VARCHAR(20)` | `NOT NULL`, `INDEX` | `'PENDING_REPLY'` | See Verification Status choices below |
-| `customer_reply_text` | `CharField(100)` | `VARCHAR(100)` | `NOT NULL` | `''` | Raw reply text received from customer via webhook |
-| `verified_at` | `DateTimeField` | `TIMESTAMPTZ` | `NULL` | `NULL` | Timestamp when customer confirmed or cancelled |
-| `created_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now_add` | From `TimeStampedModel` |
-| `updated_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now` | From `TimeStampedModel` |
-
-**Indexes:**
-
-| Index Name | Column(s) | Type |
-|---|---|---|
-| `notifications_wacodverif_order_idx` | `order_id` | `UNIQUE BTREE` |
-| `notifications_wacodverif_status_idx` | `status` | `BTREE` |
-
-**Verification Status Choices:**
-
-| Display | DB Value | Notes |
-|---|---|---|
-| Message Sent - Awaiting Reply | `PENDING_REPLY` | Initial state after WhatsApp message dispatched |
-| Customer Confirmed via WhatsApp | `CONFIRMED` | Order proceeds to fulfilment |
-| Customer Cancelled via WhatsApp | `CANCELLED` | Order moves to `CANCELLED` status |
-| No Response (Manual Call Required) | `TIMEOUT` | Celery task triggers after configurable window |
-
-**Verification Lifecycle:**
-
-```
-COD order placed
-→ WhatsApp message sent → record created (PENDING_REPLY)
-→ Customer replies YES  → status = CONFIRMED, verified_at = now()
-                        → Order.status → CONFIRMED
-→ Customer replies NO   → status = CANCELLED, verified_at = now()
-                        → Order.status → CANCELLED
-→ No reply in window   → Celery beat task → status = TIMEOUT
-                        → triggers manual call queue
-```
-
-**Relationships:**
-
-| Relation | Type | On Delete |
-|---|---|---|
-| `notifications_whatsappcodverification` → `orders_order` | Soft reference via `order_id` string | See ISSUE-NOTIF03 |
-
----
-
-
----
 
 ## 1. Accounts App
 
 **App Label:** `accounts`
 **Purpose:** Manages user identity, authentication, email verification,
-password reset, and extended profile data.
-**Status:** ✅ Migrated
+password reset, extended profile data, multiple shipping addresses,
+and login activity audit logging.
+**Status:** ✅ Migrated — all issues resolved
+
+**Choice Files:**
+| Class | Location | Used By |
+|---|---|---|
+| `Role` | `apps/common/choices/role.py` | `User.role` |
+| `City` | `apps/common/choices/city.py` | `UserAddress.city` |
+| `CITY_POSTAL_MAP` | `apps/common/choices/city_postal_map.py` | `UserAddress.save()` |
+| `CITY_PROVINCE_MAP` | `apps/common/choices/city_postal_map.py` | `UserAddress.save()` |
+| `Gender` | `apps/accounts/choices/gender.py` | `UserProfile.gender` |
+| `Province` | `apps/accounts/choices/province.py` | `UserAddress.province` |
+| `AddressLabel` | `apps/accounts/choices/address_label.py` | `UserAddress.label` |
 
 ---
 
 ### 1.1 `accounts_user`
 
-Custom user model. Replaces Django's default `auth_user`.
+Custom user model. Replaces Django default `auth_user`.
 Uses **email** as the primary login identifier.
 
 | Column | Django Field | DB Type | Constraints | Default | Notes |
@@ -189,20 +62,23 @@ Uses **email** as the primary login identifier.
 | `full_name` | `CharField(255)` | `VARCHAR(255)` | `NOT NULL` | — | Single field — intentional for Pakistani names |
 | `role` | `CharField(2)` | `VARCHAR(2)` | `NOT NULL` | `'CU'` | See Role choices below |
 | `password` | Inherited | `VARCHAR(128)` | `NOT NULL` | — | Hashed. Provided by `AbstractBaseUser` |
-| `last_login` | Inherited | `TIMESTAMPTZ` | `NULL` | `NULL` | Provided by `AbstractBaseUser` |
+| `last_login` | Inherited | `TIMESTAMPTZ` | `NULL` | `NULL` | Updated via `user_logged_in` signal fired manually in `LoginView` |
 | `is_active` | `BooleanField` | `BOOLEAN` | `NOT NULL` | `TRUE` | Soft disable instead of deletion |
 | `is_staff` | `BooleanField` | `BOOLEAN` | `NOT NULL` | `FALSE` | Django admin access |
 | `is_verified` | `BooleanField` | `BOOLEAN` | `NOT NULL` | `FALSE` | Email verification status |
 | `is_superuser` | Inherited | `BOOLEAN` | `NOT NULL` | `FALSE` | Provided by `PermissionsMixin` |
 | `date_joined` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `timezone.now` | Account creation timestamp |
+| `updated_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now` | Last modification timestamp. Added ISSUE-A01 |
 
 **Indexes:**
 
-| Index Name | Column(s) | Type |
-|---|---|---|
-| `accounts_user_email_idx` | `email` | `UNIQUE BTREE` |
+| Index Name | Column(s) | Type | Purpose |
+|---|---|---|---|
+| `accounts_user_email_idx` | `email` | `UNIQUE BTREE` | Fast login lookup |
+| `accounts_user_role_idx` | `role` | `BTREE` | Filter by role in admin and Celery jobs. Added ISSUE-A05 |
+| `accounts_user_last_login_idx` | `last_login` | `BTREE` | Inactive user cleanup jobs. Added ISSUE-A05 |
 
-**`Role` Enum Choices** *(defined in `apps.common.choices.role`)*:
+**`Role` Choices** *(defined in `apps/common/choices/role.py`)*:
 
 | Display | DB Value |
 |---|---|
@@ -214,34 +90,52 @@ Uses **email** as the primary login identifier.
 | Relation | Type | On Delete |
 |---|---|---|
 | `accounts_user` → `accounts_userprofile` | One-to-One | `CASCADE` |
+| `accounts_user` → `accounts_useraddress` | One-to-Many | `CASCADE` |
 | `accounts_user` → `accounts_emailverificationtoken` | One-to-Many | `CASCADE` |
 | `accounts_user` → `accounts_passwordresettoken` | One-to-Many | `CASCADE` |
+| `accounts_user` → `accounts_userloginactivity` | One-to-Many | `SET NULL` |
+
+**`last_login` Signal Note:**
+```
+JWT login flow never calls Django's login() which normally
+fires user_logged_in signal. Signal is fired manually in
+LoginView after successful authentication:
+
+user_logged_in.send(
+    sender=user.__class__,
+    request=request,
+    user=user,
+)
+
+Django's built-in update_last_login receiver then updates
+last_login automatically.
+```
 
 ---
 
 ### 1.2 `accounts_userprofile`
 
-Extended personal information for a user.
+Personal identity information for a user.
 Created automatically via Django signal on `User` post-save.
+Address data moved to `UserAddress` (ISSUE-A02).
+This model holds personal identity only.
 
 | Column | Django Field | DB Type | Constraints | Default | Notes |
 |---|---|---|---|---|---|
 | `id` | `AutoField` (PK) | `BIGINT` | `PK`, `NOT NULL` | Auto | — |
 | `user_id` | `OneToOneField → User` | `BIGINT` | `UNIQUE`, `NOT NULL`, `FK`, `INDEX` | — | `CASCADE` on delete |
-| `phone` | `CharField(15)` | `VARCHAR(15)` | `NOT NULL` | `''` | Pakistani format: `+923001234567` or `03001234567` |
+| `phone` | `CharField(15)` | `VARCHAR(15)` | `UNIQUE`, `NULL`, `INDEX` | `NULL` | Pakistani format: `+923001234567` or `03001234567`. `NULL` = not provided. Updated ISSUE-A03 |
 | `date_of_birth` | `DateField` | `DATE` | `NULL` | `NULL` | Optional |
 | `gender` | `CharField(1)` | `VARCHAR(1)` | `NOT NULL` | `''` | See Gender choices below |
 | `avatar` | `ImageField` | `VARCHAR(255)` | `NULL` | `NULL` | Stored path. Uploads to `avatars/%Y/%m/` |
-| `address_line1` | `CharField(255)` | `VARCHAR(255)` | `NOT NULL` | `''` | Primary street address |
-| `address_line2` | `CharField(255)` | `VARCHAR(255)` | `NOT NULL` | `''` | Apartment / floor / area |
-| `city` | `CharField(100)` | `VARCHAR(100)` | `NOT NULL` | `''` | — |
-| `province` | `CharField(2)` | `VARCHAR(2)` | `NOT NULL` | `''` | See Province choices below |
-| `postal_code` | `CharField(10)` | `VARCHAR(10)` | `NOT NULL` | `''` | Pakistani 5-digit postal code |
-| `country` | `CharField(100)` | `VARCHAR(100)` | `NOT NULL` | `'Pakistan'` | Single-country ecommerce default |
 | `created_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now_add` | From `TimeStampedModel` |
 | `updated_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now` | From `TimeStampedModel` |
 
-**`Gender` Choices:**
+> **Note:** `address_line1`, `address_line2`, `city`, `province`,
+> `postal_code`, `country` fields removed in ISSUE-A02.
+> Address data now lives in `accounts_useraddress`.
+
+**`Gender` Choices** *(defined in `apps/accounts/choices/gender.py`)*:
 
 | Display | DB Value |
 |---|---|
@@ -250,7 +144,52 @@ Created automatically via Django signal on `User` post-save.
 | Other | `O` |
 | Prefer not to say | `N` |
 
-**`Province` Choices:**
+**Computed Properties** *(Python level — not stored in DB)*:
+
+| Property | Returns | Notes |
+|---|---|---|
+| `default_address` | `UserAddress` or `None` | Returns user default shipping address via `UserAddress` FK |
+
+---
+
+### 1.3 `accounts_useraddress`
+
+Multiple shipping addresses per user. Extracted from
+`UserProfile` (ISSUE-A02). City selection auto-derives
+province and postal code — user never enters these manually.
+One address per user enforced at DB level via `UniqueConstraint`.
+
+| Column | Django Field | DB Type | Constraints | Default | Notes |
+|---|---|---|---|---|---|
+| `id` | `AutoField` (PK) | `BIGINT` | `PK`, `NOT NULL` | Auto | — |
+| `user_id` | `ForeignKey → User` | `BIGINT` | `NOT NULL`, `FK`, `INDEX` | — | `CASCADE` on delete |
+| `label` | `CharField(10)` | `VARCHAR(10)` | `NOT NULL` | `'home'` | See AddressLabel choices below |
+| `address_line1` | `CharField(255)` | `VARCHAR(255)` | `NOT NULL` | — | Street address, house number, building name |
+| `address_line2` | `CharField(255)` | `VARCHAR(255)` | `NOT NULL` | `''` | Apartment, floor, area, landmark. Optional |
+| `city` | `CharField(50)` | `VARCHAR(50)` | `NOT NULL` | — | Dropdown only. See City choices. Drives province and postal_code |
+| `province` | `CharField(2)` | `VARCHAR(2)` | `NOT NULL` | Auto | `editable=False`. Auto-derived from city on `save()` |
+| `postal_code` | `CharField(10)` | `VARCHAR(10)` | `NOT NULL` | Auto | `editable=False`. Auto-derived from city on `save()` |
+| `country` | `CharField(100)` | `VARCHAR(100)` | `NOT NULL` | `'Pakistan'` | `editable=False`. Always Pakistan |
+| `is_default` | `BooleanField` | `BOOLEAN` | `NOT NULL` | `FALSE` | One default per user enforced by `UniqueConstraint` and `save()` |
+| `created_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now_add` | From `TimeStampedModel` |
+| `updated_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now` | From `TimeStampedModel` |
+
+**Indexes:**
+
+| Index Name | Column(s) | Type | Purpose |
+|---|---|---|---|
+| `accounts_useraddress_user_idx` | `user_id` | `BTREE` | Fetch all addresses for a user |
+| `unique_default_address_per_user` | `user_id` WHERE `is_default=TRUE` | `UNIQUE PARTIAL` | One default per user at DB level |
+
+**`AddressLabel` Choices** *(defined in `apps/accounts/choices/address_label.py`)*:
+
+| Display | DB Value |
+|---|---|
+| Home | `home` |
+| Office | `office` |
+| Other | `other` |
+
+**`Province` Choices** *(defined in `apps/accounts/choices/province.py`)*:
 
 | Display | DB Value |
 |---|---|
@@ -262,20 +201,50 @@ Created automatically via Django signal on `User` post-save.
 | Azad Jammu & Kashmir | `AK` |
 | Islamabad Capital Territory | `IC` |
 
+**`City` Choices** *(defined in `apps/common/choices/city.py`)*:
+
+| Region | Cities |
+|---|---|
+| Punjab | Lahore, Faisalabad, Rawalpindi, Gujranwala, Multan, Sialkot, Bahawalpur, Sargodha, Sheikhupura, Gujrat, Rahim Yar Khan, Jhang, Sahiwal, Okara, Kasur |
+| Sindh | Karachi, Hyderabad, Sukkur, Larkana, Nawabshah, Mirpur Khas |
+| Khyber Pakhtunkhwa | Peshawar, Abbottabad, Mardan, Swat, Kohat, Mingora |
+| Balochistan | Quetta, Turbat, Khuzdar |
+| Federal / AJK / GB | Islamabad, Muzaffarabad, Gilgit |
+
+**Auto-Derive Logic on `save()`:**
+```
+User selects city from dropdown
+→ save() fires
+→ province   = CITY_PROVINCE_MAP[city]
+→ postal_code = CITY_POSTAL_MAP[city]
+→ User never manually enters province or postal_code
+```
+
+**Default Enforcement:**
+```
+Application layer (save()):
+  if is_default=True:
+    UPDATE all other addresses for this user SET is_default=FALSE
+
+DB layer (UniqueConstraint):
+  UNIQUE (user_id) WHERE is_default=TRUE
+  Guards against bulk_create and raw SQL bypassing save()
+```
+
 **Computed Properties** *(Python level — not stored in DB)*:
 
 | Property | Returns | Notes |
 |---|---|---|
-| `has_complete_address` | `bool` | True if `address_line1`, `city`, `province`, `postal_code` all non-empty |
 | `full_address` | `str` | All address parts joined with `, ` |
 
 ---
 
-### 1.3 `accounts_emailverificationtoken`
+### 1.4 `accounts_emailverificationtoken`
 
 One-time token for email address verification.
-Expires after **24 hours**. All previous tokens for a user
-are deleted before a new one is created.
+Expires after **24 hours**. Marked `is_used=True` immediately
+after successful verification to prevent replay attacks.
+Token deleted after use — table stays clean.
 
 | Column | Django Field | DB Type | Constraints | Default | Notes |
 |---|---|---|---|---|---|
@@ -284,6 +253,7 @@ are deleted before a new one is created.
 | `token` | `UUIDField` | `UUID` | `UNIQUE`, `NOT NULL`, `INDEX` | `uuid4` | Non-editable. Used in verification URL |
 | `created_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now_add` | — |
 | `expires_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | Set in `save()` | `created_at + 24 hours` |
+| `is_used` | `BooleanField` | `BOOLEAN` | `NOT NULL` | `FALSE` | Marked `TRUE` immediately on verification. Added ISSUE-A04 |
 
 **Indexes:**
 
@@ -293,16 +263,26 @@ are deleted before a new one is created.
 | `accounts_emailverif_user_idx` | `user_id` | `BTREE` |
 
 **Token Lifecycle:**
-
 ```
 Register → token created → email sent → user clicks link
-→ lookup by UUID → check expiry → User.is_verified = True
-→ token deleted on next resend via create_for_user()
+→ lookup by UUID → check is_valid (is_used + is_expired)
+→ transaction.atomic():
+    mark_used() → is_used=TRUE
+    user.is_verified = TRUE
+    token.delete()
+→ welcome email via Celery
 ```
+
+**Computed Properties** *(Python level — not stored in DB)*:
+
+| Property | Logic |
+|---|---|
+| `is_expired` | `timezone.now() > expires_at` |
+| `is_valid` | `NOT is_used AND NOT is_expired` |
 
 ---
 
-### 1.4 `accounts_passwordresettoken`
+### 1.5 `accounts_passwordresettoken`
 
 Single-use token for password reset.
 Expires after **1 hour**. Marked `is_used=True` after consumption.
@@ -325,11 +305,10 @@ All previous tokens deleted when a new one is requested.
 | `accounts_pwreset_user_idx` | `user_id` | `BTREE` |
 
 **Token Lifecycle:**
-
 ```
 Request reset → old tokens deleted → new token created → email sent
-→ user clicks link → lookup by UUID → check is_used + expiry
-→ password updated → mark_used() → is_used = TRUE
+→ lookup by UUID → check is_valid (is_used + is_expired)
+→ password updated → mark_used() → is_used=TRUE
 ```
 
 **Computed Properties** *(Python level — not stored in DB)*:
@@ -340,6 +319,54 @@ Request reset → old tokens deleted → new token created → email sent
 | `is_valid` | `NOT is_used AND NOT is_expired` |
 
 ---
+
+### 1.6 `accounts_userloginactivity`
+
+Immutable append-only audit log of every login attempt.
+Records successful and failed attempts with IP address,
+user agent, and failure reason. Used for fraud detection,
+security auditing, and brute force analysis.
+Rows are never updated after creation.
+
+| Column | Django Field | DB Type | Constraints | Default | Notes |
+|---|---|---|---|---|---|
+| `id` | `AutoField` (PK) | `BIGINT` | `PK`, `NOT NULL` | Auto | — |
+| `user_id` | `ForeignKey → User` | `BIGINT` | `NULL`, `FK`, `INDEX` | `NULL` | `SET NULL` on delete — preserve logs even if user deleted. `NULL` on failed attempts against unknown emails |
+| `email_attempted` | `EmailField` | `VARCHAR(254)` | `NOT NULL` | — | Email submitted in login form. Stored separately — captures attempts against non-existent accounts |
+| `ip_address` | `GenericIPAddressField` | `INET` | `NULL` | `NULL` | Client IP. Extracted from `X-Forwarded-For` or `REMOTE_ADDR` |
+| `user_agent` | `TextField` | `TEXT` | `NOT NULL` | `''` | Browser and device string from request headers |
+| `was_successful` | `BooleanField` | `BOOLEAN` | `NOT NULL` | — | `TRUE` if credentials valid and user logged in |
+| `failure_reason` | `CharField(50)` | `VARCHAR(50)` | `NOT NULL` | `''` | Short code for failed attempts: `invalid_credentials`, `account_inactive`, `email_not_verified` |
+| `created_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL`, `INDEX` | `auto_now_add` | Login attempt timestamp |
+
+**Indexes:**
+
+| Index Name | Column(s) | Type | Purpose |
+|---|---|---|---|
+| `accounts_loginactivity_user_created_idx` | `user_id`, `created_at` | `BTREE` | User login history queries |
+| `accounts_loginactivity_ip_created_idx` | `ip_address`, `created_at` | `BTREE` | IP-based abuse detection |
+| `accounts_loginactivity_success_created_idx` | `was_successful`, `created_at` | `BTREE` | Failed attempt analysis |
+
+**Relationships:**
+
+| Relation | Type | On Delete |
+|---|---|---|
+| `accounts_userloginactivity` → `accounts_user` | Many-to-One | `SET NULL` |
+
+**Immutability Rules:**
+```
+- Rows are INSERT only — save() raises ValueError on update attempts
+- No updated_at — does not extend TimeStampedModel
+- created_at is the only timestamp — set once, never changed
+- Celery periodic task: purge records older than 90 days
+```
+
+**`user_id` Population Rules:**
+```
+Successful login  → user_id = authenticated user PK
+Failed login      → user_id = NULL (unknown identity)
+email_attempted   → always stored regardless of outcome
+```
 
 
 
@@ -1228,7 +1255,145 @@ and post-incident debugging. Rows are never updated or deleted.
 
 ---
 
+**App Label:** `notifications`
+**Purpose:** Manages outbound customer notifications across WhatsApp,
+SMS, Email, and In-App channels. Tracks send status and failure
+reasons per notification. Provides a dedicated COD order verification
+flow via WhatsApp Business API to reduce Return-to-Origin (RTO) rates —
+a critical operational concern for Pakistani COD ecommerce.
+**Status:** 🟡 Not Yet Migrated — schema changes are low risk
+
 ---
+
+### 9.1 `notifications_notification`
+
+A single outbound notification dispatched to a user or recipient
+across any supported channel. In-App notifications are read via
+the `is_read` flag. SMS and WhatsApp use `recipient_phone`.
+Email uses `recipient_email`. `context_data` carries dynamic
+template variables for message rendering.
+
+| Column | Django Field | DB Type | Constraints | Default | Notes |
+|---|---|---|---|---|---|
+| `id` | `AutoField` (PK) | `BIGINT` | `PK`, `NOT NULL`, `AUTO INCREMENT` | Auto | — |
+| `user_id` | `ForeignKey → User` | `BIGINT` | `NULL`, `FK`, `INDEX` | `NULL` | `CASCADE` on delete. `NULL` = guest/anonymous recipient |
+| `recipient_phone` | `CharField(15)` | `VARCHAR(15)` | `NULL` | `NULL` | Required for `SMS` and `WHATSAPP` channels. Format `+923XXXXXXXXX` |
+| `recipient_email` | `EmailField` | `VARCHAR(254)` | `NULL` | `NULL` | Required for `EMAIL` channel |
+| `channel` | `CharField(15)` | `VARCHAR(15)` | `NOT NULL` | — | See Channel choices below |
+| `notification_type` | `CharField(25)` | `VARCHAR(25)` | `NOT NULL` | — | See Notification Type choices below |
+| `title` | `CharField(150)` | `VARCHAR(150)` | `NOT NULL` | — | Notification headline or subject |
+| `body` | `TextField` | `TEXT` | `NOT NULL` | — | Full notification message body |
+| `context_data` | `JSONField` | `JSONB` | `NULL` | `NULL` | Dynamic template variables e.g. `{"order_id": "MBP-001", "awb": "TCS-99"}` |
+| `is_sent` | `BooleanField` | `BOOLEAN` | `NOT NULL` | `FALSE` | `TRUE` after successful dispatch to gateway |
+| `sent_at` | `DateTimeField` | `TIMESTAMPTZ` | `NULL` | `NULL` | Timestamp of successful dispatch |
+| `is_read` | `BooleanField` | `BOOLEAN` | `NOT NULL` | `FALSE` | Read state for `IN_APP` channel only |
+| `failure_reason` | `TextField` | `TEXT` | `NOT NULL` | `''` | Gateway error detail on failed dispatch |
+| `created_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now_add` | From `TimeStampedModel` |
+| `updated_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now` | From `TimeStampedModel` |
+
+**Indexes:**
+
+| Index Name | Column(s) | Type |
+|---|---|---|
+| `notifications_notif_user_idx` | `user_id` | `BTREE` |
+| `notifications_notif_user_read_idx` | `user_id`, `is_read` | `BTREE` |
+| `notifications_notif_channel_sent_idx` | `channel`, `is_sent`, `created_at` | `BTREE` |
+
+**Channel Choices:**
+
+| Display | DB Value | Recipient Field Used |
+|---|---|---|
+| WhatsApp Business API | `WHATSAPP` | `recipient_phone` |
+| SMS (Local Gateway) | `SMS` | `recipient_phone` |
+| Email | `EMAIL` | `recipient_email` |
+| In-App Push / Bell Icon | `IN_APP` | `user_id` |
+
+**Notification Type Choices:**
+
+| Display | DB Value | Typical Channel |
+|---|---|---|
+| COD Order Verification | `COD_VERIFICATION` | `WHATSAPP` |
+| Order Placed | `ORDER_PLACED` | `EMAIL`, `WHATSAPP` |
+| Order Shipped (AWB Attached) | `ORDER_SHIPPED` | `WHATSAPP`, `SMS` |
+| Rider Out For Delivery | `OUT_FOR_DELIVERY` | `WHATSAPP`, `SMS` |
+| Marketing / Discount Alert | `PROMOTIONAL` | `WHATSAPP`, `EMAIL` |
+| System / Security Alert | `SYSTEM_ALERT` | `EMAIL`, `IN_APP` |
+
+**Relationships:**
+
+| Relation | Type | On Delete |
+|---|---|---|
+| `notifications_notification` → `accounts_user` | Many-to-One | `CASCADE` |
+
+**Channel-Recipient Validation Logic** *(enforced at application layer)*:
+
+```
+channel == WHATSAPP or SMS  → recipient_phone must not be NULL
+channel == EMAIL            → recipient_email must not be NULL
+channel == IN_APP           → user_id must not be NULL
+is_sent == TRUE             → sent_at must not be NULL
+is_sent == FALSE            → sent_at must be NULL
+```
+
+---
+
+### 9.2 `notifications_whatsappcodverification`
+
+Tracks the lifecycle of an automated WhatsApp message sent to
+verify a COD order before dispatch. Prevents RTO by confirming
+customer intent before the order leaves the warehouse. One record
+per order — enforced via `unique=True` on `order_id`.
+
+| Column | Django Field | DB Type | Constraints | Default | Notes |
+|---|---|---|---|---|---|
+| `id` | `AutoField` (PK) | `BIGINT` | `PK`, `NOT NULL`, `AUTO INCREMENT` | Auto | — |
+| `order_id` | `CharField(100)` | `VARCHAR(100)` | `UNIQUE`, `NOT NULL`, `INDEX` | — | Soft reference to `orders_order`. See ISSUE-NOTIF03 |
+| `phone_number` | `CharField(15)` | `VARCHAR(15)` | `NOT NULL` | — | Customer WhatsApp number. Format `+923XXXXXXXXX` |
+| `meta_message_id` | `CharField(150)` | `VARCHAR(150)` | `NULL` | `NULL` | WhatsApp Business API message ID for delivery tracking |
+| `status` | `CharField(20)` | `VARCHAR(20)` | `NOT NULL`, `INDEX` | `'PENDING_REPLY'` | See Verification Status choices below |
+| `customer_reply_text` | `CharField(100)` | `VARCHAR(100)` | `NOT NULL` | `''` | Raw reply text received from customer via webhook |
+| `verified_at` | `DateTimeField` | `TIMESTAMPTZ` | `NULL` | `NULL` | Timestamp when customer confirmed or cancelled |
+| `created_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now_add` | From `TimeStampedModel` |
+| `updated_at` | `DateTimeField` | `TIMESTAMPTZ` | `NOT NULL` | `auto_now` | From `TimeStampedModel` |
+
+**Indexes:**
+
+| Index Name | Column(s) | Type |
+|---|---|---|
+| `notifications_wacodverif_order_idx` | `order_id` | `UNIQUE BTREE` |
+| `notifications_wacodverif_status_idx` | `status` | `BTREE` |
+
+**Verification Status Choices:**
+
+| Display | DB Value | Notes |
+|---|---|---|
+| Message Sent - Awaiting Reply | `PENDING_REPLY` | Initial state after WhatsApp message dispatched |
+| Customer Confirmed via WhatsApp | `CONFIRMED` | Order proceeds to fulfilment |
+| Customer Cancelled via WhatsApp | `CANCELLED` | Order moves to `CANCELLED` status |
+| No Response (Manual Call Required) | `TIMEOUT` | Celery task triggers after configurable window |
+
+**Verification Lifecycle:**
+
+```
+COD order placed
+→ WhatsApp message sent → record created (PENDING_REPLY)
+→ Customer replies YES  → status = CONFIRMED, verified_at = now()
+                        → Order.status → CONFIRMED
+→ Customer replies NO   → status = CANCELLED, verified_at = now()
+                        → Order.status → CANCELLED
+→ No reply in window   → Celery beat task → status = TIMEOUT
+                        → triggers manual call queue
+```
+
+**Relationships:**
+
+| Relation | Type | On Delete |
+|---|---|---|
+| `notifications_whatsappcodverification` → `orders_order` | Soft reference via `order_id` string | See ISSUE-NOTIF03 |
+
+---
+---
+
 
 ## 10. Logistics App
 

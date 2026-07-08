@@ -5,7 +5,7 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.utils.translation import gettext_lazy as _
 
-from .models import EmailVerificationToken, PasswordResetToken, User, UserProfile,UserAddress
+from .models import EmailVerificationToken, PasswordResetToken, User, UserProfile,UserAddress,UserLoginActivity
 
 
 
@@ -169,6 +169,59 @@ class UserAdmin(BaseUserAdmin):
     filter_horizontal = ["groups", "user_permissions"]
 
 
+
+# accounts/admin.py — add this class
+
+@admin.register(UserLoginActivity)
+class UserLoginActivityAdmin(admin.ModelAdmin):
+    """
+    Admin interface for UserLoginActivity.
+    Read-only — immutable audit log.
+    No add permission — records created by login flow only.
+    """
+
+    list_display = [
+        "email_attempted",
+        "user",
+        "ip_address",
+        "display_was_successful",
+        "failure_reason",
+        "created_at",
+    ]
+    search_fields = [
+        "email_attempted",
+        "user__email",
+        "ip_address",
+    ]
+    list_filter = [
+        "was_successful",
+        "failure_reason",
+    ]
+    readonly_fields = [
+        "user",
+        "email_attempted",
+        "ip_address",
+        "user_agent",
+        "was_successful",
+        "failure_reason",
+        "created_at",
+    ]
+    list_per_page = 100
+    date_hierarchy = "created_at"
+    ordering = ["-created_at"]
+
+    def has_add_permission(self, request) -> bool:
+        return False
+
+    def has_change_permission(self, request, obj=None) -> bool:
+        return False
+
+    def has_delete_permission(self, request, obj=None) -> bool:
+        return False
+
+    @admin.display(boolean=True, description=_("Successful"))
+    def display_was_successful(self, obj: UserLoginActivity) -> bool:
+        return obj.was_successful
 # ─── UserProfile Admin ────────────────────────────────────────────────────────
 
 @admin.register(UserProfile)
@@ -310,6 +363,7 @@ class UserAddressAdmin(admin.ModelAdmin):
             },
         ),
     )
+
 # # ─── Inlines ──────────────────────────────────────────────────────────────────
 
 # class UserProfileInline(admin.StackedInline):
