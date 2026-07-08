@@ -38,43 +38,6 @@
 
 
 
-### ISSUE-A03 — `phone` Field Not Unique and Not Indexed
-
-**Severity:** 🟡 Medium
-**Table:** `accounts_userprofile`
-
-**Problem:**
-`phone` has no `unique=True` and no `db_index=True`. Two users can
-register with the same phone number. If SMS OTP or COD verification
-is added later, this causes ambiguous lookups and security issues.
-
-**Safe Migration Path:**
-```
-Step 1 → Add db_index=True only first (safe — no validation on existing data)
-Step 2 → Find duplicates before enforcing uniqueness:
-```
-```sql
-SELECT phone, COUNT(*)
-FROM accounts_userprofile
-WHERE phone != ''
-GROUP BY phone
-HAVING COUNT(*) > 1;
-```
-```
-Step 3 → Clean up any duplicate phone numbers via script or manually
-Step 4 → Change field definition:
-```
-```python
-# Use null=True to avoid unique constraint collision on empty string values
-phone = models.CharField(
-    max_length=15,
-    null=True,
-    blank=True,
-    unique=True,
-    db_index=True,
-)
-```
-
 ---
 
 ### ISSUE-A04 — `EmailVerificationToken` Has No `is_used` Flag

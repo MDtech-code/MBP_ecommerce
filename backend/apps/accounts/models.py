@@ -138,12 +138,20 @@ class UserProfile(TimeStampedModel):
         verbose_name=_("user"),
     )
     phone = models.CharField(
-        _("phone number"),
-        max_length=15,
-        validators=[phone_validator],
-        blank=True,
-        default="",
-    )
+    _("phone number"),
+    max_length=15,
+    validators=[phone_validator],
+    null=True,
+    blank=True,
+    default=None,
+    unique=True,
+    db_index=True,
+    help_text=_(
+        "Pakistani phone number. "
+        "Format: +923001234567 or 03001234567. "
+        "Must be unique across all accounts."
+    ),
+)
     date_of_birth = models.DateField(
         _("date of birth"),
         null=True,
