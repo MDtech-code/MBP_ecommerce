@@ -10,7 +10,7 @@ from django.utils import timezone
 
 from rest_framework import serializers
 
-from backend.apps.core.mixins import TimestampFieldsMixin
+from apps.core.mixins import TimestampFieldsMixin
 
 from .models import User, UserProfile,UserAddress
 from .validators import validate_email_unique,validate_full_name,validate_image_file,validate_pakistani_phone,validate_passwords_match,validate_strong_password
