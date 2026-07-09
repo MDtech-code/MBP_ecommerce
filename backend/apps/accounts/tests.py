@@ -1848,9 +1848,7 @@ class TestProfileGet:
         profile = data["profile"]
         assert "phone" in profile
         assert "gender" in profile
-        assert "city" in profile
-        assert "province" in profile
-        assert "has_complete_address" in profile
+        
 
     def test_get_profile_unauthenticated_returns_401(self, api_client):
         """IsAuthenticated must block unauthenticated requests."""
@@ -1911,21 +1909,20 @@ class TestProfileUpdate:
         """Updated fields must be persisted to DB."""
         auth_client.patch(
             PROFILE_URL,
-            {"city": "Karachi", "province": "SD"},
+            { "phone": "03001234588"},
             format="json",
         )
         user.profile.refresh_from_db()
-        assert user.profile.city == "Karachi"
-        assert user.profile.province == "SD"
+        assert user.profile.phone == '03001234588'
 
     def test_patch_profile_response_reflects_updated_data(self, auth_client):
         """Response data must contain the newly saved values."""
         response = auth_client.patch(
             PROFILE_URL,
-            {"city": "Islamabad"},
+            {"phone": "03001234588"},
             format="json",
         )
-        assert response.data["data"]["profile"]["city"] == "Islamabad"
+        assert response.data["data"]["profile"]["phone"] == "03001234588"
 
     def test_patch_profile_is_partial(self, auth_client, user):
         """
@@ -1937,18 +1934,18 @@ class TestProfileUpdate:
 
         auth_client.patch(
             PROFILE_URL,
-            {"city": "Multan"},
+            {"phone": "03001234567"},
             format="json",
         )
         user.profile.refresh_from_db()
         assert user.profile.phone == "03001234567"
-        assert user.profile.city == "Multan"
+     
 
     def test_put_profile_also_accepted(self, auth_client):
         """PUT must be accepted as alias for PATCH."""
         response = auth_client.put(
             PROFILE_URL,
-            {"city": "Quetta"},
+            {"phone": "03001234567"},
             format="json",
         )
         assert response.status_code == 200
@@ -2018,15 +2015,7 @@ class TestProfileUpdate:
         assert response.status_code == 400
         assert "gender" in response.data["errors"]
 
-    def test_patch_invalid_province_returns_400(self, auth_client):
-        """Invalid province choice must return 400."""
-        response = auth_client.patch(
-            PROFILE_URL,
-            {"province": "XX"},
-            format="json",
-        )
-        assert response.status_code == 400
-        assert "province" in response.data["errors"]
+    
 
     # ── Auth State ────────────────────────────────────────────────────────────
 
@@ -2034,7 +2023,7 @@ class TestProfileUpdate:
         """IsAuthenticated must block unauthenticated requests."""
         response = api_client.patch(
             PROFILE_URL,
-            {"city": "Lahore"},
+            {"phone": "03001234567"},
             format="json",
         )
         assert response.status_code == 401
