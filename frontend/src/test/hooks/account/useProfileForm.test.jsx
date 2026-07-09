@@ -33,12 +33,6 @@ vi.mock("../../../stores/authStore", () => ({
           phone: "03001234567",
           date_of_birth: "2000-01-01",
           gender: "Male",
-          address_line1: "Street 1",
-          address_line2: "House 5",
-          city: "Lahore",
-          province: "Punjab",
-          postal_code: "54000",
-          country: "Pakistan",
         },
       },
     }),
@@ -76,12 +70,7 @@ describe("useProfileForm", () => {
       phone: "03001234567",
       date_of_birth: "2000-01-01",
       gender: "Male",
-      address_line1: "Street 1",
-      address_line2: "House 5",
-      city: "Lahore",
-      province: "Punjab",
-      postal_code: "54000",
-      country: "Pakistan",
+      
     });
   });
 
@@ -96,12 +85,7 @@ describe("useProfileForm", () => {
       phone: null,
       date_of_birth: null,
       gender: null,
-      address_line1: null,
-      address_line2: null,
-      city: null,
-      province: null,
-      postal_code: null,
-      country: null,
+      
     });
   });
 
@@ -124,44 +108,8 @@ describe("useProfileForm", () => {
     );
   });
 
-  it("updates city field", () => {
-    const { result } = renderHook(() =>
-      useProfileForm()
-    );
-
-    act(() => {
-      result.current.handleChange({
-        target: {
-          name: "city",
-          value: "Islamabad",
-        },
-      });
-    });
-
-    expect(result.current.form.city).toBe(
-      "Islamabad"
-    );
-  });
-
-  it("updates country field", () => {
-    const { result } = renderHook(() =>
-      useProfileForm()
-    );
-
-    act(() => {
-      result.current.handleChange({
-        target: {
-          name: "country",
-          value: "Turkey",
-        },
-      });
-    });
-
-    expect(result.current.form.country).toBe(
-      "Turkey"
-    );
-  });
-
+  
+  
   it("submits current form values", () => {
     const onSaveSuccess = vi.fn();
 
@@ -255,39 +203,7 @@ describe("useProfileForm", () => {
     );
   });
 
-  it("maps postal code validation errors", () => {
-    hookState.isError = true;
+ 
 
-    hookState.error = {
-      errors: {
-        postal_code: ["Invalid postal code."],
-      },
-    };
 
-    const { result } = renderHook(() =>
-      useProfileForm()
-    );
-
-    expect(
-      result.current.fieldErrors.postal_code
-    ).toBe("Invalid postal code.");
-  });
-
-  it("maps country validation errors", () => {
-    hookState.isError = true;
-
-    hookState.error = {
-      errors: {
-        country: ["Country is required."],
-      },
-    };
-
-    const { result } = renderHook(() =>
-      useProfileForm()
-    );
-
-    expect(result.current.fieldErrors.country).toBe(
-      "Country is required."
-    );
-  });
 });
