@@ -137,18 +137,18 @@ class RoleBasedProfilePermission(BasePermission):
         role = getattr(request.user, "role", None)
 
         if role == Role.CUSTOMER:
-            logger.info("User %s granted CUSTOMER profile access", request.user.username)
+            logger.info("User %s granted CUSTOMER profile access", request.user.email)
             return True
 
       
 
         if role == Role.ADMIN:
-            logger.info("User %s granted admin profile access", request.user.username)
+            logger.info("User %s granted admin profile access", request.user.email)
             return True
 
         logger.warning(
             "User %s denied profile access: unknown role=%s",
-            request.user.username,
+            request.user.email,
             role,
         )
         return False
