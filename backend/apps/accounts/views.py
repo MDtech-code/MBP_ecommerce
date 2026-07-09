@@ -3,9 +3,13 @@ from __future__ import annotations
 import logging
 
 from django.conf import settings
-
 from django.db import transaction
 from django.utils.translation import gettext_lazy as _
+from django.contrib.auth import get_user_model
+from django.contrib.auth.signals import user_logged_in,user_logged_out
+from django.middleware.csrf import get_token
+
+
 from rest_framework import status
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -14,14 +18,14 @@ from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle
-from django.contrib.auth import get_user_model
-from django.contrib.auth.signals import user_logged_in,user_logged_out
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
-from django.middleware.csrf import get_token
+
 from apps.core.api.views import BaseAPIView
-from apps.accounts.utils import log_login_activity
-from apps.core.permissions import IsNotAuthenticated, IsVerified
+from apps.core.permissions import IsNotAuthenticated
+
+from .utils import log_login_activity
 from .models import User, EmailVerificationToken, PasswordResetToken,UserProfile,UserAddress
+
 from .serializers import (
     RegisterSerializer,
     LoginSerializer,
@@ -35,6 +39,7 @@ from .serializers import (
     AvatarUploadSerializer,
     UserAddressSerializer,
 )
+
 from .tasks import (
     send_verification_email_task,
     send_password_reset_email_task,
@@ -538,40 +543,6 @@ class LoginView(BaseAPIView):
         set_refresh_cookie(response, refresh)
         set_csrf_cookie(request, response)
         return response
-# class LoginView(BaseAPIView):
-#     """
-#     POST /api/accounts/login/
-#     Authenticate user and return JWT tokens.
-#     Access token in response body.
-#     Refresh token in HttpOnly cookie.
-#     """
-#     permission_classes = [IsNotAuthenticated]
-#     serializer_class=LoginSerializer
-#     def post(self, request):
-      
-#         serializer = self.serializer_class(data=request.data,context={"request":request})
-          
-#         if not serializer.is_valid():
-#             return self.error_response(
-#                 message=_("Login failed."),
-#                 errors=serializer.errors,
-#                 status_code=status.HTTP_400_BAD_REQUEST,
-#             )
-
-#         user = serializer.validated_data["user"]
-#         refresh = RefreshToken.for_user(user)
-
-#         response = self.success_response(
-#             data={
-#                 "access": str(refresh.access_token),
-#                 "user": UserSerializer(user).data,
-#             },
-#             message=_("Login successful."),
-#         )
-
-#         set_refresh_cookie(response, refresh)
-#         logger.info("User logged in: %s", user.email)
-#         return response
 
 
 # ─── Logout ───────────────────────────────────────────────────────────────────
@@ -649,29 +620,6 @@ class LogoutView(BaseAPIView):
         clear_refresh_cookie(response)
         clear_csrf_cookie(response)
         return response
-# class LogoutView(BaseAPIView):
-#     """
-#     POST /api/accounts/logout/
-#     Blacklist refresh token and clear cookie.
-#     """
-#     permission_classes = [IsAuthenticated]
-
-#     def post(self, request):
-#         refresh_token = request.COOKIES.get(REFRESH_COOKIE_NAME)
-
-#         if refresh_token:
-#             try:
-#                 token = RefreshToken(refresh_token)
-#                 token.blacklist()
-#                 logger.info("User logged out: %s", request.user.email)
-#             except TokenError:
-#                 pass  # token already invalid — still clear cookie
-
-#         response = self.success_response(
-#             message=_("Logged out successfully."),
-#         )
-#         clear_refresh_cookie(response)
-#         return response
 
 
 # ─── Token Refresh ────────────────────────────────────────────────────────────
@@ -797,58 +745,6 @@ class TokenRefreshView(BaseAPIView):
                 )
 
         return response
-# from django.views.decorators.csrf import ensure_csrf_cookie
-# from django.utils.decorators import method_decorator
-# from rest_framework import serializers
-
-# class EmptySerializer(serializers.Serializer):
-#     pass
-# @method_decorator(ensure_csrf_cookie, name="dispatch")  
-# class TokenRefreshView(BaseAPIView):
-#     """
-#     POST /api/accounts/token/refresh/
-#     Issue new access token using refresh token from cookie.
-#     """
-#     permission_classes = [AllowAny]
-#     serializer_class=EmptySerializer
-
-#     def post(self, request):
-#         refresh_token = request.COOKIES.get(REFRESH_COOKIE_NAME)
-
-#         if not refresh_token:
-#             return self.error_response(
-#                 message=_("Refresh token not found."),
-#                 status_code=status.HTTP_401_UNAUTHORIZED,
-#             )
-
-#         try:
-#             token = RefreshToken(refresh_token)
-#             new_access = str(token.access_token)
-
-#             response = self.success_response(
-#                 data={"access": new_access},
-#                 message=_("Token refreshed successfully."),
-#             )
-
-#             # rotate refresh token
-#             if settings.SIMPLE_JWT.get("ROTATE_REFRESH_TOKENS"):
-#                 token.blacklist()
-#                 from django.contrib.auth import get_user_model
-#                 User = get_user_model()
-
-#                 user_id = token["user_id"]
-#                 user = User.objects.get(id=user_id)
-#                 new_refresh = RefreshToken.for_user(user)
-#                 set_refresh_cookie(response, new_refresh)
-
-#             return response
-
-#         except TokenError as e:
-#             return self.error_response(
-#                 message=_("Invalid or expired refresh token."),
-#                 errors=str(e),
-#                 status_code=status.HTTP_401_UNAUTHORIZED,
-#             )
 
 
 # ─── Password Reset Request ───────────────────────────────────────────────────
@@ -1389,44 +1285,7 @@ class ProfileView(BaseAPIView):
 
 
 
-# class ProfileView(BaseAPIView):
-#     """
-#     GET  /api/accounts/profile/  → get own profile
-#     PUT  /api/accounts/profile/  → update own profile
-#     """
-#     permission_classes = [IsAuthenticated]
-#     serializer_class=UserSerializer
-#     def get(self, request):
-       
-#         serializer = self.serializer_class(request.user)  
-        
 
-#         return self.success_response(
-#             data=serializer.data,
-#             message=_("Profile retrieved successfully."),
-#         )
-
-#     def put(self, request):
-#         profile = request.user.profile
-#         serializer = ProfileUpdateSerializer(
-#             profile,
-#             data=request.data,
-#             partial=True,
-#         )
-#         if not serializer.is_valid():
-#             return self.error_response(
-#                 message=_("Profile update failed."),
-#                 errors=serializer.errors,
-#                 status_code=status.HTTP_400_BAD_REQUEST,
-#             )
-
-#         serializer.save()
-#         return self.success_response(
-#             data=UserSerializer(request.user).data,
-#             message=_("Profile updated successfully."),
-#         )
-
-# accounts/views.py
 
 class AddressListCreateView(BaseAPIView):
     """
@@ -1657,36 +1516,3 @@ class AvatarUploadView(BaseAPIView):
             data={"avatar": profile.avatar.url},
             message=_("Avatar uploaded successfully."),
         )
-# class AvatarUploadView(BaseAPIView):
-#     """
-#     POST /api/accounts/profile/avatar/
-#     Upload or replace profile avatar.
-#     """
-#     permission_classes = [IsAuthenticated]
-#     parser_classes = [MultiPartParser, FormParser]
-#     serializer_class=AvatarUploadSerializer
-#     def post(self, request):
-#         serializer = self.serializer_class(data=request.data)
-          
-#         if not serializer.is_valid():
-#             return self.error_response(
-#                 message=_("Avatar upload failed."),
-#                 errors=serializer.errors,
-#                 status_code=status.HTTP_400_BAD_REQUEST,
-#             )
-
-#         profile = request.user.profile
-
-#         # delete old avatar from storage
-#         if profile.avatar:
-#             profile.avatar.delete(save=False)
-
-#         profile.avatar = serializer.validated_data["avatar"]
-#         profile.save(update_fields=["avatar"])
-
-#         logger.info("Avatar updated for user: %s", request.user.email)
-
-#         return self.success_response(
-#             data={"avatar_url": request.build_absolute_uri(profile.avatar.url)},
-#             message=_("Avatar uploaded successfully."),
-#         )

@@ -1,20 +1,26 @@
 from __future__ import annotations
 
 import logging
+
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.contrib.auth import authenticate
 from django.db import IntegrityError
 from django.utils.translation import gettext_lazy as _
-from rest_framework import serializers
 from django.utils import timezone
-from apps.core.api.serializers import BaseModelSerializer
+
+from rest_framework import serializers
+
+from apps.core.mixin import TimestampFieldsMixin
+
 from .models import User, UserProfile,UserAddress
 from .validators import validate_email_unique,validate_full_name,validate_image_file,validate_pakistani_phone,validate_passwords_match,validate_strong_password
+
 logger = logging.getLogger("apps.accounts")
 
 
+
 # ─── User Profile Serializer ───────────────────────────────────────────────────────
-class UserProfileSerializer(BaseModelSerializer):
+class UserProfileSerializer(TimestampFieldsMixin,serializers.ModelSerializer):
     
 
     
@@ -68,7 +74,7 @@ class UserProfileSerializer(BaseModelSerializer):
         return value
 
 
-class UserAddressSerializer(BaseModelSerializer):
+class UserAddressSerializer(TimestampFieldsMixin,serializers.ModelSerializer):
     """
     Shipping address serializer.
 
@@ -129,7 +135,7 @@ class UserAddressSerializer(BaseModelSerializer):
 
 # ─── User Serializer ──────────────────────────────────────────────────────────
 
-class UserSerializer(BaseModelSerializer):
+class UserSerializer(TimestampFieldsMixin,serializers.ModelSerializer):
     """Read-only user representation returned in responses."""
 
     profile = UserProfileSerializer(read_only=True)
@@ -559,25 +565,7 @@ class ProfileUpdateSerializer(UserProfileSerializer):
             "postal_code": {"required": False},
             "country": {"required": False},
         }
-# class ProfileUpdateSerializer(BaseModelSerializer):
-#     """Allows authenticated user to update their profile."""
 
-#     class Meta:
-#         model = UserProfile
-#         fields = [
-#             "phone",
-#             "date_of_birth",
-#             "gender",
-#             "address_line1",
-#             "address_line2",
-#             "city",
-#             "province",
-#             "postal_code",
-#             "country",
-#         ]
-
-#     def validate_phone(self, value: str) -> str:
-#         return validate_pakistani_phone(value)
 
 
 # ─── Avatar Upload Serializer ─────────────────────────────────────────────────
@@ -612,15 +600,3 @@ class AvatarUploadSerializer(serializers.Serializer):
         points in the system use identical validation rules.
         """
         return validate_image_file(value)
-# class AvatarUploadSerializer(serializers.Serializer):
-#     """Handles avatar image upload."""
-
-#     avatar = serializers.ImageField(
-#         error_messages={
-#             "invalid_image": _("Upload a valid image file."),
-#             "blank": _("No image was submitted."),
-#         }
-#     )
-
-#     def validate_avatar(self, value):
-#        return validate_image_file(value)
