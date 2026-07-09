@@ -48,7 +48,7 @@ from apps.core.api.exceptions import (
 )
 from  apps.core.tests.urls import test_urlpatterns
 
-# ─── URL override for integration tests ───────────────────────────────────────
+# ─── URL override for integration tests ──────────────────────────────────────
 
 urlpatterns = test_urlpatterns
 
