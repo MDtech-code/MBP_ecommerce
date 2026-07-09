@@ -294,6 +294,7 @@ class UserAddress(TimeStampedModel):
     def full_address(self) -> str:
         parts = filter(None, [
             self.address_line1,
+            self.address_line2,
             self.city,
             self.get_province_display(),
             self.postal_code,
