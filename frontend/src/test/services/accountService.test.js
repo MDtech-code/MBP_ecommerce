@@ -9,6 +9,8 @@ vi.mock("../../api/client", () => ({
     post: vi.fn(),
     get: vi.fn(),
     patch: vi.fn(),
+    put: vi.fn(),
+    delete: vi.fn(),
   },
 }));
 
@@ -739,5 +741,334 @@ describe("accountService.changePassword", () => {
         confirm_new_password: "xyz",
       }),
     ).rejects.toThrow("Validation failed");
+  });
+});
+
+
+
+ // ─── Address Methods ──────────────────────────────────────────────────────────
+// src/test/services/accountService.test.js
+// Add these describe blocks after changePassword tests
+
+const MOCK_ADDRESS = {
+  id: 1,
+  label: "home",
+  address_line1: "123 Main Street",
+  address_line2: "Near Clock Tower",
+  city: "Lahore",
+  province: "PB",
+  postal_code: "54000",
+  country: "Pakistan",
+  is_default: false,
+};
+
+const MOCK_ADDRESS_PAYLOAD = {
+  label: "home",
+  address_line1: "123 Main Street",
+  address_line2: "Near Clock Tower",
+  city: "Lahore",
+};
+
+// ─── createAddress ────────────────────────────────────────────────────────────
+
+describe("accountService.createAddress", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("POSTs to the correct URL with payload", async () => {
+    api.post.mockResolvedValueOnce(mockSuccessEnvelope(MOCK_ADDRESS));
+
+    await accountService.createAddress(MOCK_ADDRESS_PAYLOAD);
+
+    expect(api.post).toHaveBeenCalledWith(
+      "/api/accounts/addresses/",
+      MOCK_ADDRESS_PAYLOAD,
+    );
+    expect(api.post).toHaveBeenCalledTimes(1);
+  });
+
+ it("returns the unwrapped envelope data", async () => {
+   const envelope = mockSuccessEnvelope(MOCK_ADDRESS);
+   api.put.mockResolvedValueOnce(envelope);
+
+   const result = await accountService.updateAddress(1, MOCK_ADDRESS_PAYLOAD);
+
+   expect(result.data).toEqual(MOCK_ADDRESS);
+   expect(result.message).toBe("Success.");
+   expect(result.meta).toEqual({ request_id: "test-123" });
+ });
+  it("does not catch errors — propagates to Layer 3", async () => {
+    const networkError = new Error("Network Error");
+    api.post.mockRejectedValueOnce(networkError);
+
+    await expect(
+      accountService.createAddress(MOCK_ADDRESS_PAYLOAD),
+    ).rejects.toThrow("Network Error");
+  });
+
+  it("bubbles up 400 validation error", async () => {
+    const validationError = new Error("Bad Request");
+    validationError.response = {
+      status: 400,
+      data: {
+        success: false,
+        message: "Address creation failed.",
+        errors: {
+          city: ["Select a valid choice."],
+          address_line1: ["This field is required."],
+        },
+        meta: null,
+      },
+    };
+    api.post.mockRejectedValueOnce(validationError);
+
+    await expect(
+      accountService.createAddress({ label: "home" }),
+    ).rejects.toThrow("Bad Request");
+  });
+});
+
+// ─── updateAddress ────────────────────────────────────────────────────────────
+
+describe("accountService.updateAddress", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("PUTs to the correct URL with id and payload", async () => {
+    api.put.mockResolvedValueOnce(mockSuccessEnvelope(MOCK_ADDRESS));
+
+    await accountService.updateAddress(1, MOCK_ADDRESS_PAYLOAD);
+
+    expect(api.put).toHaveBeenCalledWith(
+      "/api/accounts/addresses/1/",
+      MOCK_ADDRESS_PAYLOAD,
+    );
+    expect(api.put).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the correct id in the URL", async () => {
+    api.put.mockResolvedValueOnce(mockSuccessEnvelope(MOCK_ADDRESS));
+
+    await accountService.updateAddress(42, MOCK_ADDRESS_PAYLOAD);
+
+    expect(api.put).toHaveBeenCalledWith(
+      "/api/accounts/addresses/42/",
+      MOCK_ADDRESS_PAYLOAD,
+    );
+  });
+
+
+  it("returns the unwrapped envelope data", async () => {
+    const envelope = mockSuccessEnvelope(MOCK_ADDRESS);
+    api.put.mockResolvedValueOnce(envelope);
+
+    const result = await accountService.updateAddress(1, MOCK_ADDRESS_PAYLOAD);
+
+    expect(result.data).toEqual(MOCK_ADDRESS);
+    expect(result.message).toBe("Success.");
+    expect(result.meta).toEqual({ request_id: "test-123" });
+  });
+
+  it("does not catch errors — propagates to Layer 3", async () => {
+    api.put.mockRejectedValueOnce(new Error("Not Found"));
+
+    await expect(
+      accountService.updateAddress(999, MOCK_ADDRESS_PAYLOAD),
+    ).rejects.toThrow("Not Found");
+  });
+
+  it("bubbles up 404 when address does not exist", async () => {
+    const notFoundError = new Error("Not Found");
+    notFoundError.response = {
+      status: 404,
+      data: {
+        success: false,
+        message: "Address not found.",
+        errors: null,
+        meta: null,
+      },
+    };
+    api.put.mockRejectedValueOnce(notFoundError);
+
+    await expect(
+      accountService.updateAddress(999, MOCK_ADDRESS_PAYLOAD),
+    ).rejects.toThrow("Not Found");
+  });
+
+  it("bubbles up 400 validation error", async () => {
+    const validationError = new Error("Bad Request");
+    validationError.response = {
+      status: 400,
+      data: {
+        success: false,
+        message: "Address update failed.",
+        errors: {
+          address_line1: ["This field may not be blank."],
+        },
+        meta: null,
+      },
+    };
+    api.put.mockRejectedValueOnce(validationError);
+
+    await expect(
+      accountService.updateAddress(1, { address_line1: "" }),
+    ).rejects.toThrow("Bad Request");
+  });
+});
+
+// ─── deleteAddress ────────────────────────────────────────────────────────────
+
+describe("accountService.deleteAddress", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("DELETEs to the correct URL with id", async () => {
+    api.delete.mockResolvedValueOnce(mockSuccessEnvelope(null));
+
+    await accountService.deleteAddress(1);
+
+    expect(api.delete).toHaveBeenCalledWith("/api/accounts/addresses/1/");
+    expect(api.delete).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the correct id in the URL", async () => {
+    api.delete.mockResolvedValueOnce(mockSuccessEnvelope(null));
+
+    await accountService.deleteAddress(7);
+
+    expect(api.delete).toHaveBeenCalledWith("/api/accounts/addresses/7/");
+  });
+
+  it("sends no request body", async () => {
+    api.delete.mockResolvedValueOnce(mockSuccessEnvelope(null));
+
+    await accountService.deleteAddress(1);
+
+    // delete called with URL only — no payload argument
+    const callArgs = api.delete.mock.calls[0];
+    expect(callArgs.length).toBe(1);
+    expect(callArgs[0]).toBe("/api/accounts/addresses/1/");
+  });
+
+ it("returns the unwrapped envelope data", async () => {
+   const envelope = mockSuccessEnvelope(null, "Address deleted successfully.");
+   api.delete.mockResolvedValueOnce(envelope);
+
+   const result = await accountService.deleteAddress(1);
+
+   expect(result.data).toBeNull();
+   expect(result.message).toBe("Address deleted successfully.");
+   expect(result.meta).toEqual({ request_id: "test-123" });
+ });
+
+  it("does not catch errors — propagates to Layer 3", async () => {
+    api.delete.mockRejectedValueOnce(new Error("Forbidden"));
+
+    await expect(accountService.deleteAddress(1)).rejects.toThrow("Forbidden");
+  });
+
+  it("bubbles up 404 when address does not exist", async () => {
+    const notFoundError = new Error("Not Found");
+    notFoundError.response = {
+      status: 404,
+      data: {
+        success: false,
+        message: "Address not found.",
+        errors: null,
+        meta: null,
+      },
+    };
+    api.delete.mockRejectedValueOnce(notFoundError);
+
+    await expect(accountService.deleteAddress(999)).rejects.toThrow(
+      "Not Found",
+    );
+  });
+});
+
+// ─── setDefaultAddress ────────────────────────────────────────────────────────
+
+describe("accountService.setDefaultAddress", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("PATCHes to the correct set-default URL", async () => {
+    api.patch.mockResolvedValueOnce(
+      mockSuccessEnvelope({ ...MOCK_ADDRESS, is_default: true }),
+    );
+
+    await accountService.setDefaultAddress(1);
+
+    expect(api.patch).toHaveBeenCalledWith(
+      "/api/accounts/addresses/1/set-default/",
+    );
+    expect(api.patch).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the correct id in the URL", async () => {
+    api.patch.mockResolvedValueOnce(
+      mockSuccessEnvelope({ ...MOCK_ADDRESS, is_default: true }),
+    );
+
+    await accountService.setDefaultAddress(5);
+
+    expect(api.patch).toHaveBeenCalledWith(
+      "/api/accounts/addresses/5/set-default/",
+    );
+  });
+
+  it("sends no request body", async () => {
+    api.patch.mockResolvedValueOnce(mockSuccessEnvelope(MOCK_ADDRESS));
+
+    await accountService.setDefaultAddress(1);
+
+    // patch called with URL only — no payload
+    const callArgs = api.patch.mock.calls[0];
+    expect(callArgs.length).toBe(1);
+    expect(callArgs[0]).toBe("/api/accounts/addresses/1/set-default/");
+  });
+
+ it("returns the unwrapped envelope with is_default true", async () => {
+   const updatedAddress = { ...MOCK_ADDRESS, is_default: true };
+   const envelope = mockSuccessEnvelope(
+     updatedAddress,
+     "Default address updated.",
+   );
+   api.patch.mockResolvedValueOnce(envelope);
+
+   const result = await accountService.setDefaultAddress(1);
+
+   expect(result.data.is_default).toBe(true);
+   expect(result.message).toBe("Default address updated.");
+ });
+
+  it("does not catch errors — propagates to Layer 3", async () => {
+    api.patch.mockRejectedValueOnce(new Error("Not Found"));
+
+    await expect(accountService.setDefaultAddress(999)).rejects.toThrow(
+      "Not Found",
+    );
+  });
+
+  it("bubbles up 404 when address does not exist", async () => {
+    const notFoundError = new Error("Not Found");
+    notFoundError.response = {
+      status: 404,
+      data: {
+        success: false,
+        message: "Address not found.",
+        errors: null,
+        meta: null,
+      },
+    };
+    api.patch.mockRejectedValueOnce(notFoundError);
+
+    await expect(accountService.setDefaultAddress(999)).rejects.toThrow(
+      "Not Found",
+    );
   });
 });

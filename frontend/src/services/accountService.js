@@ -95,8 +95,7 @@ export const accountService = {
     return extractResponse(response);
   },
 
-  // src/services/accountService.js
-  // Add these after changePassword — address section
+  
 
   /**
    * POST /api/accounts/addresses/
