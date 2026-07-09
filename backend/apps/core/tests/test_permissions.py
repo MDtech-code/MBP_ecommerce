@@ -40,7 +40,7 @@ from apps.core.permissions import (
     IsVerified,
     RoleBasedProfilePermission,
 )
-from .conftest import test_urlpatterns
+from  apps.core.tests.urls import test_urlpatterns
 
 # ─── URL override for integration tests ───────────────────────────────────────
 

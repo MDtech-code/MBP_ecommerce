@@ -27,7 +27,7 @@ from django.test import RequestFactory, override_settings
 from rest_framework.test import APIClient
 
 from apps.core.middleware import RequestIDMiddleware
-from .conftest import test_urlpatterns
+from  apps.core.tests.urls import test_urlpatterns
 
 
 

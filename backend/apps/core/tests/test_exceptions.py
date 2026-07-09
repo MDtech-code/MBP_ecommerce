@@ -46,7 +46,7 @@ from apps.core.api.exceptions import (
     custom_exception_handler,
     register_monitor,
 )
-from .conftest import test_urlpatterns
+from  apps.core.tests.urls import test_urlpatterns
 
 # ─── URL override for integration tests ───────────────────────────────────────
 

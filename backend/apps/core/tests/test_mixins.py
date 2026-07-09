@@ -42,7 +42,7 @@ from rest_framework.test import APIRequestFactory
 
 from apps.core.api.mixins import APIResponseMixin
 from apps.core.api.views import BaseAPIView
-from .conftest import test_urlpatterns
+from  apps.core.tests.urls import test_urlpatterns
 
 # ─── URL override for integration tests ───────────────────────────────────────
 
