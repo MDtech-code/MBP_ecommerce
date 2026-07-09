@@ -54,7 +54,7 @@ class UserManager(BaseUserManager):
         # Normalize at the manager level as the final line of defense —
         # regardless of whether input came from a serializer, management
         # command, shell, or fixture.
-        email = self.normalize_email(email)
+        email = self.normalize_email(email).lower().strip()
         full_name = " ".join(full_name.strip().split())
 
         user = self.model(email=email, full_name=full_name, **extra_fields)
