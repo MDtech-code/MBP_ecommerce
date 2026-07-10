@@ -8,11 +8,12 @@ import Logo from "./Logo"
 import MobileMenu from "./MobileMenu"
 import SearchBar from "../common/SearchBar"
 import { getMediaUrl } from "../../utils/media"
-import {isPending,handleLogout} from "../../hooks/account/useLogoutForm";
+import {useLogoutForm} from "../../hooks/account/useLogoutForm";
 
 export default function MainNavbar({ user }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [dropdownOpen, setDropdownOpen] = useState(false)
+  const { isPending,handleLogout} = useLogoutForm();
   
   
 

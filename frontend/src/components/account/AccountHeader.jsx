@@ -8,7 +8,7 @@ import SearchBar from "../common/SearchBar"
 import { useAuthStore } from "../../stores/authStore"
 
 import { getMediaUrl } from "../../utils/media"
-import {isPending,handleLogout} from "../../hooks/account/useLogoutForm";
+import {useLogoutForm} from "../../hooks/account/useLogoutForm";
 
 const dropdownLinks = [
   { label: "Profile",   icon: User,    to: "/profile"    },
@@ -21,6 +21,7 @@ const dropdownLinks = [
 export default function AccountHeader() {
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const dropdownRef = useRef(null)
+  const { isPending,handleLogout} = useLogoutForm();
 
   const user = useAuthStore((state) => state.user)
 

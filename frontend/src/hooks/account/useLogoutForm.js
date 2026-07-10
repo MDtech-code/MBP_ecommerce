@@ -17,7 +17,7 @@ export function useLogoutForm() {
 
     return {
         isPending,
-        handleLogout
+        handleLogout,
     }
 
 

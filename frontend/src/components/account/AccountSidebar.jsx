@@ -2,7 +2,7 @@
 import { User, Package, MapPin, Heart, Shield, LogOut } from "lucide-react"
 import { useNavigate, useLocation } from "react-router-dom"
 
-import {isPending,handleLogout} from "../../hooks/account/useLogoutForm";
+import {useLogoutForm} from "../../hooks/account/useLogoutForm";
 const menu = [
   { name: "Profile",   icon: User,    path: "/profile"    },
   { name: "Orders",    icon: Package, path: "/orders"      },
@@ -14,6 +14,7 @@ const menu = [
 export default function AccountSidebar() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { isPending,handleLogout} = useLogoutForm();
 
   
 
