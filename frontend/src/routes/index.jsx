@@ -28,7 +28,7 @@ export const router = createBrowserRouter([
   { path: "/product",        element: <ProductListing /> },
   { path: "/product-detail", element: <ProductDetail /> },
   { path: "/cart",           element: <CartPage /> },
-  { path: "/forgot-password", element: <ForgotPassword /> },
+
   // Confirmation screen shown after reset email is sent
   { path: "/forgot-password/sent", element: <ForgotPasswordSent /> },
 

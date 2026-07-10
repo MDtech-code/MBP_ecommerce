@@ -11,7 +11,7 @@ return (
 
 
   <Hero />
-   <CategorySlider />
+  <CategorySlider />
 
 
 

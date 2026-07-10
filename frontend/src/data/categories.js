@@ -5,7 +5,7 @@ import tyre from "../assets/images/categories/tyre.png";
 import light from "../assets/images/categories/light.png";
 import battery from "../assets/images/categories/battries.png";
 import helmet from "../assets/images/categories/helmet.png";
-// import oil from "../assets/images/categories/oil.png";
+import oil from "../assets/images/categories/oil.png";
 
 export const categories = [
   {
@@ -58,10 +58,10 @@ export const categories = [
     products: "40+ Products",
     image: helmet,
   },
-//   {
-//     id:8,
-//     name:'oil',
-//     products:'40+ Products',
-//     image:oil , 
-//   }
+   {
+     id:8,
+     name:'oil',
+     products:'40+ Products',
+     image:oil , 
+   }
 ];

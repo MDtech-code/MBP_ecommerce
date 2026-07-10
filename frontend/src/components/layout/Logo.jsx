@@ -47,7 +47,7 @@ export default function Logo({ variant = "light", size = "md" }) {
   const s = sizes[size]
 
   return (
-    <div className="flex items-center">
+    <div className="flex items-center  shrink-0">
       <img
         src={v.logo}
         alt="BikeXpress Logo"

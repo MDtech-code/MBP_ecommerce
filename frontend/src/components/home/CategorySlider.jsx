@@ -1,123 +1,185 @@
-import {
-  ChevronLeft,
-  ChevronRight
-} from "lucide-react";
-
-
+import { useRef } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import Container from "../common/Container";
 import CategoryCard from "./CategoryCard";
-
 import { categories } from "../../data/categories";
 
-
 export default function CategorySlider() {
+  const scrollRef = useRef(null);
 
+  const scroll = (direction) => {
+    const container = scrollRef.current;
+    const scrollAmount = 300;
+
+    if (!container) return;
+
+    container.scrollBy({
+      left: direction === "left" ? -scrollAmount : scrollAmount,
+      behavior: "smooth",
+    });
+  };
 
   return (
-
-    <section
-      className="
-        relative
-        -mt-16
-        z-30
-      "
-    >
-
-
+    <section className="-mt-12 relative z-30">
       <Container>
+        <div className="relative bg-white rounded-2xl shadow-xl">
 
-
-        <div
-          className="
-            bg-white
-            rounded-2xl
-            shadow-xl
-            overflow-hidden
-            flex
-            items-center
-          "
-        >
-
-
-
+          {/* LEFT BUTTON */}
           <button
-            className="
-              hidden
-              md:flex
-              absolute
-              -left-1
-              bg-white
-              shadow
-              w-10
-              h-10
-              rounded-full
-              items-center
-              justify-center
-            "
+            onClick={() => scroll("left")}
+            className="hidden md:flex absolute left-2 top-1/2 -translate-y-1/2 z-10
+                       bg-white shadow w-10 h-10 rounded-full items-center justify-center"
           >
-
-            <ChevronLeft size={20}/>
-
+            <ChevronLeft size={20} />
           </button>
 
-
-
-
+          {/* SCROLL CONTAINER */}
           <div
-            className="
-              flex
-              w-full
-              overflow-hidden
-            "
+            ref={scrollRef}
+            className="flex overflow-x-auto scroll-smooth no-scrollbar"
           >
-
-            {
-              categories.map((category)=> (
-
-                <CategoryCard
-                  key={category.id}
-                  category={category}
-                />
-
-              ))
-            }
-
+            {categories.map((category) => (
+              <CategoryCard
+                key={category.id}
+                category={category}
+              />
+            ))}
           </div>
 
-
-
-
-
+          {/* RIGHT BUTTON */}
           <button
-            className="
-              hidden
-              md:flex
-              absolute
-              -right-1
-              bg-white
-              shadow
-              w-10
-              h-10
-              rounded-full
-              items-center
-              justify-center
-            "
+            onClick={() => scroll("right")}
+            className="hidden md:flex absolute right-2 top-1/2 -translate-y-1/2 z-10
+                       bg-white shadow w-10 h-10 rounded-full items-center justify-center"
           >
-
-            <ChevronRight size={20}/>
-
+            <ChevronRight size={20} />
           </button>
 
-
-
         </div>
-
-
       </Container>
-
-
     </section>
-
   );
-
 }
+// import {
+//   ChevronLeft,
+//   ChevronRight
+// } from "lucide-react";
+
+
+// import Container from "../common/Container";
+// import CategoryCard from "./CategoryCard";
+
+// import { categories } from "../../data/categories";
+
+
+// export default function CategorySlider() {
+
+
+//   return (
+
+//     <section
+//       className="
+//         relative
+//         -mt-16
+//         z-30
+//       "
+//     >
+
+
+//       <Container>
+
+
+//         <div
+//           className="
+//             bg-white
+//             rounded-2xl
+//             shadow-xl
+//             overflow-hidden
+//             flex
+//             items-center
+//           "
+//         >
+
+
+
+//           <button
+//             className="
+//               hidden
+//               md:flex
+//               absolute
+//               -left-1
+//               bg-white
+//               shadow
+//               w-10
+//               h-10
+//               rounded-full
+//               items-center
+//               justify-center
+//             "
+//           >
+
+//             <ChevronLeft size={20}/>
+
+//           </button>
+
+
+
+
+//           <div
+//             className="
+//               flex
+//               w-full
+//               overflow-hidden
+//             "
+//           >
+
+//             {
+//               categories.map((category)=> (
+
+//                 <CategoryCard
+//                   key={category.id}
+//                   category={category}
+//                 />
+
+//               ))
+//             }
+
+//           </div>
+
+
+
+
+
+//           <button
+//             className="
+//               hidden
+//               md:flex
+//               absolute
+//               -right-1
+//               bg-white
+//               shadow
+//               w-10
+//               h-10
+//               rounded-full
+//               items-center
+//               justify-center
+//             "
+//           >
+
+//             <ChevronRight size={20}/>
+
+//           </button>
+
+
+
+//         </div>
+
+
+//       </Container>
+
+
+//     </section>
+
+//   );
+
+// }

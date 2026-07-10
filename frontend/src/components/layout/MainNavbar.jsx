@@ -51,6 +51,7 @@ export default function MainNavbar({ user }) {
             <div className="hidden xl:flex flex-1">
               <SearchBar variant="full" />
             </div>
+            
 
             {/* Right Side Actions */}
             <div className="flex items-center gap-3 lg:gap-5 shrink-0">
