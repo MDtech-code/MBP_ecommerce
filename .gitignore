@@ -90,3 +90,5 @@ logs/
 
 # seed code
 seed/images/
+
+frontend/repomix-output.xml
