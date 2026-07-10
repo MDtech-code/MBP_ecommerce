@@ -2,12 +2,13 @@
 import { useState, useRef, useEffect } from "react"
 import { ShoppingCart, UserRound, LogOut, User, 
          Package, MapPin, Heart, Shield, ChevronDown } from "lucide-react"
-import { Link, useNavigate } from "react-router-dom"
+import { Link } from "react-router-dom"
 import Logo from "../layout/Logo"
 import SearchBar from "../common/SearchBar"
 import { useAuthStore } from "../../stores/authStore"
-import { useLogout } from "../../hooks/account/useAuthMutations"
+
 import { getMediaUrl } from "../../utils/media"
+import {isPending,handleLogout} from "../../hooks/account/useLogoutForm";
 
 const dropdownLinks = [
   { label: "Profile",   icon: User,    to: "/profile"    },
@@ -20,9 +21,8 @@ const dropdownLinks = [
 export default function AccountHeader() {
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const dropdownRef = useRef(null)
-  const navigate = useNavigate()
+
   const user = useAuthStore((state) => state.user)
-  const { mutate: logout, isPending } = useLogout()
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -35,12 +35,7 @@ export default function AccountHeader() {
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [dropdownOpen])
 
-  const handleLogout = () => {
-    logout(undefined, {
-      onSuccess: () => navigate("/login"),
-      onError: () => navigate("/login"),
-    })
-  }
+  
 
   return (
     <header className="bg-white border-b border-gray-100 shadow-sm relative">

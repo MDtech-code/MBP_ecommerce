@@ -1,9 +1,8 @@
 // src/components/account/AccountSidebar.jsx
 import { User, Package, MapPin, Heart, Shield, LogOut } from "lucide-react"
 import { useNavigate, useLocation } from "react-router-dom"
-import { useLogout } from "../../hooks/account/useAuthMutations"
-import { useAuthStore } from "../../stores/authStore"
 
+import {isPending,handleLogout} from "../../hooks/account/useLogoutForm";
 const menu = [
   { name: "Profile",   icon: User,    path: "/profile"    },
   { name: "Orders",    icon: Package, path: "/orders"      },
@@ -15,15 +14,8 @@ const menu = [
 export default function AccountSidebar() {
   const navigate = useNavigate()
   const location = useLocation()
-  const logout = useAuthStore((state) => state.logout)
-  const { mutate: logoutMutation, isPending } = useLogout()
 
-  const handleLogout = () => {
-    logoutMutation(undefined, {
-      onSuccess: () => navigate("/login"),
-      onError: () => navigate("/login"),
-    })
-  }
+  
 
   return (
     <aside className="hidden lg:block w-64 bg-dark text-white">

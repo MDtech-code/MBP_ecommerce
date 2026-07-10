@@ -2,26 +2,21 @@
 import { useState } from "react"
 import { ShoppingCart, ChevronDown, Menu, UserRound,
          LogOut, User, Package, MapPin, Heart, Shield } from "lucide-react"
-import { Link, useNavigate } from "react-router-dom"
+import { Link} from "react-router-dom"
 import Container from "../common/Container"
 import Logo from "./Logo"
 import MobileMenu from "./MobileMenu"
 import SearchBar from "../common/SearchBar"
-import { useLogout } from "../../hooks/account/useAuthMutations"
 import { getMediaUrl } from "../../utils/media"
+import {isPending,handleLogout} from "../../hooks/account/useLogoutForm";
 
 export default function MainNavbar({ user }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [dropdownOpen, setDropdownOpen] = useState(false)
-  const navigate = useNavigate()
-  const { mutate: logout, isPending } = useLogout()
+  
+  
 
-  const handleLogout = () => {
-    logout(undefined, {
-      onSuccess: () => navigate("/login"),
-      onError: () => navigate("/login"),
-    })
-  }
+  
 
   return (
     <>
