@@ -17,22 +17,28 @@ import ProtectedRoute from "../components/layout/ProtectedRoute"
 import Security from "../pages/account/security/Security";
 import ChangePassword from "../pages/account/security/ChangePassword";
 import ForgotPasswordSent from "../pages/account/ForgotPasswordSent";
+import GuestRoute from "../components/layout/GuestRoute";
 
 export const router = createBrowserRouter([
   { path: "/",               element: <Home /> },
-  { path: "/register",       element: <Register /> },
-  { path: "/login",          element: <Login /> },
-  { path: "/verify-email",   element: <VerifyEmail /> },
-  { path: "/forgot-password",element: <ForgotPassword /> },
-  { path: "/reset-password", element: <ResetPassword /> },
   { path: "/product",        element: <ProductListing /> },
   { path: "/product-detail", element: <ProductDetail /> },
   { path: "/cart",           element: <CartPage /> },
 
-  // Confirmation screen shown after reset email is sent
-  { path: "/forgot-password/sent", element: <ForgotPasswordSent /> },
+ 
+  // GEST - must be attept by non authenticated user 
+  {
+    element:<GuestRoute/>,
+    children:[
+  { path: "/register",       element: <Register /> },
+  { path: "/login",          element: <Login /> },
+  { path: "/verify-email",   element: <VerifyEmail /> },
+  { path: "/forgot-password",element: <ForgotPassword /> },
+   { path: "/forgot-password/sent", element: <ForgotPasswordSent /> },
+  { path: "/reset-password", element: <ResetPassword /> },
 
-  { path: "/reset-password",  element: <ResetPassword /> },
+    ]
+  },
 
   // Protected — must be authenticated
   {
