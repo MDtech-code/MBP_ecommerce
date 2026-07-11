@@ -46,6 +46,8 @@ class ErrorCode:
     # ── User / Profile ────────────────────────────────────────────────────────
     INVALID_FULL_NAME       = "invalid_full_name"
     INVALID_PHONE           = "invalid_phone"
+    INVALID_DATE_OF_BIRTH = "invalid_date_of_birth"
+    INVALID_ADDRESS       = "invalid_address"
 
     # ── Password ──────────────────────────────────────────────────────────────
     PASSWORD_TOO_WEAK       = "password_too_weak"

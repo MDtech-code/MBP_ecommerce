@@ -22,12 +22,13 @@ export function useProfileForm(onSaveSuccess) {
   const normalized = isError ? normalizeError(error) : null;
 
   const fieldErrors = {
-    phone: normalized?.errors?.phone?.[0] ?? null,
-    date_of_birth: normalized?.errors?.date_of_birth?.[0] ?? null,
-    gender: normalized?.errors?.gender?.[0] ?? null,
+    phone: normalized?.errors?.fields?.phone?.message ?? null,
+    date_of_birth: normalized?.errors?.fields?.date_of_birth?.message ?? null,
+    gender: normalized?.errors?.fields?.gender?.message ?? null,
   };
 
-  const formError = normalized?.errors?.non_field_errors?.[0] ?? null;
+  
+  const formError = normalized?.errors?.non_fields?.message ?? null;
 
   const handleChange = (e) => {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));

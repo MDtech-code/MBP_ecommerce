@@ -86,13 +86,13 @@ export function useAddressForm(existingAddress = null, onSaveSuccess) {
   const normalized = isError ? normalizeError(error) : null;
 
   const fieldErrors = {
-    label: normalized?.errors?.label?.[0] ?? null,
-    address_line1: normalized?.errors?.address_line1?.[0] ?? null,
-    address_line2: normalized?.errors?.address_line2?.[0] ?? null,
-    city: normalized?.errors?.city?.[0] ?? null,
+    label: normalized?.errors?.fields?.label?.message ?? null,
+    address_line1: normalized?.errors?.fields?.address_line1?.message ?? null,
+    address_line2: normalized?.errors?.fields?.address_line2?.message ?? null,
+    city: normalized?.errors?.fields?.city?.message ?? null,
   };
 
-  const formError = normalized?.errors?.non_field_errors?.[0] ?? null;
+  const formError = normalized?.errors?.non_fields?.message ?? null;
 
   const handleChange = (e) => {
     const { name, value } = e.target;

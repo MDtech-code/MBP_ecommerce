@@ -70,7 +70,10 @@ class UserProfileSerializer(TimestampFieldsMixin,serializers.ModelSerializer):
         """
         if value and value >= timezone.now().date():
             raise serializers.ValidationError(
-                _("Date of birth must be in the past.")
+                ErrorDetail(
+                _("Date of birth must be in the past."),
+                code=ErrorCode.INVALID_DATE_OF_BIRTH,
+            )
             )
         return value
 
@@ -125,7 +128,10 @@ class UserAddressSerializer(TimestampFieldsMixin,serializers.ModelSerializer):
     def validate_address_line1(self, value):
         if not value or not value.strip():
             raise serializers.ValidationError(
-                _("Address line 1 is required.")
+               ErrorDetail(
+                _("Address line 1 is required."),
+                code=ErrorCode.INVALID_ADDRESS,
+            )
             )
         return value.strip()
 

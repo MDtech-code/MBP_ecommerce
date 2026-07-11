@@ -169,12 +169,12 @@ describe("useProfileForm", () => {
     hookState.isError = true;
 
     hookState.error = {
-      errors: {
-        non_field_errors: [
-          "Unable to update profile.",
-        ],
-      },
-    };
+  errors: {
+    code:       "validation_error",
+    fields:     null,
+    non_fields: { message: "Unable to update profile.", code: "validation_error" },
+  },
+};
 
     const { result } = renderHook(() =>
       useProfileForm()
@@ -189,10 +189,12 @@ describe("useProfileForm", () => {
     hookState.isError = true;
 
     hookState.error = {
-      errors: {
-        phone: ["Invalid phone number."],
-      },
-    };
+  errors: {
+    code:       "validation_error",
+    fields:     { phone: { message: "Invalid phone number.", code: "invalid_phone" } },
+    non_fields: null,
+  },
+};
 
     const { result } = renderHook(() =>
       useProfileForm()

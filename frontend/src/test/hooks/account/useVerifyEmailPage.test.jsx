@@ -346,7 +346,7 @@ mockError.response = {
 
       await waitFor(() => {
         expect(accountService.resendVerification).toHaveBeenCalledWith(
-          { email: "john@test.com" }
+          { email: "john@test.com" },expect.anything()
         )
       })
     })

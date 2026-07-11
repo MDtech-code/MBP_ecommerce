@@ -134,6 +134,7 @@ export const ErrorCode = {
   SESSION_EXPIRED: "session_expired",
   TOKEN_INVALID: "token_invalid",
   TOKEN_EXPIRED: "token_expired",
+  ACCOUNT_INACTIVE: "account_inactive",
 
   // Registration / Email
   EMAIL_ALREADY_EXISTS: "email_already_exists",
@@ -142,6 +143,8 @@ export const ErrorCode = {
   // User / Profile
   INVALID_FULL_NAME: "invalid_full_name",
   INVALID_PHONE: "invalid_phone",
+  INVALID_DATE_OF_BIRTH: "invalid_date_of_birth",
+  INVALID_ADDRESS: "invalid_address",
 
   // Password
   PASSWORD_TOO_WEAK: "password_too_weak",

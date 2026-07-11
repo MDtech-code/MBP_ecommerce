@@ -364,13 +364,33 @@ class TestProfileUpdateHappyPath:
         assert user.profile.gender == "M"
 
     def test_patch_is_partial_unset_fields_unchanged(
-        self,
-        auth_client,
-        user,
-    ):
+    self,
+    auth_client,
+    user,
+):
         """
         Fields not included in the PATCH must not be cleared.
-
         Set phone first, then send a gender-only patch.
-        Phone must remain unchanged 
-"""
+        Phone must remain unchanged after the second patch.
+        Why: partial=True is set in the view — this test confirms
+        it is actually working, not just declared.
+        """
+        # Step 1 — set phone
+        auth_client.patch(
+            PROFILE_URL,
+            {"phone": "03001234567"},
+            format="json",
+        )
+        user.profile.refresh_from_db()
+        assert user.profile.phone == "03001234567"
+        # Step 2 — update only gender
+        auth_client.patch(
+            PROFILE_URL,
+            {"gender": "M"},
+            format="json",
+        )
+        user.profile.refresh_from_db()
+        # Gender updated
+        assert user.profile.gender == "M"
+        # Phone must be unchanged — partial=True is working
+        assert user.profile.phone == "03001234567"

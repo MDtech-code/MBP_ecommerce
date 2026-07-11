@@ -441,7 +441,8 @@ class TestAddressCreateValidationFailures:
             format="json",
         )
         assert response.status_code == 400
-        assert "address_line1" in response.data["errors"]
+        assert response.data["errors"]["fields"] is not None
+        assert "address_line1" in response.data["errors"]["fields"]
 
     def test_blank_address_line1_returns_400(
         self,
@@ -460,7 +461,8 @@ class TestAddressCreateValidationFailures:
             format="json",
         )
         assert response.status_code == 400
-        assert "address_line1" in response.data["errors"]
+        assert response.data["errors"]["fields"] is not None
+        assert "address_line1" in response.data["errors"]["fields"]
 
     def test_invalid_city_returns_400(
         self,
@@ -911,3 +913,4 @@ class TestAddressSetDefaultOwnership:
         """Non-existent PK on set-default must return 404."""
         response = auth_client.patch(set_default_url(99999))
         assert response.status_code == 404
+
