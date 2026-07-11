@@ -20,10 +20,10 @@ export default function AvatarModal({ currentAvatar, onClose }) {
 
   const normalized = isError ? normalizeError(error) : null
   const uploadError =
-    normalized?.errors?.avatar?.[0] ??
-    normalized?.errors?.non_field_errors?.[0] ??
-    normalized?.message ??
-    null
+  normalized?.errors?.fields?.avatar?.message ??
+  normalized?.errors?.non_fields?.message ??
+  normalized?.message ??
+  null
 
   const handleFileSelect = (e) => {
     const file = e.target.files[0]
