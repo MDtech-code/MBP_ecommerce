@@ -1,5 +1,5 @@
 // ProductListing.jsx (page)
-import AccountHeader from "../../components/account/AccountHeader";
+import Header from "../../components/layout/Header";
 import ProductSidebar from "../../components/products/ProductSidebar";
 import ProductGrid from "../../components/products/ProductGrid";
 import ProductToolbar from "../../components/products/ProductToolbar";
@@ -9,7 +9,7 @@ import { products } from "../../data/products";
 export default function ProductListing() {
   return (
     <>
-      <AccountHeader />
+      <Header/>
 
       <div className="bg-gray-50 min-h-screen">
         <div className="max-w-7xl mx-auto px-6 py-6">

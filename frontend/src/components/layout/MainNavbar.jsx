@@ -65,7 +65,7 @@ export default function MainNavbar({ user }) {
               {!user && (
                 <>
                   <Link
-                    to="/register"
+                    to="/login"
                     className="flex items-center gap-1.5 font-semibold
                                hover:text-primary transition-colors"
                   >

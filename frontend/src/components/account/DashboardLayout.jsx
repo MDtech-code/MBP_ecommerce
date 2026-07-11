@@ -1,11 +1,11 @@
-import AccountHeader from "./AccountHeader";
+import Header from "../layout/Header";
 import AccountSidebar from "./AccountSidebar";
 
 export default function DashboardLayout({ children }) {
   return (
     <div className="min-h-screen bg-surface">
       {/* Top Header */}
-      <AccountHeader />
+      <Header />
 
       <div className="flex min-h-[calc(100vh-80px)]">
         {/* Sidebar */}
