@@ -43,6 +43,7 @@ from rest_framework.test import APIRequestFactory
 from apps.core.api.mixins import APIResponseMixin
 from apps.core.api.views import BaseAPIView
 from  apps.core.tests.urls import test_urlpatterns
+from apps.core.error_codes import ErrorCode
 
 # ─── URL override for integration tests ───────────────────────────────────────
 
@@ -580,11 +581,42 @@ class TestBaseAPIViewHelpers:
         assert response.data["message"] == "Email already in use"
 
     def test_error_response_carries_errors(self):
-        """errors payload must appear in response.data['errors']."""
+        """
+        errors payload must be formatted into {code, fields, non_fields}
+        shape by error_response() automatically.
+
+        OLD: assert response.data["errors"] == raw_dict
+             This assumed errors passed through unchanged.
+
+        NEW: error_response() calls _format_errors() automatically.
+             Raw serializer.errors goes in → structured envelope comes out.
+             Frontend always receives consistent shape regardless of
+             what the view passes in.
+
+        Why this is correct behavior:
+            View passes serializer.errors which is a flat dict like
+            {"email": [ErrorDetail("...", code="email_already_exists")]}.
+            _format_errors() converts this to:
+            {
+                "code": "validation_error",
+                "fields": {"email": {"message": "...", "code": "..."}},
+                "non_fields": None
+            }
+            Frontend reads errors.fields.email.code — not errors.email.
+        """
         view = _make_view_with_request()
-        errors = {"email": "This email is already registered."}
-        response = view.error_response(errors=errors)
-        assert response.data["errors"] == errors
+        response = view.error_response(
+            errors={"email": "This email is already registered."},
+            status_code=400,
+        )
+        errors = response.data["errors"]
+
+        # Must be the structured shape — not the raw dict
+        assert isinstance(errors, dict)
+        assert "code"       in errors
+        assert "fields"     in errors
+        assert "non_fields" in errors
+        assert errors["code"] == ErrorCode.VALIDATION_ERROR
 
     def test_error_response_custom_status_code(self):
         """error_response() must accept custom 4xx/5xx status codes."""
@@ -905,3 +937,77 @@ class TestBaseAPIViewHTTPIntegration:
             assert response.status_code == 200
             for key in ("success", "message", "data", "errors", "meta"):
                 assert key in response.data
+
+    def test_error_response_formats_serializer_errors_with_field_codes(self):
+        """
+        When errors contains ErrorDetail objects with custom codes,
+        those codes must survive into errors.fields.field_name.code.
+
+        This is the end-to-end test for the registration email_already_exists
+        case — serializer raises with ErrorCode.EMAIL_ALREADY_EXISTS,
+        error_response() must preserve it all the way to the response.
+        """
+        from rest_framework.exceptions import ErrorDetail
+
+        view = _make_view_with_request()
+        response = view.error_response(
+            errors={
+                "email": [
+                    ErrorDetail(
+                        "An account with this email already exists.",
+                        code=ErrorCode.EMAIL_ALREADY_EXISTS,
+                    )
+                ]
+            },
+            status_code=400,
+        )
+
+        errors = response.data["errors"]
+        assert errors["fields"]["email"]["code"]    == ErrorCode.EMAIL_ALREADY_EXISTS
+        assert errors["fields"]["email"]["message"] == (
+            "An account with this email already exists."
+        )
+
+    def test_error_response_none_errors_stays_none(self):
+        """
+        When errors=None is passed, errors in response must be None.
+
+        _format_errors() must NOT be called on None — it would return
+        a structured dict with no useful content, which is misleading.
+        None means 'no error detail available' — preserve that signal.
+        """
+        view = _make_view_with_request()
+        response = view.error_response(
+            message="Something went wrong.",
+            errors=None,
+            status_code=500,
+        )
+        assert response.data["errors"] is None
+
+    def test_error_response_non_field_error_goes_to_non_fields(self):
+        """
+        non_field_errors in serializer.errors must map to errors.non_fields.
+
+        The key separation between field and non-field errors is what
+        enables the frontend to show a banner (non_fields) vs field
+        highlight (fields) correctly.
+        """
+        from rest_framework.exceptions import ErrorDetail
+
+        view = _make_view_with_request()
+        response = view.error_response(
+            errors={
+                "non_field_errors": [
+                    ErrorDetail(
+                        "Please verify your email address.",
+                        code=ErrorCode.EMAIL_NOT_VERIFIED,
+                    )
+                ]
+            },
+            status_code=400,
+        )
+
+        errors = response.data["errors"]
+        assert errors["fields"]             is None
+        assert errors["non_fields"]         is not None
+        assert errors["non_fields"]["code"] == ErrorCode.EMAIL_NOT_VERIFIED
