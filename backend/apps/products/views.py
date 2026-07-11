@@ -16,6 +16,28 @@ from apps.core.permissions import IsAdminOrReadOnly
 from apps.core.cache import two_level_cache
 from apps.core.pagination import get_pagination_params, build_pagination_meta
 from apps.common.utils.tree import build_tree
+
+from .constants import (
+    CATEGORIES_FLAT_CACHE_KEY,
+    CATEGORIES_TREE_CACHE_KEY,
+    CATEGORIES_L1_TTL,
+    CATEGORIES_L2_TTL,
+    BRANDS_CACHE_KEY,
+    BRANDS_L1_TTL,
+    BRANDS_L2_TTL,
+    BIKE_MODELS_CACHE_PREFIX,
+    BIKE_MODELS_L1_TTL,
+    BIKE_MODELS_L2_TTL,
+    PRODUCTS_LIST_CACHE_PREFIX,
+    PRODUCTS_LIST_L1_TTL,
+    PRODUCTS_LIST_L2_TTL,
+    PRODUCT_DETAIL_CACHE_PREFIX,
+    PRODUCT_DETAIL_L1_TTL,
+    PRODUCT_DETAIL_L2_TTL,
+    SORT_OPTIONS,
+    DEFAULT_SORT,
+    
+)
 from .models import Category, Brand, BikeModel, Product
 from .serializers import (
     CategoryFlatSerializer,
@@ -29,11 +51,11 @@ logger = logging.getLogger("apps.products")
 
 
 # ─── Category Views ─────────────────────────────────────────────────────────
-CATEGORIES_FLAT_CACHE_KEY = "products_categories_flat"
-CATEGORIES_TREE_CACHE_KEY = "products_categories_tree"
+# CATEGORIES_FLAT_CACHE_KEY = "products_categories_flat"
+# CATEGORIES_TREE_CACHE_KEY = "products_categories_tree"
 
-CATEGORIES_L1_TTL = 86400
-CATEGORIES_L2_TTL = 86400*7
+# CATEGORIES_L1_TTL = 86400
+# CATEGORIES_L2_TTL = 86400*7
 
 
 class CategoryListAPIView(BaseAPIView):
@@ -172,14 +194,14 @@ class CategoryListAPIView(BaseAPIView):
 
 # ─── Brand Views ────────────────────────────────────────────────────────────
 
-BRANDS_CACHE_KEY = "products_brands_list"
+# BRANDS_CACHE_KEY = "products_brands_list"
 
-# Why longer TTL than default:
-# Brands change very rarely — Honda/Yamaha/Suzuki are stable data.
-# Admin adds a new brand maybe once a month.
-# Signal invalidation keeps it fresh on writes.
-BRANDS_L1_TTL = 86400    # 1 day
-BRANDS_L2_TTL = 86400*7    # 1 weeks 
+# # Why longer TTL than default:
+# # Brands change very rarely — Honda/Yamaha/Suzuki are stable data.
+# # Admin adds a new brand maybe once a month.
+# # Signal invalidation keeps it fresh on writes.
+# BRANDS_L1_TTL = 86400    # 1 day
+# BRANDS_L2_TTL = 86400*7    # 1 weeks 
 
 class BrandListAPIView(BaseAPIView):
     """
@@ -264,18 +286,18 @@ class BrandListAPIView(BaseAPIView):
 
 # ─── Bike Model Views ───────────────────────────────────────────────────────
 
-# Why "all" suffix for unfiltered key:
-#   Cache key must be unique per filter combination.
-#   brand=1  → "products_bike_models_brand_1"
-#   no filter → "products_bike_models_brand_all"
-#   Without this, all requests share one key and wrong data is served.
-BIKE_MODELS_CACHE_PREFIX = "products_bike_models_brand"
+# # Why "all" suffix for unfiltered key:
+# #   Cache key must be unique per filter combination.
+# #   brand=1  → "products_bike_models_brand_1"
+# #   no filter → "products_bike_models_brand_all"
+# #   Without this, all requests share one key and wrong data is served.
+# BIKE_MODELS_CACHE_PREFIX = "products_bike_models_brand"
 
-# Why shorter TTL than brands:
-#   Bike models are updated more often — new model years, discontinuations.
-#   Still cached aggressively because reads vastly outnumber writes.
-BIKE_MODELS_L1_TTL = 120    # 2 minutes
-BIKE_MODELS_L2_TTL = 600    # 10 minutes
+# # Why shorter TTL than brands:
+# #   Bike models are updated more often — new model years, discontinuations.
+# #   Still cached aggressively because reads vastly outnumber writes.
+# BIKE_MODELS_L1_TTL = 120    # 2 minutes
+# BIKE_MODELS_L2_TTL = 600    # 10 minutes
 
 
 class BikeModelListAPIView(BaseAPIView):
@@ -421,23 +443,23 @@ class BikeModelListAPIView(BaseAPIView):
 # ─── Product List / Filter View ─────────────────────────────────────────────
 
 # ── Cache config ───────────────────────────────────────────────────────────────
-PRODUCTS_LIST_CACHE_PREFIX = "products_list"
-# Why shorter TTL than categories/brands:
-#   Products change more often — stock, price, discount updates.
-#   Signal invalidation handles explicit changes.
-#   Short TTL is a safety net for anything that bypasses signals.
-PRODUCTS_LIST_L1_TTL = 60     # 1 minute
-PRODUCTS_LIST_L2_TTL = 180    # 3 minutes
+# PRODUCTS_LIST_CACHE_PREFIX = "products_list"
+# # Why shorter TTL than categories/brands:
+# #   Products change more often — stock, price, discount updates.
+# #   Signal invalidation handles explicit changes.
+# #   Short TTL is a safety net for anything that bypasses signals.
+# PRODUCTS_LIST_L1_TTL = 60     # 1 minute
+# PRODUCTS_LIST_L2_TTL = 180    # 3 minutes
 
-# ── Sorting config ─────────────────────────────────────────────────────────────
-SORT_OPTIONS: dict[str, str] = {
-    "featured":   "-is_featured",
-    "newest":     "-created_at",
-    "price_asc":  "price",
-    "price_desc": "-price",
-    "name_asc":   "name",
-}
-DEFAULT_SORT = "newest"
+# # ── Sorting config ─────────────────────────────────────────────────────────────
+# SORT_OPTIONS: dict[str, str] = {
+#     "featured":   "-is_featured",
+#     "newest":     "-created_at",
+#     "price_asc":  "price",
+#     "price_desc": "-price",
+#     "name_asc":   "name",
+# }
+# DEFAULT_SORT = "newest"
 
 
 class ProductListAPIView(BaseAPIView):
@@ -827,9 +849,9 @@ class ProductListAPIView(BaseAPIView):
 
 
 # ─── Product Detail View ────────────────────────────────────────────────────
-PRODUCT_DETAIL_CACHE_PREFIX = "product_detail"
-PRODUCT_DETAIL_L1_TTL = 60
-PRODUCT_DETAIL_L2_TTL = 300
+# PRODUCT_DETAIL_CACHE_PREFIX = "product_detail"
+# PRODUCT_DETAIL_L1_TTL = 60
+# PRODUCT_DETAIL_L2_TTL = 300
 
 
 from django.http import Http404

@@ -5,14 +5,14 @@ import logging
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 from django.db.models import Prefetch
-from apps.core.api.serializers import BaseModelSerializer
-from .models import Category, Brand, BikeModel, Product, ProductImage
 
+from .models import Category, Brand, BikeModel, Product, ProductImage
+from apps.core.mixins import TimestampFieldsMixin
 logger = logging.getLogger("apps.products")
 
 
 # ─── Category Serializers ──────────────────────────────────────────────────
-class CategoryFlatSerializer(BaseModelSerializer):
+class CategoryFlatSerializer(serializers.ModelSerializer):
     """
     Flat representation — one object per category, no nesting.
 
@@ -63,7 +63,7 @@ class CategoryFlatSerializer(BaseModelSerializer):
 
 # ─── Brand Serializers ─────────────────────────────────────────────────────
 
-class BrandSerializer(BaseModelSerializer):
+class BrandSerializer(serializers.ModelSerializer):
     """
     Flat serializer for brand listing and filter dropdowns.
 
@@ -89,7 +89,7 @@ class BrandSerializer(BaseModelSerializer):
 
 # ─── Bike Model Serializers ────────────────────────────────────────────────
 
-class BikeModelSerializer(BaseModelSerializer):
+class BikeModelSerializer(serializers.ModelSerializer):
     """
     Serializer for bike compatibility filter dropdown.
 
@@ -138,7 +138,7 @@ class BikeModelSerializer(BaseModelSerializer):
 
 # ─── Product Image Serializers ─────────────────────────────────────────────
 
-class ProductImageSerializer(BaseModelSerializer):
+class ProductImageSerializer(serializers.ModelSerializer):
     """Nested inside product detail/list responses."""
 
     class Meta:
@@ -152,7 +152,7 @@ class ProductImageSerializer(BaseModelSerializer):
 
 
 # ─── Product List Serializer (lightweight) ─────────────────────────────────
-class ProductListSerializer(BaseModelSerializer):
+class ProductListSerializer(serializers.ModelSerializer):
     """
     Lightweight serializer for product grid/list pages.
 
@@ -283,7 +283,7 @@ class ProductListSerializer(BaseModelSerializer):
 
 
 # ─── Product Detail Serializer (full) ──────────────────────────────────────
-class ProductDetailSerializer(BaseModelSerializer):
+class ProductDetailSerializer(TimestampFieldsMixin, serializers.ModelSerializer):
     """
     Full serializer for single product detail page.
 
