@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useRegister } from "./useAuthMutations";
-import { normalizeError } from "../../api/transformers";
+import { normalizeError,ErrorCode } from "../../api/transformers";
 
 export function useRegisterForm() {
   const navigate = useNavigate();
@@ -19,13 +19,23 @@ export function useRegisterForm() {
   const normalized = isError ? normalizeError(error) : null;
 
   const fieldErrors = {
-    full_name: normalized?.errors?.full_name?.[0] ?? null,
-    email: normalized?.errors?.email?.[0] ?? null,
-    password: normalized?.errors?.password?.[0] ?? null,
-    confirm_password: normalized?.errors?.confirm_password?.[0] ?? null,
-  };
+     full_name: normalized?.errors?.fields?.full_name?.message ?? null,
+     email: normalized?.errors?.fields?.email?.message ?? null,
+     password: normalized?.errors?.fields?.password?.message ?? null,
+     confirm_password:
+       normalized?.errors?.fields?.confirm_password?.message ?? null,
+   };
 
-  const formError = normalized?.errors?.non_field_errors?.[0] ?? null;
+  const fieldCodes = {
+     full_name: normalized?.errors?.fields?.full_name?.code ?? null,
+     email: normalized?.errors?.fields?.email?.code ?? null,
+     password: normalized?.errors?.fields?.password?.code ?? null,
+     confirm_password:
+       normalized?.errors?.fields?.confirm_password?.code ?? null,
+   };
+
+  const formError = normalized?.errors?.non_field_errors?.message ?? null;
+  const formErrorCode = normalized?.errors?.non_fields?.code ?? null;
 
   const handleChange = (e) => {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -36,8 +46,8 @@ export function useRegisterForm() {
     register(form, {
       onSuccess: () => {
         // Store email for VerifyEmail page to display + use for resend
-        localStorage.setItem("pending_verification_email", form.email),
-        navigate("/verify-email")
+        localStorage.setItem("pending_verification_email", form.email);
+        navigate("/verify-email");
       }
     });
   };
@@ -45,8 +55,11 @@ export function useRegisterForm() {
   return {
     form,
     fieldErrors,
+    fieldCodes,
+    formErrorCode,
     formError,
     isPending,
+    ErrorCode,
     handleChange,
     handleSubmit,
   };

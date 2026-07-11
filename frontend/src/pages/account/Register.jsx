@@ -8,10 +8,11 @@ import { useRegisterForm } from "../../hooks/account/useRegisterForm"
 
 export default function Register() {
 
-
+  
   const {
     form,
     fieldErrors,
+   
     formError,
     isPending,
     handleChange,
@@ -44,6 +45,7 @@ export default function Register() {
             className="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2"
           >
             {formError}
+            
           </div>
         )}
         <form className="mt-5 space-y-3"  onSubmit={handleSubmit}>

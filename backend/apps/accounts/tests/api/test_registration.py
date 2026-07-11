@@ -11,6 +11,7 @@ from apps.accounts.models import (
     User,
     UserProfile,
 )
+from apps.core.error_codes import ErrorCode
 
 
 @pytest.fixture
@@ -168,11 +169,85 @@ class TestRegistration:
         user,
         valid_register_payload,
     ):
-        """Duplicate email error must be on the 'email' field key."""
+        """
+        Duplicate email error must be on errors.fields.email — not errors.email.
+
+        OLD: assert "email" in response.data["errors"]
+             Read flat shape — broke with new structured envelope.
+
+        NEW: errors is {code, fields, non_fields}.
+             Field errors live in errors.fields.
+             errors.fields.email must exist with the correct code.
+        """
         valid_register_payload["email"] = user.email
         response = api_client.post(
             REGISTER_URL,
             valid_register_payload,
             format="json",
         )
-        assert "email" in response.data["errors"]
+        errors = response.data["errors"]
+
+        assert errors["fields"]               is not None
+        assert "email"                        in errors["fields"]
+        assert errors["fields"]["email"]["code"] == ErrorCode.EMAIL_ALREADY_EXISTS
+
+
+    def test_register_validation_error_has_structured_errors(
+        self, api_client, valid_register_payload
+    ):
+        """
+        Any 400 from registration must have the {code, fields, non_fields} shape.
+
+        This confirms the full chain works:
+            RegisterSerializer raises → error_response() called →
+            _format_errors() runs → structured output.
+        """
+        payload = {**valid_register_payload, "email": "not-an-email"}
+        response = api_client.post(REGISTER_URL, payload, format="json")
+
+        assert response.status_code == 400
+        errors = response.data["errors"]
+
+        assert "code"       in errors
+        assert "fields"     in errors
+        assert "non_fields" in errors
+        assert errors["code"] == ErrorCode.VALIDATION_ERROR
+
+    def test_register_password_mismatch_has_correct_code(
+        self, api_client, valid_register_payload
+    ):
+        """
+        Password mismatch must produce errors.fields.confirm_password.code
+        equal to ErrorCode.PASSWORD_MISMATCH.
+
+        Confirms the code travels from validate_passwords_match()
+        through validate() through _format_errors() to the response.
+        """
+        payload = {**valid_register_payload, "confirm_password": "different_password"}
+        response = api_client.post(REGISTER_URL, payload, format="json")
+
+        assert response.status_code == 400
+        errors = response.data["errors"]
+
+        assert errors["fields"] is not None
+        assert "confirm_password" in errors["fields"]
+        assert errors["fields"]["confirm_password"]["code"] == ErrorCode.PASSWORD_MISMATCH
+
+    def test_register_missing_full_name_has_correct_code(
+        self, api_client, valid_register_payload
+    ):
+        """
+        Single word name must produce errors.fields.full_name.code
+        equal to ErrorCode.INVALID_FULL_NAME.
+
+        Confirms validate_full_name() code flows all the way to response.
+        """
+        payload = {**valid_register_payload, "full_name": "SingleName"}
+        response = api_client.post(REGISTER_URL, payload, format="json")
+
+        assert response.status_code == 400
+        errors = response.data["errors"]
+
+        assert errors["fields"] is not None
+        assert "full_name" in errors["fields"]
+        assert errors["fields"]["full_name"]["code"] == ErrorCode.INVALID_FULL_NAME

@@ -191,7 +191,7 @@ class RegisterView(BaseAPIView):
                 "Please check your email to verify your account."
             ),
         )
-
+    
 
 # ─── Email Verification ───────────────────────────────────────────────────────
 class VerifyEmailView(BaseAPIView):
