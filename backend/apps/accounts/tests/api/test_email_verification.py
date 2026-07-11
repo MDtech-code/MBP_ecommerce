@@ -151,7 +151,8 @@ class TestEmailVerification:
             format="json",
         )
         assert response.status_code == 400
-        assert "token" in response.data["errors"]
+        assert response.data["errors"]["fields"] is not None
+        assert "token" in response.data["errors"]["fields"]
 
     def test_verify_email_missing_token_returns_400(
         self, mock_welcome, api_client
@@ -159,7 +160,8 @@ class TestEmailVerification:
         """Missing token field must return 400."""
         response = api_client.post(VERIFY_EMAIL_URL, {}, format="json")
         assert response.status_code == 400
-        assert "token" in response.data["errors"]
+        assert response.data["errors"]["fields"] is not None
+        assert "token" in response.data["errors"]["fields"]
 
     # ── Expired Token ─────────────────────────────────────────────────────────
 

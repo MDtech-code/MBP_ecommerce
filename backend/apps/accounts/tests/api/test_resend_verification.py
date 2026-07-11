@@ -169,7 +169,8 @@ class TestResendVerification:
             format="json",
         )
         assert response.status_code == 400
-        assert "email" in response.data["errors"]
+        assert response.data["errors"]["fields"] is not None
+        assert "email" in response.data["errors"]["fields"]
 
     def test_resend_missing_email_returns_400(self, mock_task, api_client):
         """Missing email field must return 400."""
@@ -179,4 +180,5 @@ class TestResendVerification:
             format="json",
         )
         assert response.status_code == 400
-        assert "email" in response.data["errors"]
+        assert response.data["errors"]["fields"] is not None
+        assert "email" in response.data["errors"]["fields"]

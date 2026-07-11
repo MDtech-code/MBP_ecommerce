@@ -409,6 +409,13 @@ class LoginSerializer(serializers.Serializer):
         Invalid credentials message is intentionally vague — we never
         confirm whether an email address exists in the system.
         This prevents user enumeration attacks.
+
+    Why ErrorDetail directly instead of code= on ValidationError:
+        When raising ValidationError with a dict payload, the code=
+        argument on the outer exception is ignored by DRF — it never
+        reaches the ErrorDetail objects inside the dict.
+        Wrapping in ErrorDetail directly guarantees the code travels
+        through DRF's internal processing into _format_errors() intact.
     """
 
     email = serializers.EmailField(
@@ -434,27 +441,41 @@ class LoginSerializer(serializers.Serializer):
         # Prevents user enumeration attacks.
         if not user:
             raise serializers.ValidationError(
-                {"non_field_errors": _("Invalid email or password.")},
-                code="invalid_credentials",
+               {
+                    "non_field_errors": ErrorDetail(
+                        _("Invalid email or password."),
+                        code=ErrorCode.INVALID_CREDENTIALS,
+                    )
+                }
             )
 
         # ── Account active check ──────────────────────────────────────────────
         if not user.is_active:
             raise serializers.ValidationError(
-                {"non_field_errors": _(
-                    "Your account has been deactivated. Please contact support."
-                )},
-                code="account_inactive",
+                {
+                    "non_field_errors": ErrorDetail(
+                        _(
+                            "Your account has been deactivated. "
+                            "Please contact support."
+                        ),
+                        code=ErrorCode.ACCOUNT_INACTIVE,
+                    )
+                }
             )
 
         # ── Email verified check ──────────────────────────────────────────────
         # Distinct code so frontend can offer "resend verification" option.
         if not user.is_verified:
             raise serializers.ValidationError(
-                {"non_field_errors": _(
-                    "Please verify your email address before logging in."
-                )},
-                code="email_not_verified",
+                {
+                    "non_field_errors": ErrorDetail(
+                        _(
+                            "Please verify your email address "
+                            "before logging in."
+                        ),
+                        code=ErrorCode.EMAIL_NOT_VERIFIED,
+                    )
+                }
             )
 
         attrs["user"] = user

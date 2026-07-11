@@ -241,15 +241,24 @@ describe("useVerifyEmailPage", () => {
     it("exposes verifyErrorMsg when token is invalid", async () => {
       mockWithToken("bad-token")
 
-      const mockError = new Error("Invalid token")
-      mockError.response = {
-        status: 400,
-        data: {
-          message: "Invalid or expired token.",
-          errors: { non_field_errors: ["Invalid or expired token."] },
-          meta: null,
-        },
-      }
+      const mockError = new Error("Invalid token");
+mockError.response = {
+  status: 400,
+  data: {
+    success: false,
+    message: "Invalid or expired token.",
+    data: null,
+    errors: {
+      code:       "validation_error",
+      fields:     null,
+      non_fields: {
+        message: "Invalid or expired token.",
+        code:    "token_invalid",
+      },
+    },
+    meta: null,
+  },
+};
 
       accountService.verifyEmail.mockRejectedValue(mockError)
 
@@ -271,15 +280,24 @@ describe("useVerifyEmailPage", () => {
     it("does not navigate on failed verification", async () => {
       mockWithToken("bad-token")
 
-      const mockError = new Error("Invalid token")
-      mockError.response = {
-        status: 400,
-        data: {
-          message: "Invalid or expired token.",
-          errors: { non_field_errors: ["Invalid or expired token."] },
-          meta: null,
-        },
-      }
+      const mockError = new Error("Not found");
+mockError.response = {
+  status: 404,
+  data: {
+    success: false,
+    message: "No account found with this email.",
+    data: null,
+    errors: {
+      code:       "not_found",
+      fields:     null,
+      non_fields: {
+        message: "No account found with this email.",
+        code:    "not_found",
+      },
+    },
+    meta: null,
+  },
+};
 
       accountService.verifyEmail.mockRejectedValue(mockError)
 
@@ -328,8 +346,7 @@ describe("useVerifyEmailPage", () => {
 
       await waitFor(() => {
         expect(accountService.resendVerification).toHaveBeenCalledWith(
-          { email: "john@test.com" },
-          expect.anything()
+          { email: "john@test.com" }
         )
       })
     })

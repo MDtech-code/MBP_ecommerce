@@ -6,14 +6,21 @@ import FormInput from "../../components/common/FormInput"
 import SocialLogin from "../../components/account/SocialLogin"
 import { useLoginForm } from "../../hooks/account/useLoginForm"
 
+import { ErrorCode } from "../../api/transformers"
+
 export default function Login() {
   const {
     form,
     fieldErrors,
     formError,
+    formErrorCode,
     isPending,
+    isResending,
+    isResendSuccess,
+    handleResend,
     handleChange,
     handleSubmit,
+
   } = useLoginForm()
 
   return (
@@ -30,15 +37,43 @@ export default function Login() {
 
         <p className="mt-2 text-gray-500">Login to manage your account</p>
 
-        {/* Form level error — wrong credentials */}
-        {formError && (
+         {/* ── Resend success — replaces error banner entirely ──────────── */}
+        {/* When user clicks resend and it succeeds, the error banner       */}
+        {/* disappears and this green confirmation takes its place.         */}
+        {isResendSuccess && formErrorCode === ErrorCode.EMAIL_NOT_VERIFIED ? (
+          <div
+            role="status"
+            className="mt-4 text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-4 py-3"
+          >
+            Verification email sent. Please check your inbox.
+          </div>
+
+        ) : formError ? (
+          /* ── Error banner — wrong credentials, unverified, etc. ──────── */
           <div
             role="alert"
-            className="mt-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2"
+            className="mt-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3"
           >
-            {formError}
+            <p>{formError}</p>
+
+            {/* Resend button — only shown when email_not_verified ────────── */}
+            {/* This is the original use case: non-tech user sees message    */}
+            {/* + actionable button. No URL manipulation needed.             */}
+            {formErrorCode === ErrorCode.EMAIL_NOT_VERIFIED && (
+              <button
+                type="button"
+                onClick={handleResend}
+                disabled={isResending}
+                className="mt-2 text-xs font-bold underline text-red-700 hover:text-red-900 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isResending
+                  ? "Sending verification email..."
+                  : "Resend verification email"}
+              </button>
+            )}
           </div>
-        )}
+
+        ) : null}
 
         <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
 

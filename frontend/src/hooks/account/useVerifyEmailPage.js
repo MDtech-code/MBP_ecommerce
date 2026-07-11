@@ -14,7 +14,7 @@ export function useVerifyEmailPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
-  // Check BOTH storages in case the user registered in a different tab or used localStorage
+  // Check localstorgae
   const [email] = useState(
     () =>
       
@@ -102,8 +102,9 @@ export function useVerifyEmailPage() {
 
   // Manual resend handler
   const handleResend = () => {
+    
     if (!email || isResending) return;
-    resendVerification({ email });
+    resendVerification({ email});
   };
 
   const effectiveVerifyError = isVerifyError ? verifyError : autoError;
@@ -113,12 +114,12 @@ export function useVerifyEmailPage() {
   const resendNormalized = isResendError ? normalizeError(resendError) : null;
 
   const verifyErrorMsg =
-    verifyNormalized?.errors?.non_field_errors?.[0] ??
+    verifyNormalized?.errors?.non_field_errors?.message ??
     verifyNormalized?.message ??
     null;
 
   const resendErrorMsg =
-    resendNormalized?.errors?.non_field_errors?.[0] ??
+    resendNormalized?.errors?.non_field_errors?.message ??
     resendNormalized?.message ??
     null;
 
@@ -206,12 +207,12 @@ export function useVerifyEmailPage() {
 //   const resendNormalized = isResendError ? normalizeError(resendError) : null;
 
 //   const verifyErrorMsg =
-//     verifyNormalized?.errors?.non_field_errors?.[0] ??
+//     verifyNormalized?.errors?.non_field_errors?.message ??
 //     verifyNormalized?.message ??
 //     null;
 
 //   const resendErrorMsg =
-//     resendNormalized?.errors?.non_field_errors?.[0] ??
+//     resendNormalized?.errors?.non_field_errors?.message ??
 //     resendNormalized?.message ??
 //     null;
 

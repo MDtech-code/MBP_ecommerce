@@ -34,6 +34,7 @@ class ErrorCode:
     INVALID_CREDENTIALS     = "invalid_credentials"
     EMAIL_NOT_VERIFIED      = "email_not_verified"
     ACCOUNT_DISABLED        = "account_disabled"
+    ACCOUNT_INACTIVE        = "account_inactive"
     SESSION_EXPIRED         = "session_expired"
     TOKEN_INVALID           = "token_invalid"
     TOKEN_EXPIRED           = "token_expired"
