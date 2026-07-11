@@ -19,7 +19,9 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
+from rest_framework.exceptions import ErrorDetail
 
+from apps.core.error_codes import ErrorCode
 from apps.core.api.views import BaseAPIView
 from apps.core.permissions import IsNotAuthenticated
 
@@ -1056,7 +1058,12 @@ class ChangePasswordView(BaseAPIView):
             )
             return self.error_response(
                 message=_("Current password is incorrect."),
-                errors={"current_password": _("Incorrect password.")},
+                errors={
+            "current_password": ErrorDetail(
+                _("Incorrect password."),
+                code=ErrorCode.INVALID_CREDENTIALS,
+            )
+        },
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 

@@ -148,11 +148,13 @@ describe("useForgotPasswordForm", () => {
 
   it("maps email field error", () => {
     hookState.isError = true;
-    hookState.error = {
-      errors: {
-        email: ["Enter a valid email address."],
-      },
-    };
+   hookState.error = {
+  errors: {
+    fields: { email: { message: "Enter a valid email address.", code: "invalid" } },
+    non_fields: null,
+    code: "validation_error",
+  },
+};
 
     const { result } = renderHook(() =>
       useForgotPasswordForm(),
@@ -166,10 +168,12 @@ describe("useForgotPasswordForm", () => {
   it("maps non_field_errors into formError", () => {
     hookState.isError = true;
     hookState.error = {
-      errors: {
-        non_field_errors: ["Too many requests. Try again later."],
-      },
-    };
+  errors: {
+    fields: null,
+    non_fields: { message: "Too many requests. Try again later.", code: "rate_limit_exceeded" },
+    code: "rate_limit_exceeded",
+  },
+};
 
     const { result } = renderHook(() =>
       useForgotPasswordForm(),
@@ -183,9 +187,13 @@ describe("useForgotPasswordForm", () => {
   it("falls back to message when no non_field_errors", () => {
     hookState.isError = true;
     hookState.error = {
-      errors: {},
-      message: "Something went wrong.",
-    };
+  errors: {
+    fields: null,
+    non_fields: null,
+    code: "validation_error",
+  },
+  message: "Something went wrong.",
+};
 
     const { result } = renderHook(() =>
       useForgotPasswordForm(),

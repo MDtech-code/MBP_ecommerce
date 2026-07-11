@@ -37,15 +37,16 @@ export function useResetPasswordForm() {
 
   const normalized = isError ? normalizeError(error) : null;
 
-  const passwordError = normalized?.errors?.password?.[0] ?? null;
+ const passwordError = normalized?.errors?.fields?.password?.message ?? null;
 
-  const confirmPasswordError =
-    normalized?.errors?.confirm_password?.[0] ?? null;
-
+ 
+const confirmPasswordError =
+  normalized?.errors?.fields?.confirm_password?.message ?? null;
   // Token errors come as non_field_errors from backend
   // e.g. "Invalid or expired token."
-  const formError =
-    normalized?.errors?.non_field_errors?.[0] ?? normalized?.message ?? null;
+ 
+const formError =
+  normalized?.errors?.non_fields?.message ?? normalized?.message ?? null;
 
   // Token missing from URL — do not even attempt submission
   const tokenMissing = !token;

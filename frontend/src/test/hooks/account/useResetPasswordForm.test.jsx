@@ -217,10 +217,12 @@ describe("useResetPasswordForm", () => {
   it("maps password field error", () => {
     hookState.isError = true;
     hookState.error = {
-      errors: {
-        password: ["Password must be at least 8 characters."],
-      },
-    };
+  errors: {
+    fields: { password: { message: "Password must be at least 8 characters.", code: "min_length" } },
+    non_fields: null,
+    code: "validation_error",
+  },
+};
 
     const { result } = renderHook(() =>
       useResetPasswordForm(),
@@ -234,10 +236,12 @@ describe("useResetPasswordForm", () => {
   it("maps confirm_password field error", () => {
     hookState.isError = true;
     hookState.error = {
-      errors: {
-        confirm_password: ["Passwords do not match."],
-      },
-    };
+  errors: {
+    fields: { confirm_password: { message: "Passwords do not match.", code: "password_mismatch" } },
+    non_fields: null,
+    code: "validation_error",
+  },
+};
 
     const { result } = renderHook(() =>
       useResetPasswordForm(),
@@ -251,10 +255,12 @@ describe("useResetPasswordForm", () => {
   it("maps non_field_errors into formError", () => {
     hookState.isError = true;
     hookState.error = {
-      errors: {
-        non_field_errors: ["Invalid or expired token."],
-      },
-    };
+  errors: {
+    fields: null,
+    non_fields: { message: "Invalid or expired token.", code: "token_invalid" },
+    code: "validation_error",
+  },
+};
 
     const { result } = renderHook(() =>
       useResetPasswordForm(),
@@ -268,9 +274,13 @@ describe("useResetPasswordForm", () => {
   it("falls back to message when no non_field_errors", () => {
     hookState.isError = true;
     hookState.error = {
-      errors: {},
-      message: "Something went wrong.",
-    };
+  errors: {
+    fields: null,
+    non_fields: null,
+    code: "validation_error",
+  },
+  message: "Something went wrong.",
+};
 
     const { result } = renderHook(() =>
       useResetPasswordForm(),

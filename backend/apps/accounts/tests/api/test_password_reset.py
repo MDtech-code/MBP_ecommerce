@@ -176,7 +176,8 @@ class TestPasswordResetRequest:
             format="json",
         )
         assert response.status_code == 400
-        assert "email" in response.data["errors"]
+        assert response.data["errors"]["fields"] is not None
+        assert "email" in response.data["errors"]["fields"]
 
     def test_reset_request_missing_email_returns_400(
         self, mock_task, api_client
@@ -184,7 +185,8 @@ class TestPasswordResetRequest:
         """Missing email field must return 400."""
         response = api_client.post(PASSWORD_RESET_URL, {}, format="json")
         assert response.status_code == 400
-        assert "email" in response.data["errors"]
+        assert response.data["errors"]["fields"] is not None
+        assert "email" in response.data["errors"]["fields"]
 
 
 # ─── Password Reset Confirm Tests ─────────────────────────────────────────────
@@ -341,7 +343,8 @@ class TestPasswordResetConfirm:
             format="json",
         )
         assert response.status_code == 400
-        assert "token" in response.data["errors"]
+        assert response.data["errors"]["fields"] is not None
+        assert "token" in response.data["errors"]["fields"]
 
     # ── Expired Token ─────────────────────────────────────────────────────────
 
@@ -422,7 +425,8 @@ class TestPasswordResetConfirm:
             format="json",
         )
         assert response.status_code == 400
-        assert "confirm_password" in response.data["errors"]
+        assert response.data["errors"]["fields"] is not None
+        assert "confirm_password" in response.data["errors"]["fields"]
 
     def test_reset_confirm_weak_password_returns_400(self, api_client, user):
         """Weak password must be rejected."""

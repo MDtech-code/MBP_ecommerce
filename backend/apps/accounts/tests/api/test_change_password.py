@@ -161,7 +161,8 @@ class TestChangePassword:
             },
             format="json",
         )
-        assert "current_password" in response.data["errors"]
+        assert response.data["errors"]["fields"] is not None
+        assert "current_password" in response.data["errors"]["fields"]
 
     # ── New Password Validation ───────────────────────────────────────────────
 
@@ -177,7 +178,8 @@ class TestChangePassword:
             format="json",
         )
         assert response.status_code == 400
-        assert "confirm_new_password" in response.data["errors"]
+        assert response.data["errors"]["fields"] is not None
+        assert "confirm_new_password" in response.data["errors"]["fields"]
 
     def test_change_password_weak_new_password_returns_400(self, auth_client):
         """Weak new password must be rejected."""
@@ -213,5 +215,6 @@ class TestChangePassword:
             CHANGE_PASSWORD_URL, payload, format="json"
         )
         assert response.status_code == 400
-        assert missing_field in response.data["errors"]
+        assert response.data["errors"]["fields"] is not None
+        assert missing_field in response.data["errors"]["fields"]
 

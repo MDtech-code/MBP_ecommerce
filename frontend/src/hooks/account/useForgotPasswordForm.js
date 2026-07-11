@@ -25,13 +25,13 @@ export function useForgotPasswordForm() {
 
   const [email, setEmail] = useState("");
 
-  const emailError = isError
-    ? (normalizeError(error).errors?.email?.[0] ?? null)
-    : null;
+ const emailError = isError
+   ? (normalizeError(error).errors?.fields?.email?.message ?? null)
+   : null;
 
   // Non-field errors from backend (rate limit message, etc.)
   const formError = isError
-    ? (normalizeError(error).errors?.non_field_errors?.[0] ??
+    ? (normalizeError(error).errors?.non_fields?.message ??
       normalizeError(error).message ??
       null)
     : null;

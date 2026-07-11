@@ -603,7 +603,12 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
             validate_passwords_match(attrs["password"], attrs["confirm_password"])
         except DjangoValidationError as exc:
             raise serializers.ValidationError(
-                {"confirm_password": exc.message}
+               {
+                "confirm_password": ErrorDetail(
+                    _("Passwords do not match."),
+                    code=ErrorCode.PASSWORD_MISMATCH,
+                )
+            }
             )
         return attrs
 
@@ -664,7 +669,12 @@ class ChangePasswordSerializer(serializers.Serializer):
             )
         except DjangoValidationError as exc:
             raise serializers.ValidationError(
-                {"confirm_new_password": exc.message}
+                {
+                "confirm_new_password": ErrorDetail(
+                    _("Passwords do not match."),
+                    code=ErrorCode.PASSWORD_MISMATCH,
+                )
+            }
             )
         return attrs
 

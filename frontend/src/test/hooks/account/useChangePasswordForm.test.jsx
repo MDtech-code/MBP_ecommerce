@@ -186,10 +186,12 @@ describe("useChangePasswordForm", () => {
   it("maps current_password field error", () => {
     hookState.isError = true;
     hookState.error = {
-      errors: {
-        current_password: ["Current password is incorrect."],
-      },
-    };
+  errors: {
+    fields: { current_password: { message: "Current password is incorrect.", code: "invalid_credentials" } },
+    non_fields: null,
+    code: "validation_error",
+  },
+};
 
     const { result } = renderHook(() =>
       useChangePasswordForm(),
@@ -203,12 +205,12 @@ describe("useChangePasswordForm", () => {
   it("maps new_password field error", () => {
     hookState.isError = true;
     hookState.error = {
-      errors: {
-        new_password: [
-          "Password must be at least 8 characters.",
-        ],
-      },
-    };
+  errors: {
+    fields: { new_password: { message: "Password must be at least 8 characters.", code: "min_length" } },
+    non_fields: null,
+    code: "validation_error",
+  },
+};
 
     const { result } = renderHook(() =>
       useChangePasswordForm(),
@@ -222,10 +224,12 @@ describe("useChangePasswordForm", () => {
   it("maps confirm_new_password field error", () => {
     hookState.isError = true;
     hookState.error = {
-      errors: {
-        confirm_new_password: ["Passwords do not match."],
-      },
-    };
+  errors: {
+    fields: { confirm_new_password: { message: "Passwords do not match.", code: "password_mismatch" } },
+    non_fields: null,
+    code: "validation_error",
+  },
+};
 
     const { result } = renderHook(() =>
       useChangePasswordForm(),
@@ -238,11 +242,14 @@ describe("useChangePasswordForm", () => {
 
   it("maps non_field_errors into formError", () => {
     hookState.isError = true;
-    hookState.error = {
-      errors: {
-        non_field_errors: ["Current password is incorrect."],
-      },
-    };
+    // non_field_errors → non_fields — REPLACE errors object:
+hookState.error = {
+  errors: {
+    fields: null,
+    non_fields: { message: "Current password is incorrect.", code: "invalid_credentials" },
+    code: "validation_error",
+  },
+};
 
     const { result } = renderHook(() =>
       useChangePasswordForm(),
@@ -255,10 +262,14 @@ describe("useChangePasswordForm", () => {
 
   it("falls back to message when no non_field_errors", () => {
     hookState.isError = true;
-    hookState.error = {
-      errors: {},
-      message: "Something went wrong.",
-    };
+   hookState.error = {
+  errors: {
+    fields: null,
+    non_fields: null,
+    code: "validation_error",
+  },
+  message: "Something went wrong.",
+};
 
     const { result } = renderHook(() =>
       useChangePasswordForm(),

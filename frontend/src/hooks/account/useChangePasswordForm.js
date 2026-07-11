@@ -32,16 +32,16 @@ export function useChangePasswordForm() {
   const normalized = isError ? normalizeError(error) : null;
 
   const currentPasswordError =
-    normalized?.errors?.current_password?.[0] ?? null;
+    normalized?.errors?.fields?.current_password?.message ?? null;
 
-  const newPasswordError = normalized?.errors?.new_password?.[0] ?? null;
-
+  const newPasswordError =
+    normalized?.errors?.fields?.new_password?.message ?? null;
   const confirmNewPasswordError =
-    normalized?.errors?.confirm_new_password?.[0] ?? null;
+    normalized?.errors?.fields?.confirm_new_password?.message ?? null;
 
   // Non-field errors — e.g. "Current password is incorrect."
   const formError =
-    normalized?.errors?.non_field_errors?.[0] ?? normalized?.message ?? null;
+    normalized?.errors?.non_fields?.message ?? normalized?.message ?? null;
 
   function handleSubmit(e) {
     e.preventDefault();
