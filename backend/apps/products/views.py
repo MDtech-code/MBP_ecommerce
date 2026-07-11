@@ -498,36 +498,7 @@ class ProductListAPIView(BaseAPIView):
 
     permission_classes = [AllowAny]
 
-    # ── Param validation ───────────────────────────────────────────────────
-
-    # def _get_pagination_params(
-    #     self, request: Request
-    # ) -> tuple[int, int, bool]:
-    #     """
-    #     Returns (page, page_size, is_valid).
-
-    #     Why max page_size=48:
-    #         Frontend grid shows 12 per page.
-    #         Allow up to 48 (4 pages worth) for power users.
-    #         Unlimited page_size = DB abuse risk.
-
-    #     Why default page_size=12:
-    #         Matches frontend grid design (4 columns × 3 rows).
-    #     """
-    #     try:
-    #         page = max(1, int(request.query_params.get("page", 1)))
-    #     except (ValueError, TypeError):
-    #         return 1, 12, False
-
-    #     try:
-    #         page_size = min(
-    #             48,
-    #             max(1, int(request.query_params.get("page_size", 12)))
-    #         )
-    #     except (ValueError, TypeError):
-    #         return 1, 12, False
-
-    #     return page, page_size, True
+  
 
     def _get_price_params(
         self, request: Request
