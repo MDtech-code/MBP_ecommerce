@@ -160,9 +160,23 @@ class AddToCartAPIView(BaseAPIView):
         product = serializer.validated_data["product"]
         quantity = serializer.validated_data["quantity"]
 
+
+        try:
+            cart = Cart.objects.get(user=request.user)
+        except Cart.DoesNotExist:
+            logger.error(
+                "Cart not found for authenticated user — "
+                "post_save signal may have failed on account creation.",
+                extra=log_context,
+            )
+            return self.error_response(
+                message=_("Cart not found. Please contact support."),
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
         try:
             with transaction.atomic():
-                cart, _cart_created= Cart.objects.get_or_create(user=request.user)
+                # cart, _cart_created= Cart.objects.get_or_create(user=request.user)
 
                 item, created = (
                     CartItem.objects
@@ -364,8 +378,6 @@ class UpdateCartItemAPIView(BaseAPIView):
             message=_("Cart item updated successfully."),
         )
 
-    # Support PUT as alias — both do partial quantity update
-    put = patch
 
     def delete(self, request: Request, item_id: int) -> Response:
         log_context = {

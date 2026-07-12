@@ -70,19 +70,7 @@ class Cart(TimeStampedModel):
         """
         return len(self.items.all()) == 0
 
-    # @property
-    # def total_items(self) -> int:
-    #     """Sum of all item quantities in the cart."""
-    #     return sum(item.quantity for item in self.items.all())
-
-    # @property
-    # def total_price(self) -> float:
-    #     """Sum of (current_price * quantity) for every item in the cart."""
-    #     return sum(item.subtotal for item in self.items.all())
-
-    # @property
-    # def is_empty(self) -> bool:
-    #     return not self.items.exists()
+  
 
 
 class CartItem(TimeStampedModel):
@@ -163,28 +151,4 @@ class CartItem(TimeStampedModel):
         on the queryset to avoid per-item N+1 queries.
         """
         return Decimal(str(self.product.current_price)) * self.quantity
-    # def clean(self) -> None:
-    #     """
-    #     Validate quantity does not exceed available stock.
-    #     Called explicitly in save() since CartItem is rarely
-    #     created via Django admin forms that auto-call full_clean().
-    #     """
-    #     if self.quantity > self.product.stock:
-    #         raise ValidationError({
-    #             "quantity": _(
-    #                 "Only %(stock)d unit(s) of %(product)s in stock."
-    #             ) % {"stock": self.product.stock, "product": self.product.name}
-    #         })
-
-    # def save(self, *args, **kwargs) -> None:
-    #     self.full_clean()
-    #     super().save(*args, **kwargs)
-    #     logger.debug(
-    #         "Cart item saved: %s x %s for %s",
-    #         self.quantity, self.product.name, self.cart.user.email,
-    #     )
-
-    # @property
-    # def subtotal(self) -> float:
-    #     """Quantity multiplied by product's current effective price."""
-    #     return float(self.product.current_price) * self.quantity
+    

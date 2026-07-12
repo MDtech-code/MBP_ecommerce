@@ -3,12 +3,12 @@ from __future__ import annotations
 
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
-
+from apps.core.mixins import TimestampFieldsMixin
 from apps.products.models import Product
 from .models import Cart, CartItem
 
 
-class CartItemSerializer(serializers.ModelSerializer):
+class CartItemSerializer(TimestampFieldsMixin,serializers.ModelSerializer):
     """
     Read representation of a single cart line item.
 
@@ -58,6 +58,8 @@ class CartItemSerializer(serializers.ModelSerializer):
             "is_in_stock",
             "quantity",
             "subtotal",
+            "created_at",
+            "updated_at",
         ]
         extra_kwargs = {
             "product": {"write_only": True},
@@ -85,7 +87,7 @@ class CartItemSerializer(serializers.ModelSerializer):
         return None
 
 
-class CartSerializer(serializers.ModelSerializer):
+class CartSerializer(TimestampFieldsMixin,serializers.ModelSerializer):
     """
     Full cart representation with all items and computed totals.
 
@@ -138,16 +140,16 @@ class AddToCartSerializer(serializers.Serializer):
         },
     )
 
-    def validate_product_id(self, value: int) -> int:
-        """Assert product exists and is available for purchase."""
-        if not Product.objects.filter(
-            id=value,
-            status=Product.Status.AVAILABLE,
-        ).exists():
-            raise serializers.ValidationError(
-                _("Product not found or is unavailable.")
-            )
-        return value
+    # def validate_product_id(self, value: int) -> int:
+    #     """Assert product exists and is available for purchase."""
+    #     if not Product.objects.filter(
+    #         id=value,
+    #         status=Product.Status.AVAILABLE,
+    #     ).exists():
+    #         raise serializers.ValidationError(
+    #             _("Product not found or is unavailable.")
+    #         )
+    #     return value
 
     def validate(self, attrs: dict) -> dict:
         """
@@ -157,7 +159,7 @@ class AddToCartSerializer(serializers.Serializer):
         so the view does not need to fetch it again.
         """
         try:
-            product = Product.objects.get(id=attrs["product_id"])
+            product = Product.objects.get(id=attrs["product_id"],status=Product.Status.AVAILABLE)
         except Product.DoesNotExist:
             raise serializers.ValidationError(
                 {"product_id": _("Product not found or is unavailable.")}
@@ -186,7 +188,7 @@ class UpdateCartItemSerializer(serializers.Serializer):
     quantity = serializers.IntegerField(
         min_value=0,
         error_messages={
-            "min_value": _("Quantity can not negative."),
+            "min_value": _("Quantity must be 0 or greater."),
             "required": _("Quantity is required."),
         },
     )
