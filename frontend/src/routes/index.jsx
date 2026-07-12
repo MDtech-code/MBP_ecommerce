@@ -22,7 +22,7 @@ import GuestRoute from "../components/layout/GuestRoute";
 export const router = createBrowserRouter([
   { path: "/",               element: <Home /> },
   { path: "/product",        element: <ProductListing /> },
-  { path: "/product-detail", element: <ProductDetail /> },
+  { path: "/product/:slug", element: <ProductDetail /> },
   { path: "/cart",           element: <CartPage /> },
 
  
