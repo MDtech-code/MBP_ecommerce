@@ -23,7 +23,6 @@ export const router = createBrowserRouter([
   { path: "/",               element: <Home /> },
   { path: "/product",        element: <ProductListing /> },
   { path: "/product/:slug", element: <ProductDetail /> },
-  { path: "/cart",           element: <CartPage /> },
 
  
   // GEST - must be attept by non authenticated user 
@@ -45,6 +44,8 @@ export const router = createBrowserRouter([
     element: <ProtectedRoute />,
     children: [
       { path: "/profile", element: <Profile /> },
+      { path: "/cart",    element: <CartPage /> },
+
       { path: "/security", element: <Security /> },
       {path: "/security/change-password",element: <ChangePassword />},
     ],
