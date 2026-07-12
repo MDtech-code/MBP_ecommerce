@@ -11,6 +11,7 @@ import { getMediaUrl } from "../../utils/media";
 import { useLogoutForm } from "../../hooks/account/useLogoutForm";
 import BikePartsMegaMenu from "./menu/BikePartsMegaMenu";
 import BrandsMegaMenu from "./menu/BrandsMegaMenu";
+import CartIcon from "./CartIcon";
 
 /**
  * Which mega menu is open:
@@ -224,7 +225,7 @@ export default function MainNavbar({ user }) {
                   </div>
 
                   {/* Cart */}
-                  <div className="flex items-center gap-1.5 font-semibold
+                  {/* <div className="flex items-center gap-1.5 font-semibold
                                   cursor-pointer hover:text-primary
                                   transition-colors relative">
                     <ShoppingCart className="w-5 h-5" />
@@ -235,7 +236,8 @@ export default function MainNavbar({ user }) {
                                      font-bold">
                       0
                     </span>
-                  </div>
+                  </div> */}
+                  <CartIcon/>
                 </>
               )}
 
