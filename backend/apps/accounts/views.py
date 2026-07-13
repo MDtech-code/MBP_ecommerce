@@ -293,7 +293,7 @@ class VerifyEmailView(BaseAPIView):
              token_obj.mark_used()
              user.is_verified = True
              user.save(update_fields=["is_verified"])
-             token_obj.delete()
+            #  token_obj.delete()
         except Exception:
             logger.exception(
                 "Unexpected error while marking user as verified",
