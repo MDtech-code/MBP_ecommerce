@@ -1,23 +1,27 @@
 from __future__ import annotations
-
+import logging
 import uuid
 from datetime import timedelta
 
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
-from django.db import models
+from django.db import models,transaction
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
-from django.core.validators import RegexValidator
 
+
+from apps.common.validators import phone_validator
 from apps.common.models import TimeStampedModel
 from apps.common.choices.role import Role
 from apps.common.choices.city import City
 from apps.common.choices.city_postal_map import CITY_POSTAL_MAP, CITY_PROVINCE_MAP
+
 from apps.accounts.choices.gender import Gender
 from apps.accounts.choices.province import Province
 from apps.accounts.choices.address_label import AddressLabel
 
 from .managers import UserManager
+
+logger = logging.getLogger("apps.accounts")
 
 
 
@@ -27,7 +31,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     Custom user model using email as the primary identifier.
 
     Replaces Django's default username-based User.
-    Email is the login field — standard for ecommerce.
+    Email is the login fieds.
     """
 
     email = models.EmailField(
@@ -111,25 +115,11 @@ class User(AbstractBaseUser, PermissionsMixin):
 
 
 
-    
 
 class UserProfile(TimeStampedModel):
-    """
-    Extended personal information for a user.
-    Separated from User to keep auth concerns clean.
-    Created automatically via signal when User is created.
+    
 
-    Address data lives in UserAddress (ISSUE-A02).
-    This model holds personal identity only.
-    """
-
-    phone_validator = RegexValidator(
-        regex=r"^\+?92\d{10}$|^0\d{10}$",
-        message=_(
-            "Enter a valid Pakistani phone number. "
-            "Format: +923001234567 or 03001234567"
-        ),
-    )
+    
 
     user = models.OneToOneField(
         User,
@@ -170,22 +160,50 @@ class UserProfile(TimeStampedModel):
         null=True,
         blank=True,
     )
+    is_phone_verified = models.BooleanField(
+    _("phone verified"),
+    default=False,
+    help_text=_(
+        "True after customer confirms phone via WhatsApp COD verification. "
+        "Verified customers skip re-verification on subsequent COD orders."
+    ),
+)
+    phone_verified_at = models.DateTimeField(
+        _("phone verified at"),
+        null=True,
+        blank=True,
+    )
 
     class Meta:
         verbose_name = _("user profile")
         verbose_name_plural = _("user profiles")
+
+
+    def save(self, *args, **kwargs) -> None:
+        super().save(*args, **kwargs)
+        logger.debug("UserProfile saved: user=%s", self.user_id)
 
     def __str__(self) -> str:
         return f"{self.user.email} — profile"
 
     @property
     def default_address(self) -> UserAddress | None:
-        """
-        Returns the user default shipping address or None.
-        Address data lives in UserAddress since ISSUE-A02.
-        """
-        return self.user.addresses.filter(is_default=True).first()
+        return UserAddress.objects.default_for_user(self.user_id)
 
+
+class UserAddressQuerySet(models.QuerySet):
+    
+    def default_for_user(self, user_id: int) -> "UserAddress | None":
+        """Single optimized query. Use this instead of profile.default_address."""
+        return self.filter(user_id=user_id, is_default=True).first()
+
+
+class UserAddressManager(models.Manager):
+    def get_queryset(self):
+        return UserAddressQuerySet(self.model, using=self._db)
+    
+    def default_for_user(self, user_id: int) -> "UserAddress | None":
+        return self.get_queryset().default_for_user(user_id)
 
 class UserAddress(TimeStampedModel):
     """
@@ -247,11 +265,23 @@ class UserAddress(TimeStampedModel):
         default="Pakistan",
         editable=False,
     )
+    phone = models.CharField(
+        _("contact phone for this address"),
+        max_length=15,
+        blank=True,
+        default="",
+        validators=[phone_validator],
+        help_text=_(
+            "Phone number for delivery at this address. "
+            "Leave blank to use profile phone number."
+        ),
+    )
     is_default = models.BooleanField(
         _("is default"),
         default=False,
         help_text=_("Only one address per user can be default."),
     )
+    objects=UserAddressManager()
 
     class Meta:
         verbose_name = _("user address")
@@ -264,6 +294,10 @@ class UserAddress(TimeStampedModel):
                 name="unique_default_address_per_user",
             )
         ]
+        indexes = [
+        models.Index(fields=["user", "is_default"]),
+        models.Index(fields=["user", "created_at"]),
+    ]
 
     def __str__(self) -> str:
         return f"{self.get_label_display()} — {self.address_line1}, {self.city}"
@@ -278,15 +312,29 @@ class UserAddress(TimeStampedModel):
             self.postal_code = CITY_POSTAL_MAP.get(self.city, self.postal_code)
 
         if self.is_default:
+            self._set_as_sole_default(*args, **kwargs)
+        else:
+            super().save(*args, **kwargs)
+    def _set_as_sole_default(self, *args, **kwargs) -> None:
+        
+        with transaction.atomic():
+            list(UserAddress.objects.select_for_update().filter(
+                user_id=self.user_id
+            ))
+            # Now safe to clear other defaults — we hold the row locks
             UserAddress.objects.filter(
-                user=self.user,
+                user_id=self.user_id,
                 is_default=True,
             ).exclude(pk=self.pk).update(is_default=False)
-
-        super().save(*args, **kwargs)
+            
+            super().save(*args, **kwargs) 
+            logger.debug(
+                "UserAddress default set atomically: user=%s address=%s",
+                self.user_id,
+                self.pk,
+            )
 
     def set_as_default(self) -> None:
-        """Explicit helper — preferred over setting is_default directly."""
         self.is_default = True
         self.save()
 
@@ -301,6 +349,16 @@ class UserAddress(TimeStampedModel):
             self.country,
         ])
         return ", ".join(parts)
+    
+    
+    @property
+    def contact_phone(self) -> str:
+        """
+        Returns address-specific phone if set,
+        otherwise falls back to user profile phone.
+        Used at checkout to populate OrderShippingAddress.phone.
+        """
+        return self.phone or (self.user.profile.phone or "")
 
 class EmailVerificationToken(models.Model):
     """
@@ -365,7 +423,7 @@ class EmailVerificationToken(models.Model):
         - Not yet expired (within 24 hour window)
         Mirrors PasswordResetToken.is_valid pattern.
         """
-        return not self.is_expired
+        return not self.is_used and not self.is_expired
     
     def mark_used(self) -> None:
         """
@@ -381,14 +439,7 @@ class EmailVerificationToken(models.Model):
         self.is_used = True
         self.save(update_fields=["is_used"])
 
-    @classmethod
-    def create_for_user(cls, user: User) -> "EmailVerificationToken":
-        """
-        Create a new token for user.
-        Deletes all previous tokens for this user first.
-        """
-        cls.objects.filter(user=user).delete()
-        return cls.objects.create(user=user)
+   
 
 
 class PasswordResetToken(models.Model):
@@ -446,13 +497,7 @@ class PasswordResetToken(models.Model):
     def is_valid(self) -> bool:
         return not self.is_used and not self.is_expired
 
-    @classmethod
-    def create_for_user(cls, user: User) -> "PasswordResetToken":
-        """
-        Create a new token. Invalidates all previous reset tokens for user.
-        """
-        cls.objects.filter(user=user).delete()
-        return cls.objects.create(user=user)
+   
 
     def mark_used(self) -> None:
       
@@ -460,7 +505,66 @@ class PasswordResetToken(models.Model):
         self.save(update_fields=["is_used"])
 
 
+class PendingEmailChange(models.Model):
+    """
+    Tracks unconfirmed email change requests.
 
+    User.email is NOT changed until new email is verified.
+    Old email remains active during the 24-hour verification window.
+    Old email receives security notification when change is requested.
+
+    OneToOne on user — only one pending change per user at a time.
+    """
+
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name="pending_email_change",
+        verbose_name=_("user"),
+    )
+    new_email = models.EmailField(
+        _("new email address"),
+        help_text=_("Email address waiting to be verified."),
+    )
+    token = models.UUIDField(
+        _("verification token"),
+        default=uuid.uuid4,
+        unique=True,
+        editable=False,
+        db_index=True,
+    )
+    created_at = models.DateTimeField(_("created at"), auto_now_add=True)
+    expires_at = models.DateTimeField(_("expires at"))
+    is_used = models.BooleanField(_("is used"), default=False)
+
+    class Meta:
+        verbose_name        = _("pending email change")
+        verbose_name_plural = _("pending email changes")
+
+    def save(self, *args, **kwargs) -> None:
+        if not self.expires_at:
+            self.expires_at = timezone.now() + timedelta(hours=24)
+        super().save(*args, **kwargs)
+        logger.debug(
+            "PendingEmailChange saved: user=%s new_email=%s",
+            self.user_id,
+            self.new_email,
+        )
+
+    @property
+    def is_expired(self) -> bool:
+        return timezone.now() > self.expires_at
+
+    @property
+    def is_valid(self) -> bool:
+        return not self.is_used and not self.is_expired
+
+    def mark_used(self) -> None:
+        self.is_used = True
+        self.save(update_fields=["is_used"])
+
+    def __str__(self) -> str:
+        return f"Email change: {self.user.email} → {self.new_email}"
 class UserLoginActivity(models.Model):
     """
     Immutable append-only log of every login attempt.
