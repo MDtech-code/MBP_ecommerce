@@ -107,6 +107,7 @@ class UserAddressSerializer(TimestampFieldsMixin,serializers.ModelSerializer):
             "label_display",
             "address_line1",
             "address_line2",
+            "phone",
             "city",
             "province",
             "province_display",
@@ -134,6 +135,17 @@ class UserAddressSerializer(TimestampFieldsMixin,serializers.ModelSerializer):
             )
             )
         return value.strip()
+    def validate_phone(self, value: str) -> str:
+        """
+        Run Pakistani phone number format validation.
+
+        Delegates to the shared validator so model and serializer
+        use identical validation logic. Empty string is allowed
+        (phone is optional on the profile).
+        """
+        if not value:
+            return value
+        return validate_pakistani_phone(value)
 
 
 
