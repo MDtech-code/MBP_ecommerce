@@ -19,7 +19,7 @@ import { normalizeError } from "../../api/transformers";
  *   - Normalizes errors for UI display
  *   - Derives display values from backend fields
  *
- * Why total_price comes from backend not computed in frontend:
+ * Why subtotal comes from backend not computed in frontend:
  *   Backend uses Decimal precision for monetary values.
  *   Frontend float arithmetic can produce rounding errors.
  *   Backend is the source of truth for all financial calculations.
@@ -35,7 +35,7 @@ import { normalizeError } from "../../api/transformers";
  *   item.id          → itemId for PATCH/DELETE
  *   item.quantity    → current quantity for display
  *   item.subtotal    → backend-computed subtotal string
- *   cart.total_price → backend-computed total string
+ *   cart.subtotal → backend-computed total string
  */
 export function useCart() {
   // ── Query ──────────────────────────────────────────────────────────────────
@@ -50,7 +50,7 @@ export function useCart() {
   // ── Derived cart data ──────────────────────────────────────────────────────
   const items = cart?.items ?? [];
   const totalItems = cart?.total_items ?? 0;
-  const totalPrice = cart?.total_price ?? "0.00";
+  const totalPrice = cart?.subtotal ?? "0.00";
   const isEmpty = cart?.is_empty ?? true;
 
   // ── Error normalization ────────────────────────────────────────────────────

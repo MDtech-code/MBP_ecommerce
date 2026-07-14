@@ -98,7 +98,7 @@ class CartSerializer(TimestampFieldsMixin,serializers.ModelSerializer):
 
     items = CartItemSerializer(many=True, read_only=True)
     total_items = serializers.IntegerField(read_only=True)
-    total_price = serializers.DecimalField(
+    subtotal = serializers.DecimalField(
         max_digits=10,
         decimal_places=2,
         read_only=True,
@@ -111,7 +111,7 @@ class CartSerializer(TimestampFieldsMixin,serializers.ModelSerializer):
             "id",
             "items",
             "total_items",
-            "total_price",
+            "subtotal",
             "is_empty",
             "updated_at",
         ]
@@ -253,7 +253,7 @@ class UpdateCartItemSerializer(serializers.Serializer):
 
 #     items: CartItemSerializer = CartItemSerializer(many=True, read_only=True)
 #     total_items: serializers.IntegerField = serializers.IntegerField(read_only=True)
-#     total_price: serializers.FloatField = serializers.FloatField(read_only=True)
+#     subtotal: serializers.FloatField = serializers.FloatField(read_only=True)
 #     is_empty: serializers.BooleanField = serializers.BooleanField(read_only=True)
 
 #     class Meta:
@@ -262,7 +262,7 @@ class UpdateCartItemSerializer(serializers.Serializer):
 #             "id",
 #             "items",
 #             "total_items",
-#             "total_price",
+#             "subtotal",
 #             "is_empty",
 #             "updated_at",
 #         ]

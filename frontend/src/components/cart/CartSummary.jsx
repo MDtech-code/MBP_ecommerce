@@ -5,11 +5,11 @@ import { Lock } from "lucide-react";
  * CartSummary — totals from backend, not computed in frontend.
  *
  * Props:
- *   totalPrice  : cart.total_price string from backend ("33110.00")
+ *   SubTotal  : cart.subtotal string from backend ("33110.00")
  *   totalItems  : cart.total_items integer from backend
  *   isMutating  : boolean — disable checkout during mutations
  *
- * Why totalPrice from backend not computed locally:
+ * Why SubTotal from backend not computed locally:
  *   Backend uses Decimal precision for monetary values.
  *   Frontend float arithmetic produces rounding errors on
  *   large prices or many items.
@@ -25,11 +25,11 @@ const SHIPPING_FEE = 150;
 const DISCOUNT     = 0;
 
 export default function CartSummary({
-  totalPrice  = "0.00",
+  SubTotal  = "0.00",
   totalItems  = 0,
   isMutating  = false,
 }) {
-  const subtotal = parseFloat(totalPrice);
+  const subtotal = parseFloat(SubTotal);
   const total    = subtotal + SHIPPING_FEE - DISCOUNT;
 
   return (
