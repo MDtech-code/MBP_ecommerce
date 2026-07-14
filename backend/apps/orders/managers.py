@@ -57,33 +57,3 @@ class OrderManager(models.Manager):
             "Order number generation retry limit hit — using UUID fallback"
         )
         return f"MBP-{year}-{uuid.uuid4().hex[:6].upper()}"
-# # apps/orders/managers.py
-# from __future__ import annotations
-# from django.db import models
-# from django.utils import timezone
-
-
-# class OrderManager(models.Manager):
-#     """Custom manager providing auto-generated order numbers."""
-
-#     def generate_order_number(self) -> str:
-#         """
-#         Generate unique sequential order number.
-#         Format: MBP-YYYY-NNNNNN (e.g. MBP-2026-000001)
-#         """
-#         year = timezone.now().year
-#         prefix = f"MBP-{year}-"
-
-#         last_order = (
-#             self.filter(order_number__startswith=prefix)
-#             .order_by("-order_number")
-#             .first()
-#         )
-
-#         if last_order:
-#             last_seq = int(last_order.order_number.split("-")[-1])
-#             new_seq = last_seq + 1
-#         else:
-#             new_seq = 1
-
-#         return f"{prefix}{new_seq:06d}"

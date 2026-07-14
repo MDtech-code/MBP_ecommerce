@@ -174,9 +174,7 @@ class Order(TimeStampedModel):
         indexes = [
             models.Index(fields=["user",   "status"]),
             models.Index(fields=["status", "placed_at"]),
-            # COD order management: find all pending COD orders
             models.Index(fields=["payment_method", "status"]),
-            # models.Index(fields=["order", "created_at"], name="payment_order_created_idx"),
         ]
 
     def __str__(self) -> str:
