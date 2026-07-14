@@ -53,6 +53,18 @@ PROJECT_APPS = [
     'apps.accounts',
     'apps.products',
     'apps.cart',
+    'apps.coupons',
+    'apps.orders',
+    'apps.payments',
+    'apps.reviews',
+    'apps.contact',
+    'apps.wishlist',
+    'apps.tax',
+    'apps.returns',
+    'apps.recomendations',
+    'apps.notifications',
+    'apps.logistics',
+    'apps.analytics',
 ]
 THIRD_PARTY_APPS = [
     'rest_framework',
