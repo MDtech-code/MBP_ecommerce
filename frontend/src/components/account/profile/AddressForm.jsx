@@ -184,6 +184,14 @@ export default function AddressForm({ existingAddress = null, onCancel }) {
               <span className="ml-auto text-xs text-gray-400">Fixed</span>
             </div>
           </ProfileEditField>
+          {/* Phone */}
+          <ProfileEditField
+                      label="Phone Number"
+                      name="phone"
+                      value={form.phone}
+                      onChange={handleChange}
+                      error={fieldErrors.phone}
+                    />
 
           {/* Address Line 1 — full width */}
           <div className="sm:col-span-2">

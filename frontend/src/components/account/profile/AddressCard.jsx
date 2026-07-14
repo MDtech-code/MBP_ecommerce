@@ -32,6 +32,8 @@ export default function AddressCard({ address, onEdit, onDelete, onSetDefault })
       {address.address_line2 && (
         <p className="text-sm text-gray-500">{address.address_line2}</p>
       )}
+      {/*phone number */}
+        {address.phone && ( <p className="text-sm text-gray-500">{address.phone}</p>)}
       <p className="text-sm text-gray-600 mt-1">
         {address.city}, {address.province_display}
       </p>

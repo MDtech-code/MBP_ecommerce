@@ -50,6 +50,7 @@ const EMPTY_FORM = {
   address_line1: "",
   address_line2: "",
   city: "",
+  phone:"",
 };
 
 export function useAddressForm(existingAddress = null, onSaveSuccess) {
@@ -76,6 +77,7 @@ export function useAddressForm(existingAddress = null, onSaveSuccess) {
           address_line1: existingAddress.address_line1,
           address_line2: existingAddress.address_line2 || "",
           city: existingAddress.city,
+          phone: existingAddress.phone,
         }
       : { ...EMPTY_FORM },
   );
@@ -90,6 +92,7 @@ export function useAddressForm(existingAddress = null, onSaveSuccess) {
     address_line1: normalized?.errors?.fields?.address_line1?.message ?? null,
     address_line2: normalized?.errors?.fields?.address_line2?.message ?? null,
     city: normalized?.errors?.fields?.city?.message ?? null,
+    phone:normalized?.errors?.fields?.phone?.message ?? null,
   };
 
   const formError = normalized?.errors?.non_fields?.message ?? null;
