@@ -171,7 +171,7 @@ class RegisterView(BaseAPIView):
         # Failure here does NOT roll back the account.
         # The user can request a new verification email via a separate endpoint.
         try:
-            token_obj = EmailVerificationToken.objects.create(user)
+            token_obj = EmailVerificationToken.objects.create(user=user)
             send_verification_email_task.delay(user.id, str(token_obj.token))
             logger.info(
                 "Verification email task dispatched",
@@ -409,7 +409,7 @@ class ResendVerificationView(BaseAPIView):
 
         # ── Create token + dispatch email ─────────────────────────────────────
         try:
-            token_obj = EmailVerificationToken.objects.create(user)
+            token_obj = EmailVerificationToken.objects.create(user=user)
             send_verification_email_task.delay(user.id, str(token_obj.token))
             logger.info(
                 "Verification email resent",
@@ -845,7 +845,7 @@ class PasswordResetRequestView(BaseAPIView):
 
         # ── Token creation + email dispatch ──────────────────────────────────
         try:
-            token_obj = PasswordResetToken.objects.create(user)
+            token_obj = PasswordResetToken.objects.create(user=user)
             send_password_reset_email_task.delay(user.id, str(token_obj.token))
             logger.info(
                 "Password reset email dispatched",
