@@ -1,56 +1,243 @@
-from decimal import Decimal
+# apps/recommendations/models.py
+from __future__ import annotations
+import logging
+
 from django.db import models
 from django.conf import settings
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils.translation import gettext_lazy as _
+
 from apps.common.models import TimeStampedModel
 
-
+logger = logging.getLogger("apps.recommendations")
 
 
 class UserInteractionLog(TimeStampedModel):
     """
-    High-throughput event log. This table is ingested by machine learning pipelines
-    to train collaborative filtering algorithms or generate embeddings.
-    """
-    class EventType(models.TextChoices):
-        VIEW_PRODUCT = 'VIEW_PRODUCT', _('Viewed Product Page')
-        ADD_TO_CART = 'ADD_TO_CART', _('Added to Cart')
-        REMOVE_FROM_CART = 'REMOVE_FROM_CART', _('Removed from Cart')
-        ADD_TO_WISHLIST = 'ADD_TO_WISHLIST', _('Added to Wishlist')
-        PURCHASED = 'PURCHASED', _('Purchased Product')
-        SEARCH_QUERY = 'SEARCH_QUERY', _('Executed Search')
+    Append-only behavioral event log.
 
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True)
-    session_key = models.CharField(max_length=40, null=True, blank=True, db_index=True, help_text=_("For anonymous guest tracking"))
-    
-    event_type = models.CharField(max_length=20, choices=EventType.choices, db_index=True)
-    product_id = models.CharField(max_length=100, null=True, blank=True, db_index=True)
-    search_query = models.CharField(max_length=255, null=True, blank=True)
-    
-    metadata = models.JSONField(blank=True, null=True, help_text=_("e.g., {'time_spent_seconds': 45, 'device': 'mobile'}"))
+    Used by ML pipelines for collaborative filtering and embeddings.
+    INSERT only — save() guard prevents updates.
+    user SET_NULL — historical behavior preserved after account deletion.
+    """
+
+    class EventType(models.TextChoices):
+        VIEW_PRODUCT      = 'view_product',      _('Viewed Product Page')
+        ADD_TO_CART       = 'add_to_cart',       _('Added to Cart')
+        REMOVE_FROM_CART  = 'remove_from_cart',  _('Removed from Cart')
+        ADD_TO_WISHLIST   = 'add_to_wishlist',   _('Added to Wishlist')
+        PURCHASED         = 'purchased',         _('Purchased Product')
+        SEARCH_QUERY      = 'search_query',      _('Executed Search')
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="interaction_logs",
+        verbose_name=_("user"),
+    )
+    session_key = models.CharField(
+        _("session key"),
+        max_length=40,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text=_("For anonymous visitor tracking before login."),
+    )
+    event_type = models.CharField(
+        _("event type"),
+        max_length=20,
+        choices=EventType.choices,
+        db_index=True,
+    )
+    product = models.ForeignKey(
+        "products.Product",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="interaction_logs",
+        verbose_name=_("product"),
+        help_text=_("Null for SEARCH_QUERY events."),
+    )
+    search_query = models.CharField(
+        _("search query"),
+        max_length=255,
+        null=True,
+        blank=True,
+        help_text=_("Only set for SEARCH_QUERY events."),
+    )
+    metadata = models.JSONField(
+        _("metadata"),
+        blank=True,
+        null=True,
+        help_text=_(
+            "Additional event context. "
+            "e.g. {'time_spent_seconds': 45, 'device': 'mobile'}"
+        ),
+    )
 
     class Meta:
-        verbose_name = _("User Interaction Log")
-        verbose_name_plural = _("User Interaction Logs")
+        verbose_name        = _("user interaction log")
+        verbose_name_plural = _("user interaction logs")
+        ordering            = ["-created_at"]
         indexes = [
-            models.Index(fields=['product_id', 'event_type']),
-            models.Index(fields=['user', 'event_type', '-created_at']),
+            models.Index(fields=["product",    "event_type"]),
+            models.Index(fields=["user",       "event_type", "created_at"]),
+            models.Index(fields=["event_type", "created_at"]),
         ]
+
+    def save(self, *args, **kwargs) -> None:
+        if self.pk:
+            raise ValueError(
+                "UserInteractionLog records are immutable and cannot be updated."
+            )
+        super().save(*args, **kwargs)
+
+    def __str__(self) -> str:
+        return (
+            f"{self.get_event_type_display()} — "
+            f"user={self.user_id or 'anon'} "
+            f"product={self.product_id or 'n/a'}"
+        )
 
 
 class PersonalizedRecommendation(TimeStampedModel):
     """
-    Stores pre-computed or real-time ML recommendations for rapid frontend querying.
+    Pre-computed ML recommendation for a user.
+
+    Generated by ML pipeline and stored for fast frontend querying.
+    Multiple model versions can coexist — unique_together enforces
+    one recommendation per user/product/model_version combination.
     """
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='recommendations')
-    recommended_product_id = models.CharField(max_length=100, db_index=True)
-    score = models.FloatField(help_text=_("Confidence score from ML model (0.0 to 1.0)"))
-    model_version = models.CharField(max_length=50, help_text=_("e.g., 'collab-filtering-v2.1'"))
-    is_clicked = models.BooleanField(default=False)
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='recommendations',
+        verbose_name=_("user"),
+    )
+    recommended_product = models.ForeignKey(
+        "products.Product",
+        on_delete=models.CASCADE,
+        related_name="recommendations",
+        verbose_name=_("recommended product"),
+    )
+    score = models.FloatField(
+        _("confidence score"),
+        validators=[
+            MinValueValidator(0.0),
+            MaxValueValidator(1.0),
+        ],
+        help_text=_("ML model confidence score. Range: 0.0 (low) to 1.0 (high)."),
+    )
+    model_version = models.CharField(
+        _("model version"),
+        max_length=50,
+        help_text=_("e.g. 'collab-filtering-v2.1'"),
+    )
+    is_clicked = models.BooleanField(
+        _("is clicked"),
+        default=False,
+        help_text=_("True when customer clicks this recommendation."),
+    )
 
     class Meta:
-        verbose_name = _("Personalized Recommendation")
-        verbose_name_plural = _("Personalized Recommendations")
-        unique_together = ('user', 'recommended_product_id', 'model_version')
-        ordering = ['-score']
+        verbose_name        = _("personalized recommendation")
+        verbose_name_plural = _("personalized recommendations")
+        ordering            = ["-score"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "recommended_product", "model_version"],
+                name="unique_recommendation_per_user_product_model",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["user",       "model_version", "score"]),
+            models.Index(fields=["recommended_product", "score"]),
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f"{self.recommended_product} → "
+            f"user={self.user_id or 'anon'} "
+            f"score={self.score:.2f} [{self.model_version}]"
+        )
+
+# ADD to apps/recommendations/models.py
+
+class SearchLog(models.Model):
+    """
+    Append-only record of every search query executed.
+
+    Answers:
+    - What do customers search most? (top queries)
+    - What searches return zero results? (missing inventory)
+    - What does a user search before buying? (intent mapping)
+
+    INSERT only — immutable behavioral record.
+    """
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="search_logs",
+        verbose_name=_("user"),
+    )
+    session_key = models.CharField(
+        _("session key"),
+        max_length=40,
+        null=True,
+        blank=True,
+        db_index=True,
+    )
+    query = models.CharField(
+        _("search query"),
+        max_length=255,
+        db_index=True,
+    )
+    results_count = models.PositiveIntegerField(
+        _("results count"),
+        default=0,
+        help_text=_("Number of products returned. 0 = zero results search."),
+    )
+    filters_applied = models.JSONField(
+        _("filters applied"),
+        null=True,
+        blank=True,
+        help_text=_(
+            "Active filters at search time. "
+            "e.g. {'category': 'brakes', 'bike': 'cd70'}"
+        ),
+    )
+    created_at = models.DateTimeField(
+        _("searched at"),
+        auto_now_add=True,
+        db_index=True,
+    )
+
+    class Meta:
+        verbose_name        = _("search log")
+        verbose_name_plural = _("search logs")
+        ordering            = ["-created_at"]
+        indexes = [
+            models.Index(fields=["query",         "created_at"]),
+            models.Index(fields=["results_count", "created_at"]),
+            models.Index(fields=["user",          "created_at"]),
+        ]
+
+    def save(self, *args, **kwargs) -> None:
+        if self.pk:
+            raise ValueError(
+                "SearchLog records are immutable and cannot be updated."
+            )
+        super().save(*args, **kwargs)
+
+    def __str__(self) -> str:
+        return (
+            f'"{self.query}" → {self.results_count} results '
+            f'@ {self.created_at}'
+        )
