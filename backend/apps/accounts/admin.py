@@ -3,43 +3,57 @@ from __future__ import annotations
 
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from django.db.models import QuerySet
+from django.http import HttpRequest
 from django.utils.translation import gettext_lazy as _
 
-from .models import EmailVerificationToken, PasswordResetToken, User, UserProfile,UserAddress,UserLoginActivity
+from .models import (
+    EmailVerificationToken,
+    PasswordResetToken,
+    PendingEmailChange,
+    User,
+    UserAddress,
+    UserLoginActivity,
+    UserProfile,
+)
 
 
-
-
-# ─── Inlines ──────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# INLINES
+# ─────────────────────────────────────────────────────────────────────────────
 
 class UserProfileInline(admin.StackedInline):
     """
     Inline profile editor shown within the User admin page.
-    Shows personal identity fields only.
+    Shows personal identity and phone verification status.
     Address data is managed via UserAddressInline.
     """
 
-    model = UserProfile
-    can_delete = False
+    model        = UserProfile
+    can_delete   = False
     verbose_name_plural = _("Profile")
     fields = [
         "phone",
         "date_of_birth",
         "gender",
         "avatar",
+        "is_phone_verified",
+        "phone_verified_at",
+    ]
+    readonly_fields = [
+        "is_phone_verified",
+        "phone_verified_at",
     ]
 
 
 class UserAddressInline(admin.TabularInline):
     """
     Inline address editor shown within the User admin page.
-    Displays all addresses for this user in a compact table.
-    Province and postal_code are read-only — auto-derived from city.
-    Country is read-only — always Pakistan.
+    Province, postal_code, and country are read-only — auto-derived.
     """
 
-    model = UserAddress
-    extra = 0
+    model      = UserAddress
+    extra      = 0
     verbose_name_plural = _("Addresses")
     fields = [
         "label",
@@ -49,6 +63,7 @@ class UserAddressInline(admin.TabularInline):
         "province",
         "postal_code",
         "country",
+        "phone",
         "is_default",
     ]
     readonly_fields = [
@@ -57,8 +72,18 @@ class UserAddressInline(admin.TabularInline):
         "country",
     ]
 
+    def get_queryset(self, request: HttpRequest) -> QuerySet:
+        """
+        No FK traversal in fields — default queryset is sufficient.
+        Explicitly documented so future editors don't add FK display
+        fields without adding select_related here.
+        """
+        return super().get_queryset(request)
 
-# ─── User Admin ───────────────────────────────────────────────────────────────
+
+# ─────────────────────────────────────────────────────────────────────────────
+# USER ADMIN
+# ─────────────────────────────────────────────────────────────────────────────
 
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
@@ -90,10 +115,10 @@ class UserAdmin(BaseUserAdmin):
         "is_staff",
         "is_superuser",
     ]
-    search_fields = ["email", "full_name"]
-    ordering = ["-date_joined"]
+    search_fields  = ["email", "full_name"]
+    ordering       = ["-date_joined"]
     date_hierarchy = "date_joined"
-    list_per_page = 50
+    list_per_page  = 50
     show_full_result_count = False
 
     # ── Detail view ───────────────────────────────────────────────────────────
@@ -169,67 +194,16 @@ class UserAdmin(BaseUserAdmin):
     filter_horizontal = ["groups", "user_permissions"]
 
 
-
-# accounts/admin.py — add this class
-
-@admin.register(UserLoginActivity)
-class UserLoginActivityAdmin(admin.ModelAdmin):
-    """
-    Admin interface for UserLoginActivity.
-    Read-only — immutable audit log.
-    No add permission — records created by login flow only.
-    """
-
-    list_display = [
-        "email_attempted",
-        "user",
-        "ip_address",
-        "display_was_successful",
-        "failure_reason",
-        "created_at",
-    ]
-    search_fields = [
-        "email_attempted",
-        "user__email",
-        "ip_address",
-    ]
-    list_filter = [
-        "was_successful",
-        "failure_reason",
-    ]
-    readonly_fields = [
-        "user",
-        "email_attempted",
-        "ip_address",
-        "user_agent",
-        "was_successful",
-        "failure_reason",
-        "created_at",
-    ]
-    list_per_page = 100
-    date_hierarchy = "created_at"
-    ordering = ["-created_at"]
-
-    def has_add_permission(self, request) -> bool:
-        return False
-
-    def has_change_permission(self, request, obj=None) -> bool:
-        return False
-
-    def has_delete_permission(self, request, obj=None) -> bool:
-        return False
-
-    @admin.display(boolean=True, description=_("Successful"))
-    def display_was_successful(self, obj: UserLoginActivity) -> bool:
-        return obj.was_successful
-# ─── UserProfile Admin ────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# USER PROFILE ADMIN
+# ─────────────────────────────────────────────────────────────────────────────
 
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
     """
-    Admin interface for UserProfile.
-    Shows personal identity fields only.
-    Address data lives in UserAddress.
+    Standalone admin for UserProfile.
+    Useful for support staff who need to look up profiles
+    by phone number without going through the User admin.
     """
 
     list_display = [
@@ -237,16 +211,23 @@ class UserProfileAdmin(admin.ModelAdmin):
         "phone",
         "gender",
         "date_of_birth",
+        "is_phone_verified",
         "display_has_avatar",
+        "created_at",
     ]
     search_fields = [
         "user__email",
         "user__full_name",
         "phone",
     ]
-    list_filter = ["gender"]
-    list_per_page = 50
-    readonly_fields = ["created_at", "updated_at"]
+    list_filter    = ["gender", "is_phone_verified"]
+    list_per_page  = 50
+    readonly_fields = [
+        "is_phone_verified",
+        "phone_verified_at",
+        "created_at",
+        "updated_at",
+    ]
 
     fieldsets = (
         (
@@ -272,6 +253,19 @@ class UserProfileAdmin(admin.ModelAdmin):
             },
         ),
         (
+            _("Phone Verification"),
+            {
+                "fields": (
+                    "is_phone_verified",
+                    "phone_verified_at",
+                ),
+                "description": _(
+                    "Phone verification is set automatically by the "
+                    "WhatsApp COD verification flow. Do not edit manually."
+                ),
+            },
+        ),
+        (
             _("Timestamps"),
             {
                 "fields": ("created_at", "updated_at"),
@@ -280,22 +274,26 @@ class UserProfileAdmin(admin.ModelAdmin):
         ),
     )
 
+    def get_queryset(self, request: HttpRequest) -> QuerySet:
+        """
+        select_related("user"): list_display accesses user.email — N+1 without this.
+        """
+        return super().get_queryset(request).select_related("user")
+
     @admin.display(boolean=True, description=_("Has Avatar"))
     def display_has_avatar(self, obj: UserProfile) -> bool:
-        """
-        Shows a boolean icon indicating whether user has uploaded an avatar.
-        """
         return bool(obj.avatar)
 
 
-# ─── UserAddress Admin ────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# USER ADDRESS ADMIN
+# ─────────────────────────────────────────────────────────────────────────────
 
 @admin.register(UserAddress)
 class UserAddressAdmin(admin.ModelAdmin):
     """
     Admin interface for UserAddress.
-    Province, postal_code and country are read-only —
-    auto-derived from city selection on save.
+    Province, postal_code and country are read-only — auto-derived from city.
     """
 
     list_display = [
@@ -315,7 +313,6 @@ class UserAddressAdmin(admin.ModelAdmin):
     ]
     list_filter = [
         "label",
-        "city",
         "province",
         "is_default",
     ]
@@ -346,6 +343,7 @@ class UserAddressAdmin(admin.ModelAdmin):
                     "province",
                     "postal_code",
                     "country",
+                    "phone",
                 ),
             },
         ),
@@ -364,16 +362,23 @@ class UserAddressAdmin(admin.ModelAdmin):
         ),
     )
 
+    def get_queryset(self, request: HttpRequest) -> QuerySet:
+        """
+        select_related("user"): list_display accesses user.email — N+1 without this.
+        """
+        return super().get_queryset(request).select_related("user")
 
-# ─── Email Verification Token Admin ──────────────────────────────────────────
+
+# ─────────────────────────────────────────────────────────────────────────────
+# EMAIL VERIFICATION TOKEN ADMIN
+# ─────────────────────────────────────────────────────────────────────────────
 
 @admin.register(EmailVerificationToken)
 class EmailVerificationTokenAdmin(admin.ModelAdmin):
     """
-    Admin interface for EmailVerificationToken.
-
-    All fields are read-only — tokens must not be manually edited.
-    Expired/valid state displayed as boolean icon column.
+    Read-only admin for EmailVerificationToken.
+    Tokens are system-generated — no manual creation or editing.
+    Supports staff looking up verification status for a user.
     """
 
     list_display = [
@@ -381,54 +386,56 @@ class EmailVerificationTokenAdmin(admin.ModelAdmin):
         "token",
         "created_at",
         "expires_at",
+        "is_used",
         "display_is_valid",
     ]
-    search_fields = ["user__email"]
-    list_filter = ["created_at", "expires_at"]
-    list_per_page = 50
+    search_fields  = ["user__email"]
+    list_filter    = ["is_used"]
+    list_per_page  = 50
     date_hierarchy = "created_at"
+    ordering       = ["-created_at"]
 
     # All fields read-only — tokens are system-generated, never hand-edited
-    readonly_fields = ["user", "token", "created_at", "expires_at"]
+    readonly_fields = [
+        "user",
+        "token",
+        "created_at",
+        "expires_at",
+        "is_used",
+    ]
 
-    def has_add_permission(self, request) -> bool:
-        """
-        Disable manual token creation via admin.
+    def get_queryset(self, request: HttpRequest) -> QuerySet:
+        """select_related("user"): list_display accesses user.email."""
+        return super().get_queryset(request).select_related("user")
 
-        Tokens must be created programmatically via
-        EmailVerificationToken.create_for_user() to ensure
-        correct expiry, uniqueness, and old token cleanup.
-        """
+    def has_add_permission(self, request: HttpRequest) -> bool:
         return False
 
-    def has_change_permission(self, request, obj=None) -> bool:
-        """
-        Disable manual token editing via admin.
+    def has_change_permission(self, request: HttpRequest, obj=None) -> bool:
+        return False
 
-        All fields are readonly but this adds an explicit guard
-        at the permission level.
-        """
+    def has_delete_permission(self, request: HttpRequest, obj=None) -> bool:
         return False
 
     @admin.display(boolean=True, description=_("Valid"))
     def display_is_valid(self, obj: EmailVerificationToken) -> bool:
         """
-        Render is_valid @property as a boolean icon column.
-
-        Checks both expiry and used state (via is_valid property).
+        is_valid = not is_used AND not is_expired.
+        Computed property — cannot be used as admin_order_field.
         """
         return obj.is_valid
 
 
-# ─── Password Reset Token Admin ───────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# PASSWORD RESET TOKEN ADMIN
+# ─────────────────────────────────────────────────────────────────────────────
 
 @admin.register(PasswordResetToken)
 class PasswordResetTokenAdmin(admin.ModelAdmin):
     """
-    Admin interface for PasswordResetToken.
-
-    All fields are read-only — tokens must not be manually edited.
-    Expired/used/valid states displayed as boolean icon columns.
+    Read-only admin for PasswordResetToken.
+    Tokens are system-generated — no manual creation or editing.
+    Supports staff investigating failed password reset attempts.
     """
 
     list_display = [
@@ -436,47 +443,184 @@ class PasswordResetTokenAdmin(admin.ModelAdmin):
         "token",
         "created_at",
         "expires_at",
-        "display_is_used",
+        "is_used",
         "display_is_valid",
     ]
-    search_fields = ["user__email"]
-    list_filter = ["is_used", "created_at", "expires_at"]
-    list_per_page = 50
+    search_fields  = ["user__email"]
+    list_filter    = ["is_used"]
+    list_per_page  = 50
     date_hierarchy = "created_at"
+    ordering       = ["-created_at"]
 
-    # All fields read-only — tokens are system-generated, never hand-edited
-    readonly_fields = ["user", "token", "created_at", "expires_at", "is_used"]
+    readonly_fields = [
+        "user",
+        "token",
+        "created_at",
+        "expires_at",
+        "is_used",
+    ]
 
-    def has_add_permission(self, request) -> bool:
-        """
-        Disable manual token creation via admin.
+    def get_queryset(self, request: HttpRequest) -> QuerySet:
+        """select_related("user"): list_display accesses user.email."""
+        return super().get_queryset(request).select_related("user")
 
-        Tokens must be created programmatically via
-        PasswordResetToken.create_for_user() to ensure
-        correct expiry, uniqueness, and old token cleanup.
-        """
+    def has_add_permission(self, request: HttpRequest) -> bool:
         return False
 
-    def has_change_permission(self, request, obj=None) -> bool:
-        """
-        Disable manual token editing via admin.
-
-        Prevents an admin user from manually marking a used token
-        as unused — which would reopen a consumed reset link.
-        """
+    def has_change_permission(self, request: HttpRequest, obj=None) -> bool:
         return False
 
-    @admin.display(boolean=True, description=_("Used"))
-    def display_is_used(self, obj: PasswordResetToken) -> bool:
-        """Render is_used field as a boolean icon column."""
-        return obj.is_used
+    def has_delete_permission(self, request: HttpRequest, obj=None) -> bool:
+        return False
 
     @admin.display(boolean=True, description=_("Valid"))
     def display_is_valid(self, obj: PasswordResetToken) -> bool:
-        """
-        Render is_valid @property as a boolean icon column.
-
-        is_valid = not is_used AND not is_expired.
-        A token can be invalid by being either used OR expired.
-        """
         return obj.is_valid
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PENDING EMAIL CHANGE ADMIN
+# ─────────────────────────────────────────────────────────────────────────────
+
+@admin.register(PendingEmailChange)
+class PendingEmailChangeAdmin(admin.ModelAdmin):
+    """
+    Admin interface for PendingEmailChange.
+
+    Primary use case: support staff clearing a stuck pending change
+    so a user can request a new email change.
+
+    Delete is permitted — clearing a stuck record is a valid
+    support action. Add and change are blocked — changes must
+    go through the email change service flow.
+    """
+
+    list_display = [
+        "user",
+        "new_email",
+        "created_at",
+        "expires_at",
+        "is_used",
+        "display_is_valid",
+    ]
+    search_fields = [
+        "user__email",
+        "new_email",
+    ]
+    list_filter    = ["is_used"]
+    list_per_page  = 50
+    date_hierarchy = "created_at"
+    ordering       = ["-created_at"]
+
+    readonly_fields = [
+        "user",
+        "new_email",
+        "token",
+        "created_at",
+        "expires_at",
+        "is_used",
+    ]
+
+    fieldsets = (
+        (
+            _("Request Details"),
+            {
+                "fields": (
+                    "user",
+                    "new_email",
+                    "token",
+                ),
+            },
+        ),
+        (
+            _("Status"),
+            {
+                "fields": (
+                    "is_used",
+                    "created_at",
+                    "expires_at",
+                ),
+                "description": _(
+                    "All fields are read-only. To clear a stuck pending "
+                    "change, use the Delete action."
+                ),
+            },
+        ),
+    )
+
+    def get_queryset(self, request: HttpRequest) -> QuerySet:
+        """select_related("user"): list_display accesses user.email."""
+        return super().get_queryset(request).select_related("user")
+
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        return False
+
+    def has_change_permission(self, request: HttpRequest, obj=None) -> bool:
+        return False
+
+    @admin.display(boolean=True, description=_("Valid"))
+    def display_is_valid(self, obj: PendingEmailChange) -> bool:
+        return obj.is_valid
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# USER LOGIN ACTIVITY ADMIN
+# ─────────────────────────────────────────────────────────────────────────────
+
+@admin.register(UserLoginActivity)
+class UserLoginActivityAdmin(admin.ModelAdmin):
+    """
+    Read-only admin for UserLoginActivity.
+    Immutable audit log — no add, change, or delete permitted.
+    Primary use: fraud investigation and brute force detection.
+    """
+
+    list_display = [
+        "email_attempted",
+        "user",
+        "ip_address",
+        "display_was_successful",
+        "failure_reason",
+        "created_at",
+    ]
+    search_fields = [
+        "email_attempted",
+        "user__email",
+        "ip_address",
+    ]
+    list_filter = [
+        "was_successful",
+        "failure_reason",
+    ]
+    readonly_fields = [
+        "user",
+        "email_attempted",
+        "ip_address",
+        "user_agent",
+        "was_successful",
+        "failure_reason",
+        "created_at",
+    ]
+    list_per_page  = 100
+    date_hierarchy = "created_at"
+    ordering       = ["-created_at"]
+
+    def get_queryset(self, request: HttpRequest) -> QuerySet:
+        """
+        select_related("user"): list_display accesses user.email.
+        Left join — user can be NULL (SET_NULL on delete).
+        """
+        return super().get_queryset(request).select_related("user")
+
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        return False
+
+    def has_change_permission(self, request: HttpRequest, obj=None) -> bool:
+        return False
+
+    def has_delete_permission(self, request: HttpRequest, obj=None) -> bool:
+        return False
+
+    @admin.display(boolean=True, description=_("Successful"))
+    def display_was_successful(self, obj: UserLoginActivity) -> bool:
+        return obj.was_successful
