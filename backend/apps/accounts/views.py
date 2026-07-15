@@ -25,14 +25,17 @@ from apps.core.error_codes import ErrorCode
 from apps.core.api.views import BaseAPIView
 from apps.core.permissions import IsNotAuthenticated
 
-from .utils import log_login_activity
+from apps.accounts.utils.request_utils import log_login_activity
 from .models import User, EmailVerificationToken, PasswordResetToken,UserProfile,UserAddress
 
 from .services import (
     register_user,
     verify_email,
     resend_verification,
-    delete_user_account
+    delete_user_account,
+    request_email_change,
+    request_password_reset,
+    confirm_email_change,confirm_password_reset,change_password
 )
 from apps.core.exceptions import DomainError
 
@@ -48,7 +51,9 @@ from .serializers import (
     ProfileUpdateSerializer,
     AvatarUploadSerializer,
     UserAddressSerializer,
-    DeleteAccountSerializer
+    DeleteAccountSerializer,
+    EmailChangeRequestSerializer,
+    EmailChangeConfirmSerializer
 )
 
 from .tasks import (
@@ -917,7 +922,260 @@ class TokenRefreshView(BaseAPIView):
                 )
 
         return response
+    
 
+
+
+# ─── Password Reset Request ────────────────────────────────────────────────────
+
+class PasswordResetRequestView(BaseAPIView):
+    """
+    POST /api/accounts/password-reset/
+
+    Permissions:
+        AllowAny — unauthenticated users need this to recover access.
+
+    Security:
+        Always returns same 200 response regardless of email existence.
+        Prevents email enumeration attacks.
+
+    Success (200):
+        Always returned.
+    """
+
+    permission_classes = [AllowAny]
+    serializer_class = PasswordResetRequestSerializer
+
+    def post(self, request: Request) -> Response:
+        log_context = {"request_id": request.id}
+
+        serializer = self.serializer_class(data=request.data)
+
+        if not serializer.is_valid():
+            logger.warning(
+                "Password reset request failed — invalid data",
+                extra={**log_context, "errors": serializer.errors},
+            )
+            return self.error_response(
+                message=_("Invalid request."),
+                errors=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        request_password_reset(email=serializer.validated_data["email"])
+
+        return self.success_response(
+            message=_(
+                "If this email is registered, "
+                "a password reset link has been sent."
+            ),
+        )
+
+
+# ─── Password Reset Confirm ────────────────────────────────────────────────────
+
+class PasswordResetConfirmView(BaseAPIView):
+    """
+    POST /api/accounts/password-reset/confirm/
+
+    Permissions:
+        AllowAny — token itself is the authentication mechanism.
+
+    Success (200):
+        Password reset. All existing sessions invalidated.
+
+    Errors:
+        400 — Invalid token, expired, already used.
+    """
+
+    permission_classes = [AllowAny]
+    serializer_class = PasswordResetConfirmSerializer
+
+    def post(self, request: Request) -> Response:
+        log_context = {"request_id": request.id}
+
+        serializer = self.serializer_class(data=request.data)
+
+        if not serializer.is_valid():
+            logger.warning(
+                "Password reset confirm failed — validation error",
+                extra={**log_context, "errors": serializer.errors},
+            )
+            return self.error_response(
+                message=_("Password reset failed."),
+                errors=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Service raises DomainError for all invalid token states.
+        # Global exception handler converts it to correct response.
+        confirm_password_reset(
+            token_value=serializer.validated_data["token"],
+            new_password=serializer.validated_data["password"],
+        )
+
+        return self.success_response(
+            message=_("Password reset successfully. Please log in again."),
+        )
+
+
+# ─── Change Password ───────────────────────────────────────────────────────────
+
+class ChangePasswordView(BaseAPIView):
+    """
+    POST /api/accounts/change-password/
+
+    Permissions:
+        IsAuthenticated — must be logged in.
+
+    Success (200):
+        Password changed. All existing sessions invalidated.
+
+    Errors:
+        400 — Validation failure, incorrect current password.
+    """
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = ChangePasswordSerializer
+
+    def post(self, request: Request) -> Response:
+        log_context = {"request_id": request.id, "user_id": request.user.id}
+
+        serializer = self.serializer_class(data=request.data)
+
+        if not serializer.is_valid():
+            logger.warning(
+                "Password change failed — validation error",
+                extra={**log_context, "errors": serializer.errors},
+            )
+            return self.error_response(
+                message=_("Password change failed."),
+                errors=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Service raises DomainError if current password is wrong.
+        # Global exception handler converts it to correct response.
+        change_password(
+            user=request.user,
+            current_password=serializer.validated_data["current_password"],
+            new_password=serializer.validated_data["new_password"],
+        )
+
+        return self.success_response(
+            message=_("Password changed successfully. Please log in again."),
+        )
+
+
+# ─── Email Change Request ──────────────────────────────────────────────────────
+
+class EmailChangeRequestView(BaseAPIView):
+    """
+    POST /api/accounts/update-email/
+
+    Permissions:
+        IsAuthenticated — must be logged in.
+        # NOTE: IsVerified not enforced here.
+        # Add IsVerified later if business rules require it.
+
+    Flow:
+        1. Validate new email and password format.
+        2. Service verifies password, checks email availability.
+        3. Service creates PendingEmailChange record.
+        4. Verification email sent to new address.
+        5. Security notification sent to old address.
+
+    Success (200):
+        Verification email dispatched to new address.
+
+    Errors:
+        400 — Validation failure, wrong password.
+        409 — New email already taken.
+    """
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = EmailChangeRequestSerializer
+
+    def post(self, request: Request) -> Response:
+        log_context = {"request_id": request.id, "user_id": request.user.id}
+
+        serializer = self.serializer_class(data=request.data)
+
+        if not serializer.is_valid():
+            logger.warning(
+                "Email change request failed — validation error",
+                extra={**log_context, "errors": serializer.errors},
+            )
+            return self.error_response(
+                message=_("Email change request failed."),
+                errors=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Service raises DomainError for wrong password or taken email.
+        # Global exception handler converts it to correct response.
+        request_email_change(
+            user=request.user,
+            new_email=serializer.validated_data["new_email"],
+            password=serializer.validated_data["password"],
+        )
+
+        return self.success_response(
+            message=_(
+                "Verification email sent to your new address. "
+                "Please verify it to complete the change."
+            ),
+        )
+
+
+# ─── Email Change Confirm ──────────────────────────────────────────────────────
+
+class EmailChangeConfirmView(BaseAPIView):
+    """
+    POST /api/accounts/update-email/confirm/
+
+    Permissions:
+        AllowAny — token itself is the authentication mechanism.
+
+    Success (200):
+        Email updated. All existing sessions invalidated.
+
+    Errors:
+        400 — Invalid token, expired, already used.
+    """
+
+    permission_classes = [AllowAny]
+    serializer_class = EmailChangeConfirmSerializer
+
+    def post(self, request: Request) -> Response:
+        log_context = {"request_id": request.id}
+
+        serializer = self.serializer_class(data=request.data)
+
+        if not serializer.is_valid():
+            logger.warning(
+                "Email change confirm failed — invalid token format",
+                extra={**log_context, "errors": serializer.errors},
+            )
+            return self.error_response(
+                message=_("Invalid token."),
+                errors=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Service raises DomainError for all invalid token states.
+        # Global exception handler converts it to correct response.
+        confirm_email_change(
+            token_value=serializer.validated_data["token"],
+        )
+
+        return self.success_response(
+            message=_(
+                "Email updated successfully. "
+                "Please log in again with your new email address."
+            ),
+        )
+'''
 
 # ─── Password Reset Request ───────────────────────────────────────────────────
 # ─── Internal Helpers ─────────────────────────────────────────────────────────
@@ -1275,7 +1533,7 @@ class ChangePasswordView(BaseAPIView):
         return self.success_response(
             message=_("Password changed successfully. Please log in again."),
         )
-
+'''
 
 
 
