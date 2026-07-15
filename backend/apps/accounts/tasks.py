@@ -72,62 +72,62 @@ def send_verification_email_task(self, user_id: int, token: str) -> None:
 
 # ─── Send Password Reset Email ────────────────────────────────────────────────
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=60)
-def send_password_reset_email_task(self, user_id: int, token: str) -> None:
-    """
-    Send a password reset link to the requesting user.
+# @shared_task(bind=True, max_retries=3, default_retry_delay=60)
+# def send_password_reset_email_task(self, user_id: int, token: str) -> None:
+#     """
+#     Send a password reset link to the requesting user.
 
-    Args:
-        user_id: PK of the ``User`` requesting the reset.
-        token:   UUID string of the ``PasswordResetToken``.
+#     Args:
+#         user_id: PK of the ``User`` requesting the reset.
+#         token:   UUID string of the ``PasswordResetToken``.
 
-    Retry:
-        Up to 3 times with 60-second delay on unexpected failures.
-        No retry if user is not found — that is a permanent condition.
-    """
-    from .models import User
+#     Retry:
+#         Up to 3 times with 60-second delay on unexpected failures.
+#         No retry if user is not found — that is a permanent condition.
+#     """
+#     from .models import User
 
-    try:
-        user = User.objects.get(id=user_id)
-    except User.DoesNotExist:
-        # User was deleted between task creation and execution.
-        # Permanent failure — do not retry.
-        logger.warning(
-            "Password reset email skipped — user not found",
-            extra={"user_id": user_id},
-        )
-        return
+#     try:
+#         user = User.objects.get(id=user_id)
+#     except User.DoesNotExist:
+#         # User was deleted between task creation and execution.
+#         # Permanent failure — do not retry.
+#         logger.warning(
+#             "Password reset email skipped — user not found",
+#             extra={"user_id": user_id},
+#         )
+#         return
 
-    reset_url = f"{settings.FRONTEND_URL}/reset-password?token={token}"
+#     reset_url = f"{settings.FRONTEND_URL}/reset-password?token={token}"
 
-    subject = "Reset your MBP Store password"
-    message = (
-        f"Hi {user.short_name},\n\n"
-        f"You requested a password reset. Click the link below:\n"
-        f"{reset_url}\n\n"
-        f"This link expires in 1 hour.\n\n"
-        f"If you did not request this, you can safely ignore this email.\n\n"
-        f"MBP Store Team"
-    )
+#     subject = "Reset your MBP Store password"
+#     message = (
+#         f"Hi {user.short_name},\n\n"
+#         f"You requested a password reset. Click the link below:\n"
+#         f"{reset_url}\n\n"
+#         f"This link expires in 1 hour.\n\n"
+#         f"If you did not request this, you can safely ignore this email.\n\n"
+#         f"MBP Store Team"
+#     )
 
-    try:
-        send_mail(
-            subject=subject,
-            message=message,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[user.email],
-            fail_silently=False,
-        )
-        logger.info(
-            "Password reset email sent successfully",
-            extra={"user_id": user.id},
-        )
-    except Exception as exc:
-        logger.exception(
-            "Failed to send password reset email — will retry",
-            extra={"user_id": user.id, "attempt": self.request.retries},
-        )
-        raise self.retry(exc=exc)
+#     try:
+#         send_mail(
+#             subject=subject,
+#             message=message,
+#             from_email=settings.DEFAULT_FROM_EMAIL,
+#             recipient_list=[user.email],
+#             fail_silently=False,
+#         )
+#         logger.info(
+#             "Password reset email sent successfully",
+#             extra={"user_id": user.id},
+#         )
+#     except Exception as exc:
+#         logger.exception(
+#             "Failed to send password reset email — will retry",
+#             extra={"user_id": user.id, "attempt": self.request.retries},
+#         )
+#         raise self.retry(exc=exc)
 
 
 # ─── Send Welcome Email ───────────────────────────────────────────────────────
@@ -239,5 +239,195 @@ def send_goodbye_email_task(self, user_email: str, user_name: str) -> None:
         logger.exception(
             "Failed to send goodbye email — will retry",
             extra={"email": user_email, "attempt": self.request.retries},
+        )
+        raise self.retry(exc=exc)
+    
+
+
+
+
+
+
+
+
+# ─── Send Password Reset Email ─────────────────────────────────────────────────
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def send_password_reset_email_task(self, user_id: int, token: str) -> None:
+    """
+    Send a password reset link to the user's email address.
+
+    Args:
+        user_id: PK of the User requesting reset.
+        token:   UUID string of the PasswordResetToken.
+
+    Retry:
+        Up to 3 times with 60-second delay on unexpected failures.
+        No retry if user not found — permanent condition.
+    """
+    from .models import User
+
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        logger.warning(
+            "Password reset email skipped — user not found",
+            extra={"user_id": user_id},
+        )
+        return
+
+    reset_url = f"{settings.FRONTEND_URL}/password-reset/confirm?token={token}"
+
+    subject = "Reset your MBP Store password"
+    message = (
+        f"Hi {user.short_name},\n\n"
+        f"We received a request to reset your password.\n\n"
+        f"Click the link below to reset it:\n"
+        f"{reset_url}\n\n"
+        f"This link expires in 1 hour.\n\n"
+        f"If you did not request a password reset, "
+        f"you can safely ignore this email.\n\n"
+        f"MBP Store Team"
+    )
+
+    try:
+        send_mail(
+            subject=subject,
+            message=message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            fail_silently=False,
+        )
+        logger.info(
+            "Password reset email sent successfully",
+            extra={"user_id": user.id},
+        )
+    except Exception as exc:
+        logger.exception(
+            "Failed to send password reset email — will retry",
+            extra={"user_id": user.id, "attempt": self.request.retries},
+        )
+        raise self.retry(exc=exc)
+
+
+# ─── Send Email Change Verification ───────────────────────────────────────────
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def send_email_change_verification_task(
+    self,
+    user_id: int,
+    new_email: str,
+    token: str,
+) -> None:
+    """
+    Send email change verification link to the NEW email address.
+
+    Args:
+        user_id:   PK of the User requesting email change.
+        new_email: The new email address to send verification to.
+        token:     UUID string of the PendingEmailChange token.
+
+    Retry:
+        Up to 3 times with 60-second delay on unexpected failures.
+    """
+    from .models import User
+
+    try:
+        print("user ka pata kar ra ha ")
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        logger.warning(
+            "Email change verification skipped — user not found",
+            extra={"user_id": user_id},
+        )
+        return
+
+    confirm_url = f"{settings.FRONTEND_URL}/update-email/confirm?token={token}"
+
+    subject = "Verify your new MBP Store email address"
+    message = (
+        f"Hi {user.short_name},\n\n"
+        f"You requested to change your email address.\n\n"
+        f"Click the link below to verify your new email:\n"
+        f"{confirm_url}\n\n"
+        f"This link expires in 24 hours.\n\n"
+        f"If you did not request this change, please contact us immediately at "
+        f"{settings.DEFAULT_FROM_EMAIL}\n\n"
+        f"MBP Store Team"
+    )
+
+    try:
+        print("ab send kar ra ha ")
+        send_mail(
+            subject=subject,
+            message=message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[new_email],
+            fail_silently=False,
+        )
+        logger.info(
+            "Email change verification sent successfully",
+            extra={"user_id": user_id, "new_email": new_email},
+        )
+    except Exception as exc:
+        logger.exception(
+            "Failed to send email change verification — will retry",
+            extra={"user_id": user_id, "attempt": self.request.retries},
+        )
+        raise self.retry(exc=exc)
+
+
+# ─── Send Email Change Security Notification ───────────────────────────────────
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def send_email_change_notification_task(
+    self,
+    user_id: int,
+    old_email: str,
+    user_name: str,
+) -> None:
+    """
+    Send security notification to the OLD email address.
+
+    Why pass old_email and user_name directly?
+        By the time this task runs, user.email may already be updated.
+        Passing them directly guarantees correct values regardless
+        of when the worker picks up the task.
+
+    Args:
+        user_id:   PK of the User (for logging only).
+        old_email: Old email address to send notification to.
+        user_name: User's short name collected before change.
+
+    Retry:
+        Up to 3 times with 60-second delay on unexpected failures.
+    """
+    subject = "Security notice — email address changed on your MBP Store account"
+    message = (
+        f"Hi {user_name},\n\n"
+        f"This is a security notification to let you know that "
+        f"the email address on your MBP Store account has been changed.\n\n"
+        f"If you made this change, you can safely ignore this email.\n\n"
+        f"If you did NOT make this change, your account may be compromised.\n"
+        f"Please contact us immediately at: {settings.DEFAULT_FROM_EMAIL}\n\n"
+        f"MBP Store Team"
+    )
+
+    try:
+        send_mail(
+            subject=subject,
+            message=message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[old_email],
+            fail_silently=False,
+        )
+        logger.info(
+            "Email change security notification sent successfully",
+            extra={"user_id": user_id, "old_email": old_email},
+        )
+    except Exception as exc:
+        logger.exception(
+            "Failed to send email change security notification — will retry",
+            extra={"user_id": user_id, "attempt": self.request.retries},
         )
         raise self.retry(exc=exc)
