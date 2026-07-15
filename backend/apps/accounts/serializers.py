@@ -200,22 +200,19 @@ class UserSerializer(TimestampFieldsMixin,serializers.ModelSerializer):
 
 class RegisterSerializer(serializers.Serializer):
     """
-    Validate and process new user registration input.
+    Validate new user registration input.
+
+    Responsibility:
+        Validate and clean input data ONLY.
+        No database writes. No user creation.
+        User creation is handled by AccountService.register_user()
+        in the service layer.
 
     Validates:
         - Full name: minimum two words.
         - Email: valid format, unique in the system.
         - Password: meets Django's AUTH_PASSWORD_VALIDATORS.
         - Confirm password: must match password.
-
-    On ``save()``, creates and returns the new ``User`` instance.
-    Profile creation is handled automatically via post_save signal.
-
-    Error codes:
-        All custom raises use ErrorCode registry so frontend
-        receives machine-readable codes alongside human-readable messages.
-        DRF built-in field codes (blank, required, min_length, invalid)
-        are already descriptive — no override needed for those.
     """
 
     full_name = serializers.CharField(
@@ -242,27 +239,15 @@ class RegisterSerializer(serializers.Serializer):
     )
 
     def validate_email(self, value: str) -> str:
-        """Normalize and assert email uniqueness."""
         return validate_email_unique(value)
 
     def validate_full_name(self, value: str) -> str:
-        """Assert full name has at least two words."""
         return validate_full_name(value)
 
     def validate_password(self, value: str) -> str:
-        """Run Django's password strength validators."""
         return validate_strong_password(value)
 
     def validate(self, attrs: dict) -> dict:
-        """
-        Cross-field validation.
-
-        Maps the password mismatch error onto ``confirm_password``
-        so the client receives a field-level error on the correct key.
-
-        ErrorDetail is used directly so the code travels with the message
-        through DRF's error collection and into _format_errors() intact.
-        """
         try:
             validate_passwords_match(attrs["password"], attrs["confirm_password"])
         except DjangoValidationError:
@@ -274,41 +259,119 @@ class RegisterSerializer(serializers.Serializer):
                     )
                 }
             )
+        attrs.pop("confirm_password")
         return attrs
+# class RegisterSerializer(serializers.Serializer):
+#     """
+#     Validate and process new user registration input.
 
-    def create(self, validated_data: dict) -> User:
-        """
-        Persist the new user.
+#     Validates:
+#         - Full name: minimum two words.
+#         - Email: valid format, unique in the system.
+#         - Password: meets Django's AUTH_PASSWORD_VALIDATORS.
+#         - Confirm password: must match password.
 
-        Guards against the rare race condition where two concurrent requests
-        pass email uniqueness validation but one fails on the DB unique
-        constraint — surfaces this as a clean field error instead of a 500.
+#     On ``save()``, creates and returns the new ``User`` instance.
+#     Profile creation is handled automatically via post_save signal.
 
-        Args:
-            validated_data: Cleaned data from ``validate()``.
+#     Error codes:
+#         All custom raises use ErrorCode registry so frontend
+#         receives machine-readable codes alongside human-readable messages.
+#         DRF built-in field codes (blank, required, min_length, invalid)
+#         are already descriptive — no override needed for those.
+#     """
 
-        Returns:
-            Newly created ``User`` instance.
+#     full_name = serializers.CharField(
+#         max_length=255,
+#         error_messages={"blank": _("Full name is required.")},
+#     )
+#     email = serializers.EmailField(
+#         error_messages={
+#             "blank": _("Email address is required."),
+#             "invalid": _("Enter a valid email address."),
+#         }
+#     )
+#     password = serializers.CharField(
+#         write_only=True,
+#         min_length=8,
+#         error_messages={
+#             "blank": _("Password is required."),
+#             "min_length": _("Password must be at least 8 characters."),
+#         },
+#     )
+#     confirm_password = serializers.CharField(
+#         write_only=True,
+#         error_messages={"blank": _("Please confirm your password.")},
+#     )
 
-        Raises:
-            serializers.ValidationError: On duplicate email race condition.
-        """
-        validated_data.pop("confirm_password")
-        try:
-            return User.objects.create_user(
-                email=validated_data["email"],
-                full_name=validated_data["full_name"],
-                password=validated_data["password"],
-            )
-        except IntegrityError:
-            raise serializers.ValidationError(
-                {
-                    "email": ErrorDetail(
-                        _("An account with this email already exists."),
-                        code=ErrorCode.EMAIL_ALREADY_EXISTS,
-                    )
-                }
-            )
+#     def validate_email(self, value: str) -> str:
+#         """Normalize and assert email uniqueness."""
+#         return validate_email_unique(value)
+
+#     def validate_full_name(self, value: str) -> str:
+#         """Assert full name has at least two words."""
+#         return validate_full_name(value)
+
+#     def validate_password(self, value: str) -> str:
+#         """Run Django's password strength validators."""
+#         return validate_strong_password(value)
+
+#     def validate(self, attrs: dict) -> dict:
+#         """
+#         Cross-field validation.
+
+#         Maps the password mismatch error onto ``confirm_password``
+#         so the client receives a field-level error on the correct key.
+
+#         ErrorDetail is used directly so the code travels with the message
+#         through DRF's error collection and into _format_errors() intact.
+#         """
+#         try:
+#             validate_passwords_match(attrs["password"], attrs["confirm_password"])
+#         except DjangoValidationError:
+#             raise serializers.ValidationError(
+#                 {
+#                     "confirm_password": ErrorDetail(
+#                         _("Passwords do not match."),
+#                         code=ErrorCode.PASSWORD_MISMATCH,
+#                     )
+#                 }
+#             )
+#         return attrs
+
+#     def create(self, validated_data: dict) -> User:
+#         """
+#         Persist the new user.
+
+#         Guards against the rare race condition where two concurrent requests
+#         pass email uniqueness validation but one fails on the DB unique
+#         constraint — surfaces this as a clean field error instead of a 500.
+
+#         Args:
+#             validated_data: Cleaned data from ``validate()``.
+
+#         Returns:
+#             Newly created ``User`` instance.
+
+#         Raises:
+#             serializers.ValidationError: On duplicate email race condition.
+#         """
+#         validated_data.pop("confirm_password")
+#         try:
+#             return User.objects.create_user(
+#                 email=validated_data["email"],
+#                 full_name=validated_data["full_name"],
+#                 password=validated_data["password"],
+#             )
+#         except IntegrityError:
+#             raise serializers.ValidationError(
+#                 {
+#                     "email": ErrorDetail(
+#                         _("An account with this email already exists."),
+#                         code=ErrorCode.EMAIL_ALREADY_EXISTS,
+#                     )
+#                 }
+#             )
 
 # ─── Login Serializer ─────────────────────────────────────────────────────────
 # apps/accounts/serializers.py  (Login section — add after RegisterSerializer)
@@ -407,18 +470,15 @@ class LoginSerializer(serializers.Serializer):
         return attrs
 
 
-
-# ─── Email Verification Serializer ───────────────────────────────────────────
+# ─── Email Verification ────────────────────────────────────────────────────────
 
 class EmailVerificationSerializer(serializers.Serializer):
     """
-    Accept and validate an email verification token.
+    Validate an email verification token.
 
-    The token is a UUID submitted by the user after clicking
-    the verification link sent to their email address.
-
-    Fields:
-        token: UUID string from the verification email link.
+    Responsibility:
+        Validate UUID format only.
+        Token existence and state checks happen in the service layer.
     """
 
     token = serializers.UUIDField(
@@ -428,18 +488,18 @@ class EmailVerificationSerializer(serializers.Serializer):
         }
     )
 
-# ─── Resend Verification Serializer ──────────────────────────────────────────
+
+# ─── Resend Verification ───────────────────────────────────────────────────────
 
 class ResendVerificationSerializer(serializers.Serializer):
     """
-    Accept an email address for verification resend requests.
+    Validate an email address for verification resend requests.
 
-    Intentionally minimal — we normalize the email and return it.
-    Existence and verification state checks happen in the view,
-    not here, to prevent serializer-level email enumeration.
-
-    Fields:
-        email: Email address to resend verification to.
+    Responsibility:
+        Normalize and validate email format only.
+        User existence and verification state checks happen
+        in the service layer — never here — to prevent
+        serializer-level email enumeration.
     """
 
     email = serializers.EmailField(
@@ -447,8 +507,48 @@ class ResendVerificationSerializer(serializers.Serializer):
     )
 
     def validate_email(self, value: str) -> str:
-        """Normalize email to lowercase and strip whitespace."""
         return value.lower().strip()
+# # ─── Email Verification Serializer ───────────────────────────────────────────
+
+# class EmailVerificationSerializer(serializers.Serializer):
+#     """
+#     Accept and validate an email verification token.
+
+#     The token is a UUID submitted by the user after clicking
+#     the verification link sent to their email address.
+
+#     Fields:
+#         token: UUID string from the verification email link.
+#     """
+
+#     token = serializers.UUIDField(
+#         error_messages={
+#             "invalid": _("Invalid verification token."),
+#             "blank": _("Verification token is required."),
+#         }
+#     )
+
+# # ─── Resend Verification Serializer ──────────────────────────────────────────
+
+# class ResendVerificationSerializer(serializers.Serializer):
+#     """
+#     Accept an email address for verification resend requests.
+
+#     Intentionally minimal — we normalize the email and return it.
+#     Existence and verification state checks happen in the view,
+#     not here, to prevent serializer-level email enumeration.
+
+#     Fields:
+#         email: Email address to resend verification to.
+#     """
+
+#     email = serializers.EmailField(
+#         error_messages={"blank": _("Email address is required.")}
+#     )
+
+#     def validate_email(self, value: str) -> str:
+#         """Normalize email to lowercase and strip whitespace."""
+#         return value.lower().strip()
 
 
 
@@ -668,3 +768,29 @@ class AvatarUploadSerializer(serializers.Serializer):
         points in the system use identical validation rules.
         """
         return validate_image_file(value)
+
+
+
+# ─── Account Deletion ──────────────────────────────────────────────────────────
+
+class DeleteAccountSerializer(serializers.Serializer):
+    """
+    Validate password confirmation for account deletion.
+
+    Responsibility:
+        Validate password field presence only.
+        Password correctness check happens in the service layer
+        against the authenticated user's stored hash.
+
+    Security note:
+        We do NOT check password correctness here.
+        Serializer has no access to request.user safely.
+        Service layer owns that check.
+    """
+
+    password = serializers.CharField(
+        write_only=True,
+        error_messages={
+            "blank": _("Password is required to confirm account deletion."),
+        },
+    )

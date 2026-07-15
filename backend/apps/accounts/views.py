@@ -28,6 +28,14 @@ from apps.core.permissions import IsNotAuthenticated
 from .utils import log_login_activity
 from .models import User, EmailVerificationToken, PasswordResetToken,UserProfile,UserAddress
 
+from .services import (
+    register_user,
+    verify_email,
+    resend_verification,
+    delete_user_account
+)
+from apps.core.exceptions import DomainError
+
 from .serializers import (
     RegisterSerializer,
     LoginSerializer,
@@ -40,6 +48,7 @@ from .serializers import (
     ProfileUpdateSerializer,
     AvatarUploadSerializer,
     UserAddressSerializer,
+    DeleteAccountSerializer
 )
 
 from .tasks import (
@@ -96,6 +105,167 @@ def clear_csrf_cookie(response) -> None:
     )
 
 
+
+# ─── Register ──────────────────────────────────────────────────────────────────
+
+class RegisterView(BaseAPIView):
+    """
+    POST /api/accounts/register/
+
+    Permissions:
+        IsNotAuthenticated — authenticated users cannot re-register.
+
+    Throttling:
+        AnonRateThrottle — guards against registration spam.
+
+    Success (201):
+        Returns registered email address.
+        Verification email dispatched async via Celery.
+
+    Errors:
+        400 — Validation failure.
+        409 — Email already exists (race condition).
+    """
+
+    permission_classes = [AllowAny]
+    throttle_classes = [AnonRateThrottle]
+    serializer_class = RegisterSerializer
+
+    def post(self, request: Request) -> Response:
+        log_context = {"request_id": request.id}
+
+        serializer = self.serializer_class(data=request.data)
+
+        if not serializer.is_valid():
+            logger.warning(
+                "Registration validation failed",
+                extra={**log_context, "errors": serializer.errors},
+            )
+            return self.error_response(
+                message=_("Registration failed."),
+                errors=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user = register_user(**serializer.validated_data)
+
+        logger.info(
+            "New user registered successfully",
+            extra={**log_context, "user_id": user.id, "email": user.email},
+        )
+
+        return self.created_response(
+            data={"email": user.email},
+            message=_(
+                "Account created successfully. "
+                "Please check your email to verify your account."
+            ),
+        )
+
+
+# ─── Verify Email ──────────────────────────────────────────────────────────────
+
+class VerifyEmailView(BaseAPIView):
+    """
+    POST /api/accounts/verify-email/
+
+    Permissions:
+        AllowAny — token itself is the authentication mechanism.
+
+    Success (200):
+        Email verified — "Email verified successfully. You can now log in."
+        Already verified — "Email already verified. You can log in."
+
+    Errors:
+        400 — Invalid format, token not found, expired, already used.
+    """
+
+    permission_classes = [AllowAny]
+    serializer_class = EmailVerificationSerializer
+
+    def post(self, request: Request) -> Response:
+        log_context = {"request_id": request.id}
+
+        serializer = self.serializer_class(data=request.data)
+
+        if not serializer.is_valid():
+            logger.warning(
+                "Email verification failed — invalid token format",
+                extra={**log_context, "errors": serializer.errors},
+            )
+            return self.error_response(
+                message=_("Invalid token."),
+                errors=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        token_value = serializer.validated_data["token"]
+
+        # Service raises DomainError for all invalid token states.
+        # Global exception handler converts it to the correct response.
+        # Returns True (verified now) or False (already verified).
+        just_verified = verify_email(token_value=token_value)
+
+        if just_verified:
+            return self.success_response(
+                message=_("Email verified successfully. You can now log in."),
+            )
+
+        return self.success_response(
+            message=_("Email already verified. You can log in."),
+        )
+
+
+# ─── Resend Verification ───────────────────────────────────────────────────────
+
+class ResendVerificationView(BaseAPIView):
+    """
+    POST /api/accounts/resend-verification/
+
+    Security:
+        Always returns the same 200 response regardless of whether
+        the email exists or is already verified.
+        Prevents email enumeration attacks.
+
+    Permissions:
+        AllowAny — unauthenticated users need this to recover
+        from lost or expired verification emails.
+
+    Success (200):
+        Always returned. See security note above.
+
+    Errors:
+        400 — Invalid email format only.
+    """
+
+    permission_classes = [AllowAny]
+    serializer_class = ResendVerificationSerializer
+
+    def post(self, request: Request) -> Response:
+        log_context = {"request_id": request.id}
+
+        serializer = self.serializer_class(data=request.data)
+
+        if not serializer.is_valid():
+            logger.warning(
+                "Resend verification failed — invalid request data",
+                extra={**log_context, "errors": serializer.errors},
+            )
+            return self.error_response(
+                message=_("Invalid request."),
+                errors=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        resend_verification(email=serializer.validated_data["email"])
+
+        return self.success_response(
+            message=_(
+                "If this email is registered and unverified, "
+                "a new verification link has been sent."
+            ),
+        )
+'''
 # ─── Register ─────────────────────────────────────────────────────────────────
 class RegisterView(BaseAPIView):
     """
@@ -430,7 +600,7 @@ class ResendVerificationView(BaseAPIView):
                 "a new verification link has been sent."
             ),
         )
-
+'''
 
 # ─── Login ────────────────────────────────────────────────────────────────────
 
@@ -1522,4 +1692,75 @@ class AvatarUploadView(BaseAPIView):
         return self.success_response(
             data={"avatar": profile.avatar.url},
             message=_("Avatar uploaded successfully."),
+        )
+
+
+
+
+# ─── Delete Account ────────────────────────────────────────────────────────────
+
+class DeleteAccountView(BaseAPIView):
+    """
+    DELETE /api/accounts/me/delete/
+
+    Hard delete the authenticated user's own account.
+
+    Permissions:
+        IsAuthenticated — user must be logged in.
+        # NOTE: IsVerified not enforced here by design.
+        # Unverified users should also be able to delete their account.
+        # Add IsVerified here later if business rules change.
+
+    Flow:
+        1. Validate password confirmation format.
+        2. Service validates password correctness.
+        3. Service hard deletes user (CASCADE handles related data).
+        4. Service dispatches goodbye email task.
+        5. Return 200 confirmation.
+
+    Success (200):
+        Account deleted. Goodbye email dispatched async.
+
+    Errors:
+        400 — Password field missing or blank.
+        400 — Incorrect password confirmation.
+    """
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = DeleteAccountSerializer
+
+    def delete(self, request: Request) -> Response:
+        log_context = {"request_id": request.id, "user_id": request.user.id}
+
+        serializer = self.serializer_class(data=request.data)
+
+        if not serializer.is_valid():
+            logger.warning(
+                "Account deletion failed — invalid request data",
+                extra={**log_context, "errors": serializer.errors},
+            )
+            return self.error_response(
+                message=_("Password confirmation is required."),
+                errors=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Service raises DomainError if password is incorrect.
+        # Global exception handler converts it to correct response.
+        delete_user_account(
+            user=request.user,
+            password=serializer.validated_data["password"],
+        )
+
+        logger.info(
+            "User account deleted successfully",
+            extra=log_context,
+        )
+
+        return self.success_response(
+            message=_(
+                "Your account has been permanently deleted. "
+                "We are sad to see you go. "
+                "You are always welcome back."
+            ),
         )

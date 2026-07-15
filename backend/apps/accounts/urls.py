@@ -14,6 +14,7 @@ from .views import (
     AddressListCreateView,
     AddressDetailView,
     AddressSetDefaultView,
+    DeleteAccountView
 )
 
 app_name = "accounts"
@@ -42,4 +43,7 @@ urlpatterns = [
     path("addresses/",                    AddressListCreateView.as_view(), name="address-list-create"),
     path("addresses/<int:pk>/",           AddressDetailView.as_view(),     name="address-detail"),
     path("addresses/<int:pk>/set-default/", AddressSetDefaultView.as_view(), name="address-set-default"),
+    # ─── delete account  ────────────────────────────────────────────
+    path("me/delete/", DeleteAccountView.as_view(), name="delete-account"),
+
 ]

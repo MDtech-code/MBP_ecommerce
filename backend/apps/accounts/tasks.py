@@ -183,3 +183,61 @@ def send_welcome_email_task(self, user_id: int) -> None:
             extra={"user_id": user.id, "attempt": self.request.retries},
         )
         raise self.retry(exc=exc)
+
+
+
+# ─── Send Goodbye Email ────────────────────────────────────────────────────────
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def send_goodbye_email_task(self, user_email: str, user_name: str) -> None:
+    """
+    Send a goodbye email after a user deletes their account.
+
+    Why email and name instead of user_id?
+        User is hard deleted before this task runs.
+        A user_id lookup would always fail with DoesNotExist.
+        Email and name are collected before deletion and passed directly.
+
+    Args:
+        user_email: Email address collected before deletion.
+        user_name:  First name collected before deletion.
+
+    Retry:
+        Up to 3 times with 60-second delay on unexpected failures.
+    """
+    subject = "We are sad to see you go — MBP Store"
+    message = (
+        f"Hi {user_name},\n\n"
+        f"Your MBP Store account has been successfully deleted.\n\n"
+        f"We are truly sad to see you leave. 😔\n\n"
+        f"You were part of our family and we genuinely valued "
+        f"having you with us.\n\n"
+        f"If this was a mistake or you change your mind, "
+        f"you are always welcome back — just create a new account "
+        f"and we will be here waiting.\n\n"
+        f"If you deleted your account due to a bad experience, "
+        f"we would love to hear from you so we can do better.\n"
+        f"Contact us anytime at: {settings.SUPPORT_EMAIL}\n\n"
+        f"We hope to see you again someday. 🙏\n\n"
+        f"With warm regards,\n"
+        f"The MBP Store Team"
+    )
+
+    try:
+        send_mail(
+            subject=subject,
+            message=message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user_email],
+            fail_silently=False,
+        )
+        logger.info(
+            "Goodbye email sent successfully",
+            extra={"email": user_email},
+        )
+    except Exception as exc:
+        logger.exception(
+            "Failed to send goodbye email — will retry",
+            extra={"email": user_email, "attempt": self.request.retries},
+        )
+        raise self.retry(exc=exc)
