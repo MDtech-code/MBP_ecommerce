@@ -14,7 +14,8 @@ from .views import (
     AddressListCreateView,
     AddressDetailView,
     AddressSetDefaultView,
-    DeleteAccountView
+    DeleteAccountView,
+    EmailChangeConfirmView,EmailChangeRequestView
 )
 
 app_name = "accounts"
@@ -25,6 +26,7 @@ urlpatterns = [
     path("login/", LoginView.as_view(), name="login"),
     path("logout/", LogoutView.as_view(), name="logout"),
     path("token/refresh/", TokenRefreshView.as_view(), name="token-refresh"),
+    path("me/delete/", DeleteAccountView.as_view(), name="delete-account"),
 
     # ─── Email Verification ───────────────────────────
     path("verify-email/", VerifyEmailView.as_view(), name="verify-email"),
@@ -43,7 +45,10 @@ urlpatterns = [
     path("addresses/",                    AddressListCreateView.as_view(), name="address-list-create"),
     path("addresses/<int:pk>/",           AddressDetailView.as_view(),     name="address-detail"),
     path("addresses/<int:pk>/set-default/", AddressSetDefaultView.as_view(), name="address-set-default"),
+
+    # ─── Email Change ──────────────────────────────────────────────────────
+    path("update-email/",           EmailChangeRequestView.as_view(),   name="update-email"),
+    path("update-email/confirm/",   EmailChangeConfirmView.as_view(),   name="update-email-confirm"),
     # ─── delete account  ────────────────────────────────────────────
-    path("me/delete/", DeleteAccountView.as_view(), name="delete-account"),
 
 ]
