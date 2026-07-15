@@ -46,8 +46,8 @@ class ErrorCode:
     # ── User / Profile ────────────────────────────────────────────────────────
     INVALID_FULL_NAME       = "invalid_full_name"
     INVALID_PHONE           = "invalid_phone"
-    INVALID_DATE_OF_BIRTH = "invalid_date_of_birth"
-    INVALID_ADDRESS       = "invalid_address"
+    INVALID_DATE_OF_BIRTH   = "invalid_date_of_birth"
+    INVALID_ADDRESS         = "invalid_address"
 
     # ── Password ──────────────────────────────────────────────────────────────
     PASSWORD_TOO_WEAK       = "password_too_weak"
@@ -61,6 +61,8 @@ class ErrorCode:
     # ── Top-level category codes (go into errors.code) ───────────────────────
     # These describe WHAT KIND of error occurred, not the specific cause.
     # Used by exceptions.py to populate the top-level errors.code field.
+    # Frontend branches on these to decide how to handle the error class,
+    # then reads non_fields.code for the specific cause.
     VALIDATION_ERROR        = "validation_error"
     AUTHENTICATION_ERROR    = "authentication_error"
     PERMISSION_ERROR        = "permission_error"
@@ -68,3 +70,4 @@ class ErrorCode:
     RATE_LIMIT_EXCEEDED     = "rate_limit_exceeded"
     SERVER_ERROR            = "server_error"
     METHOD_NOT_ALLOWED      = "method_not_allowed"
+    CONFLICT_ERROR          = "conflict_error"      # 409 — valid state, operation refused
