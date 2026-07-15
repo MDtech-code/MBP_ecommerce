@@ -551,9 +551,173 @@ class ResendVerificationSerializer(serializers.Serializer):
 #         return value.lower().strip()
 
 
+# ─── Password Reset Request ────────────────────────────────────────────────────
+
+class PasswordResetRequestSerializer(serializers.Serializer):
+    """
+    Validate email address for password reset request.
+
+    Responsibility:
+        Normalize and validate email format only.
+        User existence check happens in service layer — never here —
+        to prevent serializer-level email enumeration.
+    """
+
+    email = serializers.EmailField(
+        error_messages={"blank": _("Email address is required.")}
+    )
+
+    def validate_email(self, value: str) -> str:
+        return value.lower().strip()
 
 
+# ─── Password Reset Confirm ────────────────────────────────────────────────────
 
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    """
+    Validate token and new password for password reset confirmation.
+
+    Responsibility:
+        Validate UUID format, password strength, and password match.
+        Token existence and state checks happen in service layer.
+    """
+
+    token = serializers.UUIDField(
+        error_messages={"invalid": _("Invalid reset token.")}
+    )
+    password = serializers.CharField(
+        write_only=True,
+        min_length=8,
+        error_messages={
+            "min_length": _("Password must be at least 8 characters."),
+            "blank": _("Password is required."),
+        },
+    )
+    confirm_password = serializers.CharField(
+        write_only=True,
+        error_messages={"blank": _("Please confirm your password.")},
+    )
+
+    def validate_password(self, value: str) -> str:
+        return validate_strong_password(value)
+
+    def validate(self, attrs: dict) -> dict:
+        try:
+            validate_passwords_match(attrs["password"], attrs["confirm_password"])
+        except DjangoValidationError:
+            raise serializers.ValidationError(
+                {
+                    "confirm_password": ErrorDetail(
+                        _("Passwords do not match."),
+                        code=ErrorCode.PASSWORD_MISMATCH,
+                    )
+                }
+            )
+        attrs.pop("confirm_password")
+        return attrs
+
+
+# ─── Change Password ───────────────────────────────────────────────────────────
+
+class ChangePasswordSerializer(serializers.Serializer):
+    """
+    Validate current and new password for authenticated password change.
+
+    Responsibility:
+        Validate field presence, new password strength, and match.
+        Current password correctness check happens in service layer
+        against authenticated user's stored hash.
+    """
+
+    current_password = serializers.CharField(
+        write_only=True,
+        error_messages={"blank": _("Current password is required.")},
+    )
+    new_password = serializers.CharField(
+        write_only=True,
+        min_length=8,
+        error_messages={
+            "min_length": _("New password must be at least 8 characters."),
+            "blank": _("New password is required."),
+        },
+    )
+    confirm_new_password = serializers.CharField(
+        write_only=True,
+        error_messages={"blank": _("Please confirm your new password.")},
+    )
+
+    def validate_new_password(self, value: str) -> str:
+        return validate_strong_password(value)
+
+    def validate(self, attrs: dict) -> dict:
+        try:
+            validate_passwords_match(
+                attrs["new_password"],
+                attrs["confirm_new_password"],
+            )
+        except DjangoValidationError:
+            raise serializers.ValidationError(
+                {
+                    "confirm_new_password": ErrorDetail(
+                        _("Passwords do not match."),
+                        code=ErrorCode.PASSWORD_MISMATCH,
+                    )
+                }
+            )
+        attrs.pop("confirm_new_password")
+        return attrs
+
+
+# ─── Email Change Request ──────────────────────────────────────────────────────
+
+class EmailChangeRequestSerializer(serializers.Serializer):
+    """
+    Validate new email and password for email change request.
+
+    Responsibility:
+        Validate new email format, uniqueness, and password presence.
+        Password correctness and new email availability checks
+        happen in service layer.
+
+    Why validate uniqueness here?
+        Fast fail — no need to hit service if email format is wrong.
+        Service does a second check inside transaction for race conditions.
+    """
+
+    new_email = serializers.EmailField(
+        error_messages={
+            "blank": _("New email address is required."),
+            "invalid": _("Enter a valid email address."),
+        }
+    )
+    password = serializers.CharField(
+        write_only=True,
+        error_messages={"blank": _("Password is required to confirm email change.")},
+    )
+
+    def validate_new_email(self, value: str) -> str:
+        return validate_email_unique(value)
+
+
+# ─── Email Change Confirm ──────────────────────────────────────────────────────
+
+class EmailChangeConfirmSerializer(serializers.Serializer):
+    """
+    Validate token for email change confirmation.
+
+    Responsibility:
+        Validate UUID format only.
+        Token existence and state checks happen in service layer.
+    """
+
+    token = serializers.UUIDField(
+        error_messages={
+            "invalid": _("Invalid email change token."),
+            "blank": _("Token is required."),
+        }
+    )
+
+'''
 # ─── Password Reset Request Serializer ───────────────────────────────────────
 
 class PasswordResetRequestSerializer(serializers.Serializer):
@@ -704,7 +868,7 @@ class ChangePasswordSerializer(serializers.Serializer):
         return attrs
 
 
-
+'''
 
 # ─── Profile Update Serializer ───────────────────────────────────────────────
 class ProfileUpdateSerializer(UserProfileSerializer):
