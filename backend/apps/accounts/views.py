@@ -25,7 +25,16 @@ from apps.core.error_codes import ErrorCode
 from apps.core.api.views import BaseAPIView
 from apps.core.permissions import IsNotAuthenticated
 
-from apps.accounts.utils.request_utils import log_login_activity
+from apps.accounts.utils.ip_utils import (
+    get_client_ip,
+    get_user_agent)
+from apps.accounts.utils.cookie_utils import (
+    REFRESH_COOKIE_NAME,
+    set_refresh_cookie,
+    clear_refresh_cookie,
+    set_csrf_cookie,
+    clear_csrf_cookie,
+)
 from .models import User, EmailVerificationToken, PasswordResetToken,UserProfile,UserAddress
 
 from .services import (
@@ -35,7 +44,20 @@ from .services import (
     delete_user_account,
     request_email_change,
     request_password_reset,
-    confirm_email_change,confirm_password_reset,change_password
+    confirm_email_change,confirm_password_reset,change_password,login_user,
+    logout_user,
+    refresh_access_token,
+    get_user_profile,
+    update_user_profile,
+    update_user_avatar,
+    get_user_addresses,
+    create_user_address,
+    update_user_address,
+    delete_user_address,
+    set_default_address,
+    
+    
+    
 )
 from apps.core.exceptions import DomainError
 
@@ -56,14 +78,10 @@ from .serializers import (
     EmailChangeConfirmSerializer
 )
 
-from .tasks import (
-    send_verification_email_task,
-    send_password_reset_email_task,
-    send_welcome_email_task,
-)
+
 
 logger = logging.getLogger("apps.accounts")
-
+'''
 # ─── Cookie configuration ─────────────────────────────────────────────────────
 REFRESH_COOKIE_NAME = "refresh_token"
 COOKIE_SETTINGS = {
@@ -109,7 +127,7 @@ def clear_csrf_cookie(response) -> None:
         path="/",      # CSRF cookie is usually scoped to root
     )
 
-
+'''
 
 # ─── Register ──────────────────────────────────────────────────────────────────
 
@@ -270,6 +288,200 @@ class ResendVerificationView(BaseAPIView):
                 "a new verification link has been sent."
             ),
         )
+    
+
+
+# ─── Login ─────────────────────────────────────────────────────────────────────
+
+class LoginView(BaseAPIView):
+    """
+    POST /api/accounts/login/
+
+    Authenticate user and issue JWT tokens.
+
+    Token delivery:
+        Access token:  returned in response body (short-lived).
+        Refresh token: set in HttpOnly Secure SameSite=Lax cookie
+                       scoped to /api/accounts/token/refresh/
+                       — never accessible to JavaScript.
+
+    Permissions:
+        IsNotAuthenticated — already-authenticated users are blocked.
+
+    Success (200):
+        Returns access token + serialized user data.
+
+    Errors:
+        400 — Invalid credentials, inactive account, unverified email.
+        403 — Already authenticated.
+    """
+
+    permission_classes = [IsNotAuthenticated]
+    serializer_class = LoginSerializer
+
+    def post(self, request: Request) -> Response:
+        log_context = {"request_id": request.id}
+
+        serializer = self.serializer_class(data=request.data)
+
+        if not serializer.is_valid():
+            logger.warning(
+                "Login validation failed",
+                extra={**log_context, "errors": serializer.errors},
+            )
+            return self.error_response(
+                message=_("Invalid email or password."),
+                errors=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Extract IP and user agent here — view owns request object.
+        # Passed as plain strings to service — service stays transport-agnostic.
+        ip_address = get_client_ip(request)
+        user_agent = get_user_agent(request)
+
+        # Service raises DomainError for all failure conditions.
+        # Global exception handler converts to correct response.
+        result = login_user(
+            email=serializer.validated_data["email"],
+            password=serializer.validated_data["password"],
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+
+        user = result["user"]
+
+        # Django auth signal — HTTP context signal, belongs in view.
+        user_logged_in.send(
+            sender=user.__class__,
+            request=request,
+            user=user,
+        )
+
+        logger.info(
+            "User logged in successfully",
+            extra={**log_context, "user_id": user.id},
+        )
+
+        response = self.success_response(
+            data={
+                "access": result["access"],
+                "user": UserSerializer(user).data,
+            },
+            message=_("Login successful."),
+        )
+
+        set_refresh_cookie(response, result["refresh"])
+        set_csrf_cookie(request, response)
+        return response
+
+
+# ─── Logout ────────────────────────────────────────────────────────────────────
+
+class LogoutView(BaseAPIView):
+    """
+    POST /api/accounts/logout/
+
+    Blacklist the refresh token and clear the HttpOnly cookie.
+
+    Idempotent — always returns 200 regardless of cookie state.
+
+    Permissions:
+        IsAuthenticated — must be logged in to log out.
+
+    Success (200):
+        Cookie cleared, token blacklisted if present and valid.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request: Request) -> Response:
+        log_context = {"request_id": request.id, "user_id": request.user.id}
+
+        refresh_token = request.COOKIES.get(REFRESH_COOKIE_NAME)
+
+        # Service handles all token blacklist logic — never raises.
+        logout_user(
+            refresh_token=refresh_token,
+            user=request.user,
+        )
+
+        # Django auth signal — HTTP context signal, belongs in view.
+        user_logged_out.send(
+            sender=request.user.__class__,
+            request=request,
+            user=request.user,
+        )
+
+        logger.info(
+            "User logged out successfully",
+            extra=log_context,
+        )
+
+        response = self.success_response(
+            message=_("Logged out successfully."),
+        )
+        clear_refresh_cookie(response)
+        clear_csrf_cookie(response)
+        return response
+
+
+# ─── Token Refresh ─────────────────────────────────────────────────────────────
+
+class TokenRefreshView(BaseAPIView):
+    """
+    POST /api/accounts/token/refresh/
+
+    Issue a new access token using the refresh token from the HttpOnly cookie.
+
+    Rotation behaviour (controlled by SIMPLE_JWT.ROTATE_REFRESH_TOKENS):
+        Enabled:  old token blacklisted, new one set in cookie.
+        Disabled: same token remains valid until natural expiry.
+
+    Permissions:
+        AllowAny — auth state determined by cookie itself.
+
+    Success (200):
+        Returns new access token in response body.
+
+    Errors:
+        400 — No cookie, token invalid, token expired, user deleted.
+    """
+
+    permission_classes = [AllowAny]
+
+    def post(self, request: Request) -> Response:
+        log_context = {"request_id": request.id}
+
+        refresh_token = request.COOKIES.get(REFRESH_COOKIE_NAME)
+
+        # Service raises DomainError for all invalid states.
+        # Global exception handler converts to correct response.
+        result = refresh_access_token(refresh_token=refresh_token)
+
+        response = self.success_response(
+            data={"access": result["access"]},
+            message=_("Token refreshed successfully."),
+        )
+
+        # If rotation happened — set new refresh cookie.
+        # If rotation disabled — cookie unchanged.
+        if result["rotation_enabled"] and result["new_refresh"]:
+            set_refresh_cookie(response, result["new_refresh"])
+        elif result["rotation_enabled"] and not result["new_refresh"]:
+            # Rotation was attempted but failed (user deleted etc.)
+            # Cookie already cleared by service raising DomainError.
+            # This branch is unreachable in normal flow but guards
+            # against future logic changes.
+            clear_refresh_cookie(response)
+            clear_csrf_cookie(response)
+
+        logger.info(
+            "Token refreshed successfully",
+            extra=log_context,
+        )
+
+        return response
 '''
 # ─── Register ─────────────────────────────────────────────────────────────────
 class RegisterView(BaseAPIView):
@@ -606,7 +818,7 @@ class ResendVerificationView(BaseAPIView):
             ),
         )
 '''
-
+'''
 # ─── Login ────────────────────────────────────────────────────────────────────
 
 class LoginView(BaseAPIView):
@@ -924,7 +1136,7 @@ class TokenRefreshView(BaseAPIView):
         return response
     
 
-
+'''
 
 # ─── Password Reset Request ────────────────────────────────────────────────────
 
@@ -1541,7 +1753,297 @@ class ChangePasswordView(BaseAPIView):
 
 
 
+'''
+# ─── Profile ───────────────────────────────────────────────────────────────────
 
+class ProfileView(BaseAPIView):
+    """
+    GET   /api/accounts/profile/ — Retrieve own profile.
+    PATCH /api/accounts/profile/ — Partially update own profile.
+
+    Permissions:
+        IsAuthenticated — profile is private to the owner.
+
+    GET Success (200):
+        Returns full user + nested profile + addresses.
+
+    PATCH Success (200):
+        Returns full user + updated nested profile data.
+
+    Errors:
+        400 — Validation failure or profile not found.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request: Request) -> Response:
+        log_context = {"request_id": request.id, "user_id": request.user.id}
+
+        user = get_user_profile(user_id=request.user.id)
+
+        logger.info("Profile retrieved", extra=log_context)
+
+        return self.success_response(
+            data=UserSerializer(user).data,
+            message=_("Profile retrieved successfully."),
+        )
+
+    def patch(self, request: Request) -> Response:
+        log_context = {"request_id": request.id, "user_id": request.user.id}
+
+        serializer = ProfileUpdateSerializer(data=request.data, partial=True)
+
+        if not serializer.is_valid():
+            logger.warning(
+                "Profile update validation failed",
+                extra={**log_context, "errors": serializer.errors},
+            )
+            return self.error_response(
+                message=_("Profile update failed."),
+                errors=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Service raises DomainError for not found.
+        # Global exception handler converts to correct response.
+        user = update_user_profile(
+            user_id=request.user.id,
+            data=serializer.validated_data,
+        )
+
+        logger.info("Profile updated successfully", extra=log_context)
+
+        return self.success_response(
+            data=UserSerializer(user).data,
+            message=_("Profile updated successfully."),
+        )
+
+    # PUT as alias for PATCH — both do partial update
+    put = patch
+
+
+# ─── Avatar Upload ─────────────────────────────────────────────────────────────
+
+class AvatarUploadView(BaseAPIView):
+    """
+    POST /api/accounts/profile/avatar/
+
+    Permissions:
+        IsAuthenticated — only the owner can upload their avatar.
+
+    Parsers:
+        MultiPartParser + FormParser — required for file upload.
+
+    Success (200):
+        Returns absolute URL of the newly uploaded avatar.
+
+    Errors:
+        400 — File missing, invalid type, exceeds size limit.
+    """
+
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+    serializer_class = AvatarUploadSerializer
+
+    def post(self, request: Request) -> Response:
+        log_context = {"request_id": request.id, "user_id": request.user.id}
+
+        serializer = self.serializer_class(data=request.data)
+
+        if not serializer.is_valid():
+            logger.warning(
+                "Avatar upload validation failed",
+                extra={**log_context, "errors": serializer.errors},
+            )
+            return self.error_response(
+                message=_("Avatar upload failed."),
+                errors=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Service handles old avatar deletion + new avatar save.
+        # Returns URL string of new avatar.
+        avatar_url = update_user_avatar(
+            user_id=request.user.id,
+            new_avatar=serializer.validated_data["avatar"],
+        )
+
+        logger.info("Avatar updated successfully", extra=log_context)
+
+        return self.success_response(
+            data={"avatar": avatar_url},
+            message=_("Avatar uploaded successfully."),
+        )
+
+
+# ─── Address List + Create ─────────────────────────────────────────────────────
+
+class AddressListCreateView(BaseAPIView):
+    """
+    GET  /api/accounts/addresses/ — list all user addresses.
+    POST /api/accounts/addresses/ — create new address.
+
+    Permissions:
+        IsAuthenticated — addresses are private to the owner.
+
+    GET Success (200):
+        Returns list of all addresses.
+
+    POST Success (201):
+        Returns newly created address.
+
+    Errors:
+        400 — Validation failure on create.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request: Request) -> Response:
+        addresses = get_user_addresses(user_id=request.user.id)
+        return self.success_response(
+            data=UserAddressSerializer(addresses, many=True).data,
+            message=_("Addresses retrieved successfully."),
+        )
+
+    def post(self, request: Request) -> Response:
+        log_context = {"request_id": request.id, "user_id": request.user.id}
+
+        serializer = UserAddressSerializer(data=request.data)
+
+        if not serializer.is_valid():
+            logger.warning(
+                "Address creation validation failed",
+                extra={**log_context, "errors": serializer.errors},
+            )
+            return self.error_response(
+                message=_("Address creation failed."),
+                errors=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Service raises DomainError on failure.
+        # Global exception handler converts to correct response.
+        address = create_user_address(
+            user_id=request.user.id,
+            data=serializer.validated_data,
+        )
+
+        logger.info(
+            "Address created successfully",
+            extra={**log_context, "address_id": address.id},
+        )
+
+        return self.created_response(
+            data=UserAddressSerializer(address).data,
+            message=_("Address added successfully."),
+        )
+
+
+# ─── Address Detail ────────────────────────────────────────────────────────────
+
+class AddressDetailView(BaseAPIView):
+    """
+    PUT    /api/accounts/addresses/<id>/ — update address.
+    DELETE /api/accounts/addresses/<id>/ — delete address.
+
+    Permissions:
+        IsAuthenticated — ownership enforced in service layer.
+
+    Errors:
+        400 — Address not found, validation failure.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def put(self, request: Request, pk: int) -> Response:
+        log_context = {"request_id": request.id, "user_id": request.user.id}
+
+        serializer = UserAddressSerializer(data=request.data, partial=True)
+
+        if not serializer.is_valid():
+            logger.warning(
+                "Address update validation failed",
+                extra={**log_context, "errors": serializer.errors},
+            )
+            return self.error_response(
+                message=_("Address update failed."),
+                errors=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Service raises DomainError if not found or not owned.
+        # Global exception handler converts to correct response.
+        address = update_user_address(
+            user_id=request.user.id,
+            address_id=pk,
+            data=serializer.validated_data,
+        )
+
+        logger.info(
+            "Address updated successfully",
+            extra={**log_context, "address_id": pk},
+        )
+
+        return self.success_response(
+            data=UserAddressSerializer(address).data,
+            message=_("Address updated successfully."),
+        )
+
+    def delete(self, request: Request, pk: int) -> Response:
+        log_context = {"request_id": request.id, "user_id": request.user.id}
+
+        # Service raises DomainError if not found or not owned.
+        delete_user_address(
+            user_id=request.user.id,
+            address_id=pk,
+        )
+
+        logger.info(
+            "Address deleted successfully",
+            extra={**log_context, "address_id": pk},
+        )
+
+        return self.success_response(
+            message=_("Address deleted successfully."),
+        )
+
+
+# ─── Address Set Default ───────────────────────────────────────────────────────
+
+class AddressSetDefaultView(BaseAPIView):
+    """
+    PATCH /api/accounts/addresses/<id>/set-default/
+
+    Permissions:
+        IsAuthenticated — ownership enforced in service layer.
+
+    Success (200):
+        Returns updated address with is_default=True.
+
+    Errors:
+        400 — Address not found or not owned.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request: Request, pk: int) -> Response:
+        log_context = {"request_id": request.id, "user_id": request.user.id}
+
+        # Service raises DomainError if not found or not owned.
+        address = set_default_address(
+            user_id=request.user.id,
+            address_id=pk,
+        )
+
+        logger.info(
+            "Default address set successfully",
+            extra={**log_context, "address_id": pk},
+        )
+
+        return self.success_response(
+            data=UserAddressSerializer(address).data,
+            message=_("Default address updated."),
+        )
 class ProfileView(BaseAPIView):
     """
     GET   /api/accounts/profile/ → Retrieve own profile.
@@ -1953,7 +2455,297 @@ class AvatarUploadView(BaseAPIView):
         )
 
 
+'''
+# ─── Profile ───────────────────────────────────────────────────────────────────
 
+class ProfileView(BaseAPIView):
+    """
+    GET   /api/accounts/profile/ — Retrieve own profile.
+    PATCH /api/accounts/profile/ — Partially update own profile.
+
+    Permissions:
+        IsAuthenticated — profile is private to the owner.
+
+    GET Success (200):
+        Returns full user + nested profile + addresses.
+
+    PATCH Success (200):
+        Returns full user + updated nested profile data.
+
+    Errors:
+        400 — Validation failure or profile not found.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request: Request) -> Response:
+        log_context = {"request_id": request.id, "user_id": request.user.id}
+
+        user = get_user_profile(user_id=request.user.id)
+
+        logger.info("Profile retrieved", extra=log_context)
+
+        return self.success_response(
+            data=UserSerializer(user).data,
+            message=_("Profile retrieved successfully."),
+        )
+
+    def patch(self, request: Request) -> Response:
+        log_context = {"request_id": request.id, "user_id": request.user.id}
+
+        serializer = ProfileUpdateSerializer(data=request.data, partial=True)
+
+        if not serializer.is_valid():
+            logger.warning(
+                "Profile update validation failed",
+                extra={**log_context, "errors": serializer.errors},
+            )
+            return self.error_response(
+                message=_("Profile update failed."),
+                errors=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Service raises DomainError for not found.
+        # Global exception handler converts to correct response.
+        user = update_user_profile(
+            user_id=request.user.id,
+            data=serializer.validated_data,
+        )
+
+        logger.info("Profile updated successfully", extra=log_context)
+
+        return self.success_response(
+            data=UserSerializer(user).data,
+            message=_("Profile updated successfully."),
+        )
+
+    # PUT as alias for PATCH — both do partial update
+    put = patch
+
+
+# ─── Avatar Upload ─────────────────────────────────────────────────────────────
+
+class AvatarUploadView(BaseAPIView):
+    """
+    POST /api/accounts/profile/avatar/
+
+    Permissions:
+        IsAuthenticated — only the owner can upload their avatar.
+
+    Parsers:
+        MultiPartParser + FormParser — required for file upload.
+
+    Success (200):
+        Returns absolute URL of the newly uploaded avatar.
+
+    Errors:
+        400 — File missing, invalid type, exceeds size limit.
+    """
+
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+    serializer_class = AvatarUploadSerializer
+
+    def post(self, request: Request) -> Response:
+        log_context = {"request_id": request.id, "user_id": request.user.id}
+
+        serializer = self.serializer_class(data=request.data)
+
+        if not serializer.is_valid():
+            logger.warning(
+                "Avatar upload validation failed",
+                extra={**log_context, "errors": serializer.errors},
+            )
+            return self.error_response(
+                message=_("Avatar upload failed."),
+                errors=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Service handles old avatar deletion + new avatar save.
+        # Returns URL string of new avatar.
+        avatar_url = update_user_avatar(
+            user_id=request.user.id,
+            new_avatar=serializer.validated_data["avatar"],
+        )
+
+        logger.info("Avatar updated successfully", extra=log_context)
+
+        return self.success_response(
+            data={"avatar": avatar_url},
+            message=_("Avatar uploaded successfully."),
+        )
+
+
+# ─── Address List + Create ─────────────────────────────────────────────────────
+
+class AddressListCreateView(BaseAPIView):
+    """
+    GET  /api/accounts/addresses/ — list all user addresses.
+    POST /api/accounts/addresses/ — create new address.
+
+    Permissions:
+        IsAuthenticated — addresses are private to the owner.
+
+    GET Success (200):
+        Returns list of all addresses.
+
+    POST Success (201):
+        Returns newly created address.
+
+    Errors:
+        400 — Validation failure on create.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request: Request) -> Response:
+        addresses = get_user_addresses(user_id=request.user.id)
+        return self.success_response(
+            data=UserAddressSerializer(addresses, many=True).data,
+            message=_("Addresses retrieved successfully."),
+        )
+
+    def post(self, request: Request) -> Response:
+        log_context = {"request_id": request.id, "user_id": request.user.id}
+
+        serializer = UserAddressSerializer(data=request.data)
+
+        if not serializer.is_valid():
+            logger.warning(
+                "Address creation validation failed",
+                extra={**log_context, "errors": serializer.errors},
+            )
+            return self.error_response(
+                message=_("Address creation failed."),
+                errors=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Service raises DomainError on failure.
+        # Global exception handler converts to correct response.
+        address = create_user_address(
+            user_id=request.user.id,
+            data=serializer.validated_data,
+        )
+
+        logger.info(
+            "Address created successfully",
+            extra={**log_context, "address_id": address.id},
+        )
+
+        return self.created_response(
+            data=UserAddressSerializer(address).data,
+            message=_("Address added successfully."),
+        )
+
+
+# ─── Address Detail ────────────────────────────────────────────────────────────
+
+class AddressDetailView(BaseAPIView):
+    """
+    PUT    /api/accounts/addresses/<id>/ — update address.
+    DELETE /api/accounts/addresses/<id>/ — delete address.
+
+    Permissions:
+        IsAuthenticated — ownership enforced in service layer.
+
+    Errors:
+        400 — Address not found, validation failure.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def put(self, request: Request, pk: int) -> Response:
+        log_context = {"request_id": request.id, "user_id": request.user.id}
+
+        serializer = UserAddressSerializer(data=request.data, partial=True)
+
+        if not serializer.is_valid():
+            logger.warning(
+                "Address update validation failed",
+                extra={**log_context, "errors": serializer.errors},
+            )
+            return self.error_response(
+                message=_("Address update failed."),
+                errors=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Service raises DomainError if not found or not owned.
+        # Global exception handler converts to correct response.
+        address = update_user_address(
+            user_id=request.user.id,
+            address_id=pk,
+            data=serializer.validated_data,
+        )
+
+        logger.info(
+            "Address updated successfully",
+            extra={**log_context, "address_id": pk},
+        )
+
+        return self.success_response(
+            data=UserAddressSerializer(address).data,
+            message=_("Address updated successfully."),
+        )
+
+    def delete(self, request: Request, pk: int) -> Response:
+        log_context = {"request_id": request.id, "user_id": request.user.id}
+
+        # Service raises DomainError if not found or not owned.
+        delete_user_address(
+            user_id=request.user.id,
+            address_id=pk,
+        )
+
+        logger.info(
+            "Address deleted successfully",
+            extra={**log_context, "address_id": pk},
+        )
+
+        return self.success_response(
+            message=_("Address deleted successfully."),
+        )
+
+
+# ─── Address Set Default ───────────────────────────────────────────────────────
+
+class AddressSetDefaultView(BaseAPIView):
+    """
+    PATCH /api/accounts/addresses/<id>/set-default/
+
+    Permissions:
+        IsAuthenticated — ownership enforced in service layer.
+
+    Success (200):
+        Returns updated address with is_default=True.
+
+    Errors:
+        400 — Address not found or not owned.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request: Request, pk: int) -> Response:
+        log_context = {"request_id": request.id, "user_id": request.user.id}
+
+        # Service raises DomainError if not found or not owned.
+        address = set_default_address(
+            user_id=request.user.id,
+            address_id=pk,
+        )
+
+        logger.info(
+            "Default address set successfully",
+            extra={**log_context, "address_id": pk},
+        )
+
+        return self.success_response(
+            data=UserAddressSerializer(address).data,
+            message=_("Default address updated."),
+        )
 
 # ─── Delete Account ────────────────────────────────────────────────────────────
 

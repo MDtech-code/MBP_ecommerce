@@ -375,99 +375,130 @@ class RegisterSerializer(serializers.Serializer):
 
 # ─── Login Serializer ─────────────────────────────────────────────────────────
 # apps/accounts/serializers.py  (Login section — add after RegisterSerializer)
+# ─── Login ─────────────────────────────────────────────────────────────────────
 
 class LoginSerializer(serializers.Serializer):
     """
-    Validate login credentials and return authenticated user.
+    Validate login input format only.
 
-    Checks (in order):
-        1. Email + password match a real user (via Django authenticate).
-        2. Account is active (not deactivated by admin).
-        3. Email is verified (user completed registration flow).
+    Responsibility:
+        Data Translation and Format Compliance ONLY.
+        Normalizes email, ensures fields are present and non-blank.
 
-    On success, attaches the ``User`` instance to ``attrs["user"]``
-    for the view to consume.
+        Credential checking (authenticate, is_active, is_verified)
+        is business logic — it belongs in the service layer.
+        Serializer has no knowledge of authentication outcome.
 
-    Error codes exposed to client:
-        - ``invalid_credentials``: email/password mismatch.
-        - ``account_inactive``:    account deactivated by admin.
-        - ``email_not_verified``:  registration email not confirmed yet.
-
-    Note:
-        Invalid credentials message is intentionally vague — we never
-        confirm whether an email address exists in the system.
-        This prevents user enumeration attacks.
-
-    Why ErrorDetail directly instead of code= on ValidationError:
-        When raising ValidationError with a dict payload, the code=
-        argument on the outer exception is ignored by DRF — it never
-        reaches the ErrorDetail objects inside the dict.
-        Wrapping in ErrorDetail directly guarantees the code travels
-        through DRF's internal processing into _format_errors() intact.
+    Fields:
+        email:    Normalized to lowercase + stripped.
+        password: Write-only, required.
     """
 
     email = serializers.EmailField(
-        error_messages={"blank": _("Email address is required.")}
+        error_messages={
+            "blank": _("Email address is required."),
+            "invalid": _("Enter a valid email address."),
+        }
     )
     password = serializers.CharField(
         write_only=True,
-        error_messages={"blank": _("Password is required.")}
+        error_messages={"blank": _("Password is required.")},
     )
 
-    def validate(self, attrs: dict) -> dict:
-        email = attrs["email"].lower().strip()
-        password = attrs["password"]
+    def validate_email(self, value: str) -> str:
+        return value.lower().strip()
+# class LoginSerializer(serializers.Serializer):
+#     """
+#     Validate login credentials and return authenticated user.
 
-        user = authenticate(
-            request=self.context.get("request"),
-            username=email,
-            password=password,
-        )
+#     Checks (in order):
+#         1. Email + password match a real user (via Django authenticate).
+#         2. Account is active (not deactivated by admin).
+#         3. Email is verified (user completed registration flow).
 
-        # ── Credential check ──────────────────────────────────────────────────
-        # Deliberately vague — do not confirm whether email exists.
-        # Prevents user enumeration attacks.
-        if not user:
-            raise serializers.ValidationError(
-               {
-                    "non_field_errors": ErrorDetail(
-                        _("Invalid email or password."),
-                        code=ErrorCode.INVALID_CREDENTIALS,
-                    )
-                }
-            )
+#     On success, attaches the ``User`` instance to ``attrs["user"]``
+#     for the view to consume.
 
-        # ── Account active check ──────────────────────────────────────────────
-        if not user.is_active:
-            raise serializers.ValidationError(
-                {
-                    "non_field_errors": ErrorDetail(
-                        _(
-                            "Your account has been deactivated. "
-                            "Please contact support."
-                        ),
-                        code=ErrorCode.ACCOUNT_INACTIVE,
-                    )
-                }
-            )
+#     Error codes exposed to client:
+#         - ``invalid_credentials``: email/password mismatch.
+#         - ``account_inactive``:    account deactivated by admin.
+#         - ``email_not_verified``:  registration email not confirmed yet.
 
-        # ── Email verified check ──────────────────────────────────────────────
-        # Distinct code so frontend can offer "resend verification" option.
-        if not user.is_verified:
-            raise serializers.ValidationError(
-                {
-                    "non_field_errors": ErrorDetail(
-                        _(
-                            "Please verify your email address "
-                            "before logging in."
-                        ),
-                        code=ErrorCode.EMAIL_NOT_VERIFIED,
-                    )
-                }
-            )
+#     Note:
+#         Invalid credentials message is intentionally vague — we never
+#         confirm whether an email address exists in the system.
+#         This prevents user enumeration attacks.
 
-        attrs["user"] = user
-        return attrs
+#     Why ErrorDetail directly instead of code= on ValidationError:
+#         When raising ValidationError with a dict payload, the code=
+#         argument on the outer exception is ignored by DRF — it never
+#         reaches the ErrorDetail objects inside the dict.
+#         Wrapping in ErrorDetail directly guarantees the code travels
+#         through DRF's internal processing into _format_errors() intact.
+#     """
+
+#     email = serializers.EmailField(
+#         error_messages={"blank": _("Email address is required.")}
+#     )
+#     password = serializers.CharField(
+#         write_only=True,
+#         error_messages={"blank": _("Password is required.")}
+#     )
+
+#     def validate(self, attrs: dict) -> dict:
+#         email = attrs["email"].lower().strip()
+#         password = attrs["password"]
+
+#         user = authenticate(
+#             request=self.context.get("request"),
+#             username=email,
+#             password=password,
+#         )
+
+#         # ── Credential check ──────────────────────────────────────────────────
+#         # Deliberately vague — do not confirm whether email exists.
+#         # Prevents user enumeration attacks.
+#         if not user:
+#             raise serializers.ValidationError(
+#                {
+#                     "non_field_errors": ErrorDetail(
+#                         _("Invalid email or password."),
+#                         code=ErrorCode.INVALID_CREDENTIALS,
+#                     )
+#                 }
+#             )
+
+#         # ── Account active check ──────────────────────────────────────────────
+#         if not user.is_active:
+#             raise serializers.ValidationError(
+#                 {
+#                     "non_field_errors": ErrorDetail(
+#                         _(
+#                             "Your account has been deactivated. "
+#                             "Please contact support."
+#                         ),
+#                         code=ErrorCode.ACCOUNT_INACTIVE,
+#                     )
+#                 }
+#             )
+
+#         # ── Email verified check ──────────────────────────────────────────────
+#         # Distinct code so frontend can offer "resend verification" option.
+#         if not user.is_verified:
+#             raise serializers.ValidationError(
+#                 {
+#                     "non_field_errors": ErrorDetail(
+#                         _(
+#                             "Please verify your email address "
+#                             "before logging in."
+#                         ),
+#                         code=ErrorCode.EMAIL_NOT_VERIFIED,
+#                     )
+#                 }
+#             )
+
+#         attrs["user"] = user
+#         return attrs
 
 
 # ─── Email Verification ────────────────────────────────────────────────────────
