@@ -1,4 +1,71 @@
-# apps/core/api/exceptions.py
+"""
+apps/core/api/exceptions.py
+───────────────────────────
+Global DRF exception handler — HTTP transport layer only.
+
+RESPONSIBILITY
+──────────────
+This module's sole job is mapping exceptions → HTTP responses.
+It contains NO business logic. All custom exception types live in
+apps.core.exceptions and are imported here — never the reverse.
+
+DEPENDENCY DIRECTION
+────────────────────
+    apps.core.exceptions          (DomainError, InfrastructureError)
+         ↑
+    apps.core.api.exceptions      (this file — maps them to HTTP responses)
+
+Services import from apps.core.exceptions.
+This file imports from apps.core.exceptions.
+Nothing imports api.exceptions except Django settings (EXCEPTION_HANDLER)
+and BaseAPIView (for _format_drf_errors, _non_fields_domain,
+_status_to_error_code).
+
+ERROR ENVELOPE (always)
+───────────────────────
+{
+    "success":  false,
+    "message":  "<safe human string>",
+    "data":     null,
+    "errors": {
+        "code":       "<top-level ErrorCode>",
+        "fields":     { "<field>": {"message": "...", "code": "..."} } | null,
+        "non_fields": {
+            "category": "validation" | "domain" | "system" | "unexpected",
+            "message":  "...",
+            "code":     "...",
+            "extra":    {...} | null   ← ONLY client_extra, never internal
+        } | null
+    },
+    "meta": { "request_id": "..." }
+}
+
+NON-FIELD CATEGORIES
+────────────────────
+  validation  – DRF non_field_errors / auth / permission / not-found.
+  domain      – Business-rule violation (DomainError).
+  system      – Infrastructure failure (InfrastructureError).
+  unexpected  – Unhandled exception; always triggers monitor + ERROR log.
+
+SECURITY INVARIANT
+──────────────────
+exc.internal is NEVER serialized into any response in any branch.
+It is only passed to the logger in custom_exception_handler.
+
+LOGGING POLICY
+──────────────
+All logging lives in custom_exception_handler — not in builders.
+Builders are pure functions: input → dict, zero side effects.
+This means one log entry per exception, one Sentry issue per event.
+
+  DomainError                        → WARNING, no exc_info
+  InfrastructureError notify=True    → ERROR + exc_info  (unexpected)
+  InfrastructureError notify=False   → WARNING, no exc_info  (expected)
+  DRF 4xx                            → WARNING, no exc_info
+  DRF 5xx                            → ERROR + exc_info
+  Unhandled                          → ERROR + exc_info
+"""
+
 from __future__ import annotations
 
 import logging
@@ -11,6 +78,7 @@ from rest_framework.response import Response
 from rest_framework.views import exception_handler
 
 from apps.core.error_codes import ErrorCode
+from apps.core.exceptions import DomainError, InfrastructureError
 
 logger = logging.getLogger("apps.core")
 
@@ -24,129 +92,174 @@ def register_monitor(fn: Callable[[Exception], None]) -> None:
     """
     Register a monitoring backend (e.g. Sentry, PagerDuty).
 
-    Registered monitors are called only on unexpected (unhandled) exceptions —
-    NOT on standard DRF validation/auth errors.
+    Called on:
+        - InfrastructureError where notify=True
+        - DRF 5xx responses
+        - Unhandled exceptions
+
+    NOT called on:
+        - DomainError                            (expected business logic)
+        - DRF 4xx                                (client errors, not our defects)
+        - InfrastructureError where notify=False (expected, handled outage)
     """
     _monitors.append(fn)
 
 
 def _notify_monitors(exc: Exception) -> None:
-    """
-    Invoke all registered monitors.
-
-    Failures in individual monitors are caught and logged so one
-    broken monitor cannot suppress others.
-    """
+    """Invoke all registered monitors, isolating individual failures."""
     for monitor in _monitors:
         try:
             monitor(exc)
         except Exception as monitor_exc:
-            logger.error(
-                "Monitor failed: %s",
-                monitor_exc,
-                exc_info=True,
-            )
+            logger.error("Monitor failed: %s", monitor_exc, exc_info=True)
 
 
-# ─── Error code extraction ────────────────────────────────────────────────────
+# ─── Non-field block builders (pure — zero side effects) ─────────────────────
+#
+# These functions produce the non_fields sub-object only.
+# They do NOT log. All logging is in custom_exception_handler.
+# This guarantees one log entry per exception regardless of code path.
+#
+# Security contract: client_extra is forwarded to the response.
+#                    internal is NOT touched here — handler logs it.
 
-def _extract_error_detail(detail: Any) -> dict[str, str]:
+def _non_fields_validation(detail: Any) -> dict[str, Any]:
     """
-    Extract message and code from a single error value.
+    Build a 'validation' non_fields block from a DRF ErrorDetail or plain value.
 
-    DRF wraps every error string in an ErrorDetail object which carries
-    both the human-readable string and a machine-readable code.
-
-    Handles:
-        - ErrorDetail instance       → extract str + .code directly
-        - Plain string               → use as message, code falls back to "error"
-        - Anything else              → str() coerce, code falls back to "error"
-
-    Args:
-        detail: A single error value from DRF's exception data.
-
-    Returns:
-        dict with guaranteed ``message`` and ``code`` keys.
+    Used for: DRF non_field_errors, list-shaped errors, plain strings.
     """
     if isinstance(detail, ErrorDetail):
         return {
-            "message": str(detail),
-            "code": str(detail.code) if detail.code else "error",
+            "category": "validation",
+            "message":  str(detail),
+            "code":     str(detail.code) if detail.code else "invalid",
+            "extra":    None,
         }
     return {
-        "message": str(detail),
-        "code": "error",
+        "category": "validation",
+        "message":  str(detail),
+        "code":     "invalid",
+        "extra":    None,
     }
+
+
+def _non_fields_domain(exc: DomainError) -> dict[str, Any]:
+    """
+    Build a 'domain' non_fields block from a DomainError.
+
+    Pure — no logging. Handler logs internal data before calling this.
+    client_extra forwarded to response; internal excluded entirely.
+    """
+    return {
+        "category": "domain",
+        "message":  exc.message,
+        "code":     exc.code,
+        "extra":    exc.client_extra,   # client_extra only; internal excluded
+    }
+
+
+def _non_fields_infrastructure(exc: InfrastructureError) -> dict[str, Any]:
+    """
+    Build a 'system' non_fields block from an InfrastructureError.
+
+    Pure — no logging. Handler logs internal data before calling this.
+    client_extra forwarded to response; internal excluded entirely.
+    """
+    return {
+        "category": "system",
+        "message":  exc.message,
+        "code":     exc.code,
+        "extra":    exc.client_extra,   # client_extra only; internal excluded
+    }
+
+
+def _non_fields_unexpected(exc: Exception, *, status_code: int) -> dict[str, Any]:
+    """
+    Build an 'unexpected' non_fields block for unhandled exceptions.
+
+    Pure — no logging. Handler logs before calling this.
+
+    DEBUG:      raw exception message included (local dev convenience).
+    Production: always the safe generic message — never leak internals.
+    """
+    return {
+        "category": "unexpected",
+        "message": (
+            str(exc) if settings.DEBUG
+            else _status_to_message(status_code)
+        ),
+        "code":  ErrorCode.SERVER_ERROR,
+        "extra": None,
+    }
+
+
+# ─── Field-error helpers ──────────────────────────────────────────────────────
+
+def _extract_error_detail(detail: Any) -> dict[str, str]:
+    """Extract {message, code} from a single DRF ErrorDetail or plain value."""
+    if isinstance(detail, ErrorDetail):
+        return {
+            "message": str(detail),
+            "code":    str(detail.code) if detail.code else "error",
+        }
+    return {"message": str(detail), "code": "error"}
 
 
 def _resolve_single(value: Any) -> dict[str, str]:
     """
-    Resolve a field's error value to a single {message, code} dict.
+    Resolve a field's error list to a single {message, code} dict.
 
-    DRF always wraps field errors in lists even when there is only one.
-    We always surface only the first error per field — showing multiple
-    errors per field simultaneously is poor UX and not needed.
-
-    Args:
-        value: The error value for a single field — list or scalar.
-
-    Returns:
-        dict with ``message`` and ``code`` keys.
+    DRF wraps field errors in lists even when there is only one.
+    We surface only the first — showing multiple errors per field
+    simultaneously is poor UX.
     """
-    if isinstance(value, list) and len(value) > 0:
+    if isinstance(value, list) and value:
         return _extract_error_detail(value[0])
     return _extract_error_detail(value)
 
 
-# ─── Error normalization ──────────────────────────────────────────────────────
+# ─── DRF error normalizer ─────────────────────────────────────────────────────
 
-def _format_errors(data: Any, status_code: int = 400) -> dict[str, Any]:
+def _format_drf_errors(data: Any, status_code: int) -> dict[str, Any]:
     """
-    Normalize DRF error structures into the standardized error envelope.
+    Normalize DRF error data into the standard errors envelope.
 
-    DRF returns errors in multiple formats depending on exception type:
-        - dict: {"email": [ErrorDetail(...)], "non_field_errors": [...]}
-        - list: [ErrorDetail("detail message")]
-        - str:  "Not found."
+    Called by:
+        - custom_exception_handler for DRF-recognised exceptions
+        - BaseAPIView.error_response() for manually constructed responses
+        - BaseAPIView.not_found_response() / unauthorized_response() /
+          forbidden_response() to ensure a consistent errors envelope
 
-    Output contract (always):
-        {
-            "code":       str,           # top-level category code
-            "fields":     dict | null,   # field-level errors
-            "non_fields": dict | null    # non-field / cross-field errors
-        }
+    DRF error shapes handled:
+        dict  → {"email": [ErrorDetail], "non_field_errors": [...]}
+        list  → [ErrorDetail("Authentication credentials not provided.")]
+        str   → "Not found."
 
-    The top-level ``code`` is derived from the HTTP status code so the
-    frontend always knows the error category without inspecting fields.
-
-    Args:
-        data:        Raw error data from DRF response.
-        status_code: HTTP status from the DRF response object.
-
-    Returns:
-        Standardized error dict matching the contract above.
+    Returns the full ``errors`` sub-object (code + fields + non_fields).
     """
     top_level_code = _status_to_error_code(status_code)
     fields: dict[str, Any] = {}
-    non_fields: dict[str, str] | None = None
+    non_fields: dict[str, Any] | None = None
 
-    # ── Dict — standard validation error shape from DRF ───────────────────────
     if isinstance(data, dict):
         for field, value in data.items():
             if field == "non_field_errors":
-                # Cross-field errors — not tied to a specific field
-                non_fields = _resolve_single(value)
+                raw = value[0] if isinstance(value, list) and value else value
+                non_fields = _non_fields_validation(raw)
             else:
-                # Field-level error — map onto fields dict
                 fields[field] = _resolve_single(value)
 
-    # ── List — e.g. top-level AuthenticationFailed, PermissionDenied ─────────
-    elif isinstance(data, list) and len(data) > 0:
-        non_fields = _extract_error_detail(data[0])
+    elif isinstance(data, list) and data:
+        non_fields = _non_fields_validation(data[0])
 
-    # ── Plain string — e.g. "Not found." ─────────────────────────────────────
     elif isinstance(data, str):
-        non_fields = {"message": data, "code": top_level_code}
+        non_fields = {
+            "category": "validation",
+            "message":  data,
+            "code":     top_level_code,
+            "extra":    None,
+        }
 
     return {
         "code":       top_level_code,
@@ -155,12 +268,17 @@ def _format_errors(data: Any, status_code: int = 400) -> dict[str, Any]:
     }
 
 
+# ─── HTTP mapping helpers ─────────────────────────────────────────────────────
+
 def _status_to_error_code(status_code: int) -> str:
     """
-    Map HTTP status codes to top-level ErrorCode category strings.
+    Map HTTP status to top-level ErrorCode string.
 
-    These populate the ``errors.code`` field so the frontend always
-    knows the error category without inspecting message strings.
+    409 → CONFLICT_ERROR, not VALIDATION_ERROR.
+    Rationale: validation_error implies "you sent malformed data."
+    A 409 means "data was valid but current state refuses the operation."
+    Conflating them forces the frontend to inspect category to correct
+    the top-level code, which defeats having a top-level code at all.
     """
     return {
         400: ErrorCode.VALIDATION_ERROR,
@@ -168,30 +286,50 @@ def _status_to_error_code(status_code: int) -> str:
         403: ErrorCode.PERMISSION_ERROR,
         404: ErrorCode.NOT_FOUND,
         405: ErrorCode.METHOD_NOT_ALLOWED,
+        409: ErrorCode.CONFLICT_ERROR,
         429: ErrorCode.RATE_LIMIT_EXCEEDED,
         500: ErrorCode.SERVER_ERROR,
+        503: ErrorCode.SERVER_ERROR,
     }.get(status_code, ErrorCode.SERVER_ERROR)
 
 
 def _status_to_message(status_code: int) -> str:
-    """
-    Map HTTP status codes to human-readable default messages.
-
-    Provides more useful default messages than a single generic string
-    while keeping sensitive implementation details out of responses.
-    """
+    """Map HTTP status to safe, human-readable default message."""
     return {
         400: "Invalid request data.",
         401: "Authentication required.",
         403: "You do not have permission to perform this action.",
         404: "The requested resource was not found.",
         405: "Method not allowed.",
+        409: "This action conflicts with the current state of the resource.",
         429: "Too many requests. Please slow down.",
         500: "An unexpected error occurred. Please try again later.",
+        503: "The service is temporarily unavailable. Please try again shortly.",
     }.get(status_code, "Request failed.")
 
 
-# ─── Handler ─────────────────────────────────────────────────────────────────
+# ─── Response builder ─────────────────────────────────────────────────────────
+
+def _build_response(
+    *,
+    status_code: int,
+    errors: dict[str, Any],
+    request_id: str | None,
+) -> Response:
+    """Assemble the final standardized Response object."""
+    return Response(
+        {
+            "success": False,
+            "message": _status_to_message(status_code),
+            "data":    None,
+            "errors":  errors,
+            "meta":    {"request_id": request_id},
+        },
+        status=status_code,
+    )
+
+
+# ─── Main handler ─────────────────────────────────────────────────────────────
 
 def custom_exception_handler(
     exc: Exception,
@@ -200,88 +338,166 @@ def custom_exception_handler(
     """
     Global DRF exception handler — standardizes all error responses.
 
-    Behaviour:
-        - Expected DRF exceptions (4xx): formatted response, no monitor alert.
-        - Unhandled exceptions (response is None / 5xx):
-            - Monitors notified.
-            - Logged at ERROR with full traceback.
-            - Raw exception detail NEVER exposed to client in production.
-            - request_id included in response for client-side correlation.
+    All logging happens here and only here. Builders are pure functions.
+    This guarantees exactly one log entry and one Sentry issue per exception.
+
+    Decision tree
+    ─────────────
+    1.  DomainError
+        → status from exc.status_code (400 or 409)
+        → non_fields.category = "domain"
+        → NO monitor alert
+        → logged at WARNING, no traceback
+        → exc.internal logged at DEBUG before builder is called
+        → exc.client_extra forwarded to client via builder
+
+    2.  InfrastructureError
+        → 503 Service Unavailable
+        → non_fields.category = "system"
+        → notify=True  → monitor alert + ERROR log with traceback
+        → notify=False → WARNING log, no traceback, no monitor
+        → exc.internal logged at appropriate level before builder is called
+        → exc.client_extra forwarded to client via builder
+
+    3.  DRF-recognised exception (ValidationError, AuthenticationFailed, …)
+        → original DRF status code preserved
+        → non_fields.category = "validation" (or null for pure field errors)
+        → 4xx → WARNING, no traceback
+        → 5xx → ERROR + traceback + monitor alert
+
+    4.  Unhandled exception (DRF produces no response)
+        → 500 Internal Server Error
+        → non_fields.category = "unexpected"
+        → always ERROR + traceback + monitor alert
+        → raw message shown in DEBUG only, hidden in production
+
+    Security invariant
+    ──────────────────
+    exc.internal is logged here and never passed to any builder.
+    Builders only receive the exception object to read client_extra.
 
     Args:
-        exc: The raised exception.
+        exc:     The raised exception.
         context: DRF handler context (contains ``request``, ``view``).
 
     Returns:
-        Standardized ``Response`` object.
+        Standardized Response object.
     """
     request: Request | None = context.get("request")
     request_id: str | None = getattr(request, "id", None)
 
+    # ── 1. DomainError ────────────────────────────────────────────────────────
+    if isinstance(exc, DomainError):
+        # Log internal diagnostic data at DEBUG — not a defect, no traceback.
+        if exc.internal:
+            logger.debug(
+                "DomainError internal context [%s]: %s",
+                exc.code,
+                exc.internal,
+                extra={"request_id": request_id},
+            )
+        logger.warning(
+            "Domain error: %s [code=%s, status=%s]",
+            exc.message,
+            exc.code,
+            exc.status_code,
+            extra={"request_id": request_id},
+        )
+        return _build_response(
+            status_code=exc.status_code,
+            errors={
+                "code":       _status_to_error_code(exc.status_code),
+                "fields":     None,
+                "non_fields": _non_fields_domain(exc),
+            },
+            request_id=request_id,
+        )
+
+    # ── 2. InfrastructureError ────────────────────────────────────────────────
+    if isinstance(exc, InfrastructureError):
+        if exc.notify:
+            # Unexpected infrastructure failure — alert on-call, full traceback.
+            _notify_monitors(exc)
+            if exc.internal:
+                logger.error(
+                    "InfrastructureError internal context [%s]: %s",
+                    exc.code,
+                    exc.internal,
+                    exc_info=True,
+                    extra={"request_id": request_id},
+                )
+            logger.error(
+                "Infrastructure error: %s [code=%s]",
+                exc.message,
+                exc.code,
+                exc_info=True,
+                extra={"request_id": request_id},
+            )
+        else:
+            # Expected, handled outage — no monitor, no traceback.
+            if exc.internal:
+                logger.warning(
+                    "InfrastructureError (handled) internal context [%s]: %s",
+                    exc.code,
+                    exc.internal,
+                    extra={"request_id": request_id},
+                )
+            logger.warning(
+                "Infrastructure error (expected/handled): %s [code=%s]",
+                exc.message,
+                exc.code,
+                extra={"request_id": request_id},
+            )
+        return _build_response(
+            status_code=503,
+            errors={
+                "code":       ErrorCode.SERVER_ERROR,
+                "fields":     None,
+                "non_fields": _non_fields_infrastructure(exc),
+            },
+            request_id=request_id,
+        )
+
+    # ── 3. DRF-recognised exception ───────────────────────────────────────────
     response = exception_handler(exc, context)
 
-    # ── Unhandled exception (no DRF response produced) ────────────────────────
-    if response is None:
-        _notify_monitors(exc)
-        logger.error(
-            "Unhandled exception in view",
-            exc_info=True,
-            extra={
-                "request_id": request_id,
-                "exception_type": type(exc).__name__,
-            },
-        )
-        return Response(
-            {
-                "success": False,
-                "message": _status_to_message(500),
-                "data": None,
-                "errors": {
-                    "code": ErrorCode.SERVER_ERROR,
-                    "fields": None,
-                    # In DEBUG we expose the exception for local dev convenience.
-                    # In production this is always None — never leak internals.
-                    "non_fields": (
-                        {"message": str(exc), "code": ErrorCode.SERVER_ERROR}
-                        if settings.DEBUG
-                        else None
-                    ),
-                },
-                "meta": {"request_id": request_id},
-            },
-            status=500,
+    if response is not None:
+        if response.status_code >= 500:
+            _notify_monitors(exc)
+            logger.error(
+                "Server error via DRF handler [%s] %s",
+                response.status_code,
+                type(exc).__name__,
+                exc_info=True,
+                extra={"request_id": request_id},
+            )
+        else:
+            logger.warning(
+                "Client error handled [%s] %s",
+                response.status_code,
+                type(exc).__name__,
+                extra={"request_id": request_id},
+            )
+        return _build_response(
+            status_code=response.status_code,
+            errors=_format_drf_errors(response.data, response.status_code),
+            request_id=request_id,
         )
 
-    # ── Known DRF exception (4xx / standard 5xx) ─────────────────────────────
-    if response.status_code >= 500:
-        _notify_monitors(exc)
-        logger.error(
-            "Server error via DRF exception handler",
-            exc_info=True,
-            extra={
-                "request_id": request_id,
-                "status_code": response.status_code,
-            },
-        )
-    else:
-        logger.warning(
-            "Client error handled",
-            extra={
-                "request_id": request_id,
-                "status_code": response.status_code,
-                "exception_type": type(exc).__name__,
-            },
-        )
-
-    return Response(
-        {
-            "success": False,
-            "message": _status_to_message(response.status_code),
-            "data": None,
-            "errors": _format_errors(response.data, response.status_code),
-            "meta": {"request_id": request_id},
-        },
-        status=response.status_code,
+    # ── 4. Unhandled exception ────────────────────────────────────────────────
+    _notify_monitors(exc)
+    logger.error(
+        "Unhandled exception [%s]",
+        type(exc).__name__,
+        exc_info=True,
+        extra={"request_id": request_id},
     )
-
-    
+    return _build_response(
+        status_code=500,
+        errors={
+            "code":       ErrorCode.SERVER_ERROR,
+            "fields":     None,
+            "non_fields": _non_fields_unexpected(exc, status_code=500),
+        },
+        request_id=request_id,
+    )
