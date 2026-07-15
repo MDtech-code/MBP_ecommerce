@@ -84,7 +84,6 @@ class UserAddressInline(admin.TabularInline):
 # ─────────────────────────────────────────────────────────────────────────────
 # USER ADMIN
 # ─────────────────────────────────────────────────────────────────────────────
-
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
     """
@@ -193,6 +192,13 @@ class UserAdmin(BaseUserAdmin):
 
     filter_horizontal = ["groups", "user_permissions"]
 
+    # ── Delete permission ──────────────────────────────────────────────────────
+    # BaseUserAdmin disables delete by default as a safety measure.
+    # We explicitly restore it here so admin can hard delete users
+    # directly from the admin panel — both from list view (bulk action)
+    # and from individual user detail page.
+    def has_delete_permission(self, request, obj=None) -> bool:
+        return True
 
 # ─────────────────────────────────────────────────────────────────────────────
 # USER PROFILE ADMIN
@@ -415,7 +421,7 @@ class EmailVerificationTokenAdmin(admin.ModelAdmin):
         return False
 
     def has_delete_permission(self, request: HttpRequest, obj=None) -> bool:
-        return False
+        return True
 
     @admin.display(boolean=True, description=_("Valid"))
     def display_is_valid(self, obj: EmailVerificationToken) -> bool:
@@ -471,7 +477,7 @@ class PasswordResetTokenAdmin(admin.ModelAdmin):
         return False
 
     def has_delete_permission(self, request: HttpRequest, obj=None) -> bool:
-        return False
+        return True
 
     @admin.display(boolean=True, description=_("Valid"))
     def display_is_valid(self, obj: PasswordResetToken) -> bool:
@@ -556,7 +562,7 @@ class PendingEmailChangeAdmin(admin.ModelAdmin):
         return False
 
     def has_change_permission(self, request: HttpRequest, obj=None) -> bool:
-        return False
+        return True
 
     @admin.display(boolean=True, description=_("Valid"))
     def display_is_valid(self, obj: PendingEmailChange) -> bool:
@@ -619,8 +625,13 @@ class UserLoginActivityAdmin(admin.ModelAdmin):
         return False
 
     def has_delete_permission(self, request: HttpRequest, obj=None) -> bool:
-        return False
+        return True
 
     @admin.display(boolean=True, description=_("Successful"))
     def display_was_successful(self, obj: UserLoginActivity) -> bool:
         return obj.was_successful
+    
+
+
+
+
