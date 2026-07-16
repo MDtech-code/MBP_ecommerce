@@ -2,9 +2,9 @@
 import { useRef, useState } from "react"
 import { X, Camera, Upload, UserRound } from "lucide-react"
 import Portal from "../../../shared/ui/Portal/Portal"
-import { useUploadAvatar } from "../../../hooks/account/useAuthMutations"
+import { useUploadAvatar } from "../api/useProfileMutations"
 import { getMediaUrl } from "../../../shared/lib/media"
-import { normalizeError } from "../../../api/transformers"
+import { normalizeError } from "../../../shared/api/transformers"
 
 export default function AvatarModal({ currentAvatar, onClose }) {
   const fileRef = useRef(null)

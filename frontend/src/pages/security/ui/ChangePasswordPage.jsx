@@ -3,9 +3,9 @@
 import { ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
-import DashboardLayout from "../../../components/account/DashboardLayout";
-import PasswordStrength from "../../../components/account/security/PasswordStrength";
-import { useChangePasswordForm } from "../../../hooks/account/useChangePasswordForm";
+import DashboardLayout from "../../../widgets/layout/ui/DashboardLayout";
+import PasswordStrength from "../../../features/auth/ui/PasswordStrength";
+import { useChangePasswordForm } from "../../../features/auth/model/useChangePasswordForm";
 
 export default function ChangePassword() {
   const navigate = useNavigate();
