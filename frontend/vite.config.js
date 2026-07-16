@@ -61,7 +61,7 @@ export default defineConfig(({ mode }) => {
       // Points to NEW location after Phase 2 moves setup.js to app/config/test/
       // During Phase 1 (right now) this still points to old location.
       // We update this path when we execute the setup.js move in Phase 2.
-      setupFiles: "./src/test/setup.js",
+      setupFiles: "./src/app/config/test/setup.js",
     },
 
     // ── Dev Server ──────────────────────────────────────────────────────────
