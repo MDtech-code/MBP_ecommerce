@@ -429,47 +429,7 @@ class ResendVerificationSerializer(serializers.Serializer):
 
     def validate_email(self, value: str) -> str:
         return value.lower().strip()
-# # ─── Email Verification Serializer ───────────────────────────────────────────
 
-# class EmailVerificationSerializer(serializers.Serializer):
-#     """
-#     Accept and validate an email verification token.
-
-#     The token is a UUID submitted by the user after clicking
-#     the verification link sent to their email address.
-
-#     Fields:
-#         token: UUID string from the verification email link.
-#     """
-
-#     token = serializers.UUIDField(
-#         error_messages={
-#             "invalid": _("Invalid verification token."),
-#             "blank": _("Verification token is required."),
-#         }
-#     )
-
-# # ─── Resend Verification Serializer ──────────────────────────────────────────
-
-# class ResendVerificationSerializer(serializers.Serializer):
-#     """
-#     Accept an email address for verification resend requests.
-
-#     Intentionally minimal — we normalize the email and return it.
-#     Existence and verification state checks happen in the view,
-#     not here, to prevent serializer-level email enumeration.
-
-#     Fields:
-#         email: Email address to resend verification to.
-#     """
-
-#     email = serializers.EmailField(
-#         error_messages={"blank": _("Email address is required.")}
-#     )
-
-#     def validate_email(self, value: str) -> str:
-#         """Normalize email to lowercase and strip whitespace."""
-#         return value.lower().strip()
 
 
 # ─── Password Reset Request ────────────────────────────────────────────────────

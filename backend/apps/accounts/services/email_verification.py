@@ -54,7 +54,7 @@ def verify_email(*, token_value: str) -> bool:
     try:
         with transaction.atomic():
 
-            # Step 1: Fetch token
+            #! Step 1: Fetch token
             try:
                 token_obj = (
                     EmailVerificationToken.objects
@@ -75,7 +75,7 @@ def verify_email(*, token_value: str) -> bool:
             user = token_obj.user
             log_context["user_id"] = user.id
 
-            # Step 2a: Check expiry
+            #! Step 2a: Check expiry
             if token_obj.is_expired:
                 logger.warning(
                     "Email verification failed — token expired",
@@ -87,7 +87,7 @@ def verify_email(*, token_value: str) -> bool:
                     status_code=400,
                 )
 
-            # Step 2b: Check already used
+            #! Step 2b: Check already used
             if token_obj.is_used:
                 logger.warning(
                     "Email verification failed — token already used",
@@ -99,7 +99,7 @@ def verify_email(*, token_value: str) -> bool:
                     status_code=400,
                 )
 
-            # Step 2c: Already verified — idempotent
+            #! Step 2c: Already verified — idempotent
             # No DB writes needed. Return False so view sends
             # the correct "already verified" message to the client.
             if user.is_verified:
@@ -109,10 +109,10 @@ def verify_email(*, token_value: str) -> bool:
                 )
                 return False
 
-            # Step 3: Mark token as used
+            #! Step 3: Mark token as used
             token_obj.mark_used()
 
-            # Step 4: Mark user as verified
+            #! Step 4: Mark user as verified
             user.is_verified = True
             user.save(update_fields=["is_verified"])
 
