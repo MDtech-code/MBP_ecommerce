@@ -9,7 +9,10 @@ from apps.core.error_codes import ErrorCode
 from apps.core.exceptions import DomainError
 
 logger = logging.getLogger("apps.accounts")
+from typing import TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from apps.accounts.models import User,UserAddress,QuerySet
 
 # ── Profile ────────────────────────────────────────────────────────────────────
 
