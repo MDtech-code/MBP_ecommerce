@@ -13,12 +13,12 @@ import Profile from "../pages/account/Profile"
 import ProductListing from "../pages/products/ProductListing"
 import ProductDetail from "../pages/products/ProductDetail"
 import CartPage from "../pages/cart/CartPage"
-import ProtectedRoute from "../components/layout/ProtectedRoute"
 import Security from "../pages/account/security/Security";
 import ChangePassword from "../pages/account/security/ChangePassword";
 import ForgotPasswordSent from "../pages/account/ForgotPasswordSent";
 
 
+import ProtectedRoute from "../providers/guards/ProtectedRoute"
 import GuestRoute from "../providers/guards/GuestRoute";
 
 export const router = createBrowserRouter([
