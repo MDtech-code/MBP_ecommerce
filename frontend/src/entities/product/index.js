@@ -2,7 +2,7 @@
 // Public API of the product entity.
 
 // api
-export { useProductQueries } from "./api/useProductQueries";
+//export { useProductQueries } from "./api/useProductQueries";
 
 // ui
 export { default as ProductCard } from "./ui/ProductCard";

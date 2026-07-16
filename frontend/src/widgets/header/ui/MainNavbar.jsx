@@ -9,8 +9,8 @@ import MobileMenu from "./MobileMenu";
 import SearchBar from "../../../shared/ui/SearchBar/SearchBar";
 import { getMediaUrl } from "../../../shared/lib/media";
 import { useLogoutForm } from "../../../features/auth/model/useLogout";
-import BikePartsMegaMenu from "./menu/BikePartsMegaMenu";
-import BrandsMegaMenu from "./menu/BrandsMegaMenu";
+import BikePartsMegaMenu from "./BikePartsMegaMenu";
+import BrandsMegaMenu from "./BrandsMegaMenu";
 import CartIcon from "../../../features/cart/ui/CartIcon";
 
 /**

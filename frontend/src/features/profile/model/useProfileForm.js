@@ -1,7 +1,7 @@
 // src/hooks/account/useProfileForm.js
 import { useState } from "react";
 import { useUpdateProfile } from "../api/useProfileMutations";
-import { useAuthStore } from "../../../entities/user/model/authStore";
+import { useAuthStore } from "@entities/user";
 import { normalizeError } from "../../../shared/api/transformers";
 
 export function useProfileForm(onSaveSuccess) {

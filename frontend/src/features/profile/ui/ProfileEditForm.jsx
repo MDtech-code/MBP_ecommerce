@@ -1,7 +1,7 @@
 // src/components/profile/ProfileEditForm.jsx
 import { X, Save } from "lucide-react"
-import ProfileEditField from "./ProfileEditField"
-import { useProfileForm } from "../../../hooks/account/useProfileForm"
+import ProfileEditField from './ProfileEditField'
+import { useProfileForm } from "../../../features/profile/model/useProfileForm"
 
 const GENDER_OPTIONS = [
   { value: "",  label: "Select gender" },

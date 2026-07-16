@@ -3,7 +3,7 @@
 // Nothing outside imports from internal paths directly.
 
 // api
-export { useAuthMutations } from "./api/useAuthMutations";
+// export { useAuthMutations } from "./api/useAuthMutations";
 
 // model
 export { useLoginForm } from "./model/useLoginForm";
@@ -11,8 +11,8 @@ export { useRegisterForm } from "./model/useRegisterForm";
 export { useForgotPasswordForm } from "./model/useForgotPasswordForm";
 export { useResetPasswordForm } from "./model/useResetPasswordForm";
 export { useChangePasswordForm } from "./model/useChangePasswordForm";
-export { useVerifyEmail } from "./model/useVerifyEmail";
-export { useLogout } from "./model/useLogout";
+export { useVerifyEmailPage } from "./model/useVerifyEmail";
+// export { useLogout } from "./model/useLogout";
 
 // ui
 export { default as SocialLogin } from "./ui/SocialLogin";

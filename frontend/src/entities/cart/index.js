@@ -2,7 +2,7 @@
 // Public API of the cart entity.
 
 // api
-export { useCartQueries } from "./api/useCartQueries";
+//export { useCartQueries } from "./api/useCartQueries";
 
 // ui
 export { default as CartItem } from "./ui/CartItem";

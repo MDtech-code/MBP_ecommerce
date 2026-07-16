@@ -2,7 +2,7 @@
 // Public API of the profile feature.
 
 // api
-export { useProfileMutations } from "./api/useProfileMutations";
+// export { useProfileMutations } from "./api/useProfileMutations";
 
 // model
 export { useProfileForm } from "./model/useProfileForm";

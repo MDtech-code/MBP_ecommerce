@@ -2,7 +2,7 @@
 // Public API of the cart feature.
 
 // api
-export { useCartMutations } from "./api/useCartMutations";
+// export { useCartMutations } from "./api/useCartMutations";
 
 // model
 export { useCart } from "./model/useCart";

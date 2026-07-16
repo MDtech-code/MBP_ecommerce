@@ -3,19 +3,19 @@
 
 import { createBrowserRouter } from "react-router-dom"
 
-import Home from "../pages/Home"
-import Register from "../pages/account/Register"
-import Login from "../pages/account/Login"
-import VerifyEmail from "../pages/account/VerifyEmail"
-import ForgotPassword from "../pages/account/ForgotPassword"
-import ResetPassword from "../pages/account/ResetPassword"
-import Profile from "../pages/account/Profile"
-import ProductListing from "../pages/products/ProductListing"
-import ProductDetail from "../pages/products/ProductDetail"
-import CartPage from "../pages/cart/CartPage"
-import Security from "../pages/account/security/Security";
-import ChangePassword from "../pages/account/security/ChangePassword";
-import ForgotPasswordSent from "../pages/account/ForgotPasswordSent";
+import Home from "../../pages/home/ui/HomePage"
+import Register from "../../pages/register/ui/RegisterPage"
+import Login from "../../pages/login/ui/LoginPage"
+import VerifyEmail from "../../pages/auth/ui/VerifyEmailPage"
+import ForgotPassword from "../../pages/auth/ui/ForgotPasswordPage"
+import ResetPassword from "../../pages/auth/ui/ResetPasswordPage"
+import Profile from "../../pages/profile/ui/ProfilePage"
+import ProductListing from "../../pages/products/ui/ProductListingPage"
+import ProductDetail from "../../pages/products/ui/ProductDetailPage"
+import CartPage from "../../pages/cart/ui/CartPage"
+import Security from "../../pages/security/ui/SecurityPage";
+import ChangePassword from "../../pages/security/ui/ChangePasswordPage";
+import ForgotPasswordSent from "../../pages/auth/ui/ForgotPasswordSentPage";
 
 
 import ProtectedRoute from "../providers/guards/ProtectedRoute"

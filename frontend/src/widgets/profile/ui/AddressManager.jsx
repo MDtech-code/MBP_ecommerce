@@ -8,7 +8,7 @@ import {
   useDeleteAddress,
   useSetDefaultAddress,
 } from "../../../features/address/api/useAddressMutations"
-import { useAuthStore } from "../../../entities/user/model/authStore"
+import { useAuthStore } from "@entities/user"
 
 export default function AddressManager({ onBack }) {
   const user      = useAuthStore((state) => state.user)

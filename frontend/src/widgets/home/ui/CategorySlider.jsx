@@ -1,8 +1,8 @@
 import { useRef } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import Container from "../common/Container";
+import Container from "../../../shared/ui/Container/Container";
 import CategoryCard from "./CategoryCard";
-import { categories } from "../../data/categories";
+import { categories } from "../../../shared/config/data/categories";
 
 export default function CategorySlider() {
   const scrollRef = useRef(null);

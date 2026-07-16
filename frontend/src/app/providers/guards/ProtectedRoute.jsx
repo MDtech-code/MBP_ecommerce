@@ -1,7 +1,7 @@
 // src/components/layout/ProtectedRoute.jsx
 
 import { Navigate, Outlet, useLocation } from "react-router-dom"
-import { useAuthStore } from "../../stores/authStore"
+import { useAuthStore } from "@entities/user"
 import { hasAuthToken } from "../../../shared/lib/authToken"
 
 export default function ProtectedRoute() {
