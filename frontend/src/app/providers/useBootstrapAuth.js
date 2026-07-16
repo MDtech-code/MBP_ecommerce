@@ -4,7 +4,7 @@ import {  useEffect } from "react";
 import { accountService } from "../../shared/api/services/accountService";
 import { setAuthToken } from "../../shared/lib/authToken";
 
-import { useAuthStore } from "../../stores/authStore";
+import { useAuthStore } from "../../../entities/user/model/authStore";
 
 // Module-level — survives StrictMode remounts, resets on true page reload
 let bootstrapAttempted = false

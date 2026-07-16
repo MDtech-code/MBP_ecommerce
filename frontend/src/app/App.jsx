@@ -5,7 +5,7 @@ import { RouterProvider } from "react-router-dom"
 import { router } from "./providers/router"
 import { useBootstrapAuth } from "./providers/useBootstrapAuth"
 
-import { useAuthStore } from "./stores/authStore"
+import { useAuthStore } from "../../../entities/user/model/authStore";
 function AppContent() {
   useBootstrapAuth()
 
