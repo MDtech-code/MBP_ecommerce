@@ -1,6 +1,6 @@
-// src/components/common/Portal.jsx
-import { createPortal } from "react-dom"
+// // src/components/common/Portal.jsx
+// import { createPortal } from "react-dom"
 
-export default function Portal({ children }) {
-  return createPortal(children, document.body)
-}
+// export default function Portal({ children }) {
+//   return createPortal(children, document.body)
+// }
