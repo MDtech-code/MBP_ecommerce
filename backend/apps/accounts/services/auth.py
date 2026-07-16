@@ -69,9 +69,8 @@ def login_user(
         DomainError: Token generation failed (400).
     """
 
-    # ── Step 1: Authenticate credentials ──────────────────────────────────────
-    # authenticate() returns None for wrong email or wrong password.
-    # Intentionally vague error — never confirm whether email exists.
+    #! ── Step 1: Authenticate credentials ──────────────────────────────────────
+    
     user = authenticate(username=email, password=password)
 
     if user is None:
@@ -92,7 +91,7 @@ def login_user(
             status_code=400,
         )
 
-    # ── Step 2: Account active check ───────────────────────────────────────────
+    #! ── Step 2: Account active check ───────────────────────────────────────────
     if not user.is_active:
         log_login_activity(
             email=email,
@@ -112,7 +111,7 @@ def login_user(
             status_code=400,
         )
 
-    # ── Step 3: Email verified check ───────────────────────────────────────────
+    #! ── Step 3: Email verified check ───────────────────────────────────────────
     if not user.is_verified:
         log_login_activity(
             email=email,
@@ -132,7 +131,7 @@ def login_user(
             status_code=400,
         )
 
-    # ── Step 4: Log successful login ───────────────────────────────────────────
+    #! ── Step 4: Log successful login ───────────────────────────────────────────
     log_login_activity(
         email=email,
         was_successful=True,
@@ -142,7 +141,7 @@ def login_user(
         failure_reason="",
     )
 
-    # ── Step 5: Generate JWT tokens ────────────────────────────────────────────
+    #! ── Step 5: Generate JWT tokens ────────────────────────────────────────────
     try:
         refresh = RefreshToken.for_user(user)
     except Exception:

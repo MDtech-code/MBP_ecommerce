@@ -14,10 +14,6 @@ logger = logging.getLogger("apps.accounts")
 
 
 
-
-
-
-# Example receiver you could add to signals.py:
 @receiver(user_login_failed)
 def handle_login_failure(sender, credentials, request, **kwargs):
     email = credentials.get("username", "unknown")
