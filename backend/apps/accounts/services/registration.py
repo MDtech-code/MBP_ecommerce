@@ -70,7 +70,7 @@ def register_user(
     try:
         with transaction.atomic():
 
-            # Step 1: Create User
+            #! Step 1: Create User
             try:
                 user = User.objects.create_user(
                     email=email,
@@ -93,21 +93,21 @@ def register_user(
                 extra={**log_context, "user_id": user.id},
             )
 
-            # Step 2: Create UserProfile
+            #! Step 2: Create UserProfile
             UserProfile.objects.create(user=user)
             logger.info(
-                "UserProfile created",
-                extra={**log_context, "user_id": user.id},
-            )
+             "UserProfile created for new user",
+             extra={"user_id": user.id, "email": user.email},
+         )
 
-            # Step 3: Create Cart
+            #! Step 3: Create Cart
             Cart.objects.create(user=user)
             logger.info(
                 "Cart created",
                 extra={**log_context, "user_id": user.id},
             )
 
-            # Step 4: Create EmailVerificationToken
+            #! Step 4: Create EmailVerificationToken
             token_obj = EmailVerificationToken.objects.create(user=user)
             logger.info(
                 "Verification token created",
