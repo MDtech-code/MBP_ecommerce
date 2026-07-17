@@ -1,3 +1,4 @@
+
 // shared/lib/index.js
 
 export { initAuthSync } from "./authSync";

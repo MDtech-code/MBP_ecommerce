@@ -6,3 +6,5 @@ export * from "./Pagination";
 export * from "./Portal";
 export * from "./SearchBar";
 export * from "./SectionTitle";
+export * from "./FormField";
+export * from "./HeroBenefits";

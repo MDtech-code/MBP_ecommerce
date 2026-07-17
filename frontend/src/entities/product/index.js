@@ -7,7 +7,7 @@ export {
   useProductDetail,
 } from "./api/useProductQueries";
 
-export { default as ProductActions } from "./ui/ProductActions";
+
 export { default as ProductCard } from "./ui/ProductCard";
 export { default as ProductGallery } from "./ui/ProductGallery";
 export { default as ProductInfo } from "./ui/ProductInfo";
