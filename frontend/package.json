@@ -11,6 +11,7 @@
     "test:ui": "vitest --ui",
     "build": "vite build",
     "lint": "eslint .",
+    "lint:fsd": "node scripts/verify-fsd.js",
     "preview": "vite preview"
   },
   "dependencies": {
