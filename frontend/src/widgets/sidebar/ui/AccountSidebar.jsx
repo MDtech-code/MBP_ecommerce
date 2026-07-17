@@ -2,7 +2,7 @@
 import { User, Package, MapPin, Heart, Shield, LogOut } from "lucide-react"
 import { useNavigate, useLocation } from "react-router-dom"
 
-import {useLogoutForm} from "../../../features/auth/model/useLogout";
+import { useLogoutForm } from "@features/auth"
 const menu = [
   { name: "Profile",   icon: User,    path: "/profile"    },
   { name: "Orders",    icon: Package, path: "/orders"      },
