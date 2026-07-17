@@ -1,4 +1,4 @@
-// src/stores/authStore.js
+// src/entities/user/model/authStore.js
 import { create } from "zustand";
 import {
   setAuthToken,
