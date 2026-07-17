@@ -2,10 +2,10 @@
 import { Link } from "react-router-dom";
 
 import { useProductDetail } from "../model/useProductDetail";
-import { Header }         from "@widgets/header"
+
 import { ProductGallery } from "@entities/product"
 import { ProductInfo }    from "@entities/product"
-import { ProductActions } from "@entities/product"
+import { ProductActions } from "@features/cart"
 import { ProductTrust }   from "@entities/product"
 import { ProductTabs }    from "@entities/product"
 import { RelatedProducts } from "@widgets/product"
@@ -38,7 +38,7 @@ export default function ProductDetail() {
   if (isLoading) {
     return (
       <>
-        <Header />
+        
         <div className="bg-gray-50 min-h-screen">
           <div className="max-w-7xl mx-auto px-6 py-6">
 
@@ -85,7 +85,7 @@ export default function ProductDetail() {
   if (isNotFound) {
     return (
       <>
-        <Header />
+        
         <div className="bg-gray-50 min-h-screen flex items-center
                         justify-center">
           <div className="text-center py-24">
@@ -114,7 +114,7 @@ export default function ProductDetail() {
   if (isError) {
     return (
       <>
-        <Header />
+        
         <div className="bg-gray-50 min-h-screen flex items-center
                         justify-center">
           <div className="text-center py-24">
@@ -140,7 +140,7 @@ export default function ProductDetail() {
 
   return (
     <>
-      <Header />
+      
 
       <div className="bg-gray-50 min-h-screen">
         <div className="max-w-7xl mx-auto px-6 py-6">
@@ -178,6 +178,7 @@ export default function ProductDetail() {
             <div>
               <ProductInfo product={product} />
               <ProductActions
+                productId={product?.id}
                 isInStock={isInStock}
                 stock={stock}
               />

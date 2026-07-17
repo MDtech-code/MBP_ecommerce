@@ -3,7 +3,7 @@
 import { ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
-import { DashboardLayout } from "@widgets/layout"
+
 import { PasswordStrength } from "@features/auth"
 import { useChangePasswordForm } from "@features/auth"
 
@@ -22,7 +22,7 @@ export default function ChangePassword() {
   } = useChangePasswordForm();
 
   return (
-    <DashboardLayout>
+    <>
       <div className="max-w-4xl">
 
         {/* Back Button */}
@@ -230,6 +230,6 @@ export default function ChangePassword() {
         </div>
 
       </div>
-    </DashboardLayout>
+    </>
   );
 }

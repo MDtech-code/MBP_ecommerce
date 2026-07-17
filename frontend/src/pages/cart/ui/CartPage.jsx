@@ -1,6 +1,5 @@
   // src/pages/cart/CartPage.jsx
 import { Link } from "react-router-dom";
-import {Header} from "@widgets/header";
 import {CartList} from "@widgets/cart";
 import {CartSummary} from "@widgets/cart";
 import {CartTrust} from "@entities/cart";
@@ -48,7 +47,7 @@ export default function CartPage() {
   if (isLoading) {
     return (
       <>
-        <Header />
+        
         <div className="bg-gray-50 min-h-screen">
           <div className="max-w-7xl mx-auto px-6 py-6">
             <div className="grid lg:grid-cols-4 gap-6">
@@ -75,7 +74,7 @@ export default function CartPage() {
   if (isError) {
     return (
       <>
-        <Header />
+        
         <div className="bg-gray-50 min-h-screen flex items-center justify-center">
           <div className="text-center py-24">
             <p className="text-4xl mb-4">⚠️</p>
@@ -100,7 +99,7 @@ export default function CartPage() {
 
   return (
     <>
-      <Header />
+      
 
       <div className="bg-gray-50 min-h-screen">
         <div className="max-w-7xl mx-auto px-6 py-6">

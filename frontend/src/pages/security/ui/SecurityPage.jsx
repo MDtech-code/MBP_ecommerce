@@ -1,11 +1,11 @@
 
-import { DashboardLayout } from "@widgets/layout"
+
 import { SecurityGrid } from "@widgets/security"
 export default function Security() {
 
   return (
 
-    <DashboardLayout>
+    <>
 
       <div className="space-y-8">
 
@@ -33,7 +33,7 @@ export default function Security() {
 
       </div>
 
-    </DashboardLayout>
+    </>
 
   );
 

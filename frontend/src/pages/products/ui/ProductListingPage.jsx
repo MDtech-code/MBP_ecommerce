@@ -1,6 +1,6 @@
 // src/pages/products/ProductListing.jsx
 
-import { Header } from "@widgets/header"
+
 import { ProductSidebar } from "@widgets/sidebar"
 import { ProductGrid }    from "@widgets/product"
 import { ProductToolbar } from "@features/filtering"
@@ -51,7 +51,7 @@ export default function ProductListing() {
 
   return (
     <>
-      <Header />
+      
 
       <div className="bg-gray-50 min-h-screen">
         <div className="max-w-7xl mx-auto px-6 py-6">
