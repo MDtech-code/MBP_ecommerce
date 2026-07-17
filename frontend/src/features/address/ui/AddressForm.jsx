@@ -1,7 +1,8 @@
 // src/components/account/profile/AddressForm.jsx
 
 import { X, Save, MapPin } from "lucide-react"
-import { ProfileEditField } from "@features/profile"
+
+import { FormField } from "@shared/ui/FormField"
 import { useAddressForm } from "../model/useAddressForm"
 
 const LABEL_OPTIONS = [
@@ -119,7 +120,7 @@ export default function AddressForm({ existingAddress = null, onCancel }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
           {/* Label */}
-          <ProfileEditField
+          <FormField
             label="Address Type"
             name="label"
             error={fieldErrors.label}
@@ -134,10 +135,10 @@ export default function AddressForm({ existingAddress = null, onCancel }) {
                 <option key={value} value={value}>{label}</option>
               ))}
             </select>
-          </ProfileEditField>
+          </FormField>
 
           {/* City — grouped dropdown */}
-          <ProfileEditField
+          <FormField
             label="City"
             name="city"
             error={fieldErrors.city}
@@ -162,10 +163,10 @@ export default function AddressForm({ existingAddress = null, onCancel }) {
                 </optgroup>
               ))}
             </select>
-          </ProfileEditField>
+          </FormField>
 
           {/* Postal code — read only, auto-filled from city */}
-          <ProfileEditField label="Postal Code">
+          <FormField label="Postal Code">
             <div className="flex items-center gap-2 w-full border border-gray-100 rounded-lg px-3 py-2.5 bg-gray-50">
               <MapPin size={14} className="text-gray-300 shrink-0" />
               <span className={`text-sm ${form.city ? "text-gray-700 font-semibold" : "text-gray-300"}`}>
@@ -175,17 +176,17 @@ export default function AddressForm({ existingAddress = null, onCancel }) {
                 <span className="ml-auto text-xs text-gray-400">Auto-filled</span>
               )}
             </div>
-          </ProfileEditField>
+          </FormField>
 
           {/* Country — always Pakistan */}
-          <ProfileEditField label="Country">
+          <FormField label="Country">
             <div className="flex items-center gap-2 w-full border border-gray-100 rounded-lg px-3 py-2.5 bg-gray-50">
               <span className="text-sm text-gray-700 font-semibold">🇵🇰 Pakistan</span>
               <span className="ml-auto text-xs text-gray-400">Fixed</span>
             </div>
-          </ProfileEditField>
+          </FormField>
           {/* Phone */}
-          <ProfileEditField
+          <FormField
                       label="Phone Number"
                       name="phone"
                       value={form.phone}
@@ -195,7 +196,7 @@ export default function AddressForm({ existingAddress = null, onCancel }) {
 
           {/* Address Line 1 — full width */}
           <div className="sm:col-span-2">
-            <ProfileEditField
+            <FormField
               label="Street Address"
               name="address_line1"
               value={form.address_line1}
@@ -206,7 +207,7 @@ export default function AddressForm({ existingAddress = null, onCancel }) {
 
           {/* Address Line 2 — full width, optional */}
           <div className="sm:col-span-2">
-            <ProfileEditField
+            <FormField
               label="Apartment / Floor / Area (Optional)"
               name="address_line2"
               value={form.address_line2}

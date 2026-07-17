@@ -1,6 +1,8 @@
 // src/components/profile/ProfileEditForm.jsx
 import { X, Save } from "lucide-react"
-import ProfileEditField from './ProfileEditField'
+
+import { FormField } from "@shared/ui/FormField"
+
 import { useProfileForm } from "../../../features/profile/model/useProfileForm"
 
 const GENDER_OPTIONS = [
@@ -74,7 +76,7 @@ export default function ProfileEditForm({ onCancel }) {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
-          <ProfileEditField
+          <FormField
             label="Phone Number"
             name="phone"
             value={form.phone}
@@ -82,7 +84,7 @@ export default function ProfileEditForm({ onCancel }) {
             error={fieldErrors.phone}
           />
 
-          <ProfileEditField
+          <FormField
             label="Date of Birth"
             name="date_of_birth"
             type="date"
@@ -91,7 +93,7 @@ export default function ProfileEditForm({ onCancel }) {
             error={fieldErrors.date_of_birth}
           />
 
-          <ProfileEditField
+          <FormField
             label="Gender"
             name="gender"
             error={fieldErrors.gender}
@@ -111,7 +113,7 @@ export default function ProfileEditForm({ onCancel }) {
                 <option key={value} value={value}>{label}</option>
               ))}
             </select>
-          </ProfileEditField>
+          </FormField>
 
         </div>
       </div>
