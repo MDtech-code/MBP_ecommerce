@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useUpdateProfile } from "../api/useProfileMutations";
 import { useAuthStore } from "@entities/user";
-import { normalizeError } from "../../../shared/api/transformers";
+import { normalizeError } from "@shared/api";
 
 export function useProfileForm(onSaveSuccess) {
   const user = useAuthStore((state) => state.user);

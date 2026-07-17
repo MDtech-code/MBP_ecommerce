@@ -2,8 +2,13 @@
 // src/api/interceptors.js
 import axios from "axios"
 import { api } from "./client"
-import { setAuthToken, clearAuth, broadcastLogout,getAuthToken } from "./../lib/authToken"
-import { getCookie } from "../lib/getCsrfToken";
+import {
+  setAuthToken,
+  clearAuth,
+  broadcastLogout,
+  getAuthToken,
+} from "@shared/lib";
+import { getCookie } from "@shared/lib";
 
 let isRefreshing = false
 let failedQueue = []

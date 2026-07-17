@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useCreateAddress, useUpdateAddress } from "../api/useAddressMutations";
-import { normalizeError } from "../../../shared/api/transformers";
+import { normalizeError } from "@shared/api";
 
 export const CITY_POSTAL_MAP = {
   // Punjab

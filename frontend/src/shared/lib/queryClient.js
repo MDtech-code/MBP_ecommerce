@@ -1,6 +1,6 @@
 // src/lib/queryClient.js
 import { QueryClient } from "@tanstack/react-query";
-import { normalizeError } from "../api/transformers";
+import { normalizeError } from "@shared/api";
 
 export const queryClient = new QueryClient({
   defaultOptions: {

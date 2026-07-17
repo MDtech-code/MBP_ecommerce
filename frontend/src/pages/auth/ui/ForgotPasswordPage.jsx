@@ -2,9 +2,9 @@
 
 import { Link } from "react-router-dom";
 import { Lock, Mail } from "lucide-react";
-import AuthLayout from "../../../widgets/auth-layout/ui/AuthLayout";
-import FormInput from "../../../shared/ui/FormInput/FormInput";
-import { useForgotPasswordForm } from "../../../features/auth/model/useForgotPasswordForm";
+import { AuthLayout } from "@widgets/auth-layout"
+import { FormInput } from "@shared/ui"
+import { useForgotPasswordForm } from "@features/auth"
 
 const BRAND_PROPS = {
   title: "FORGOT YOUR",

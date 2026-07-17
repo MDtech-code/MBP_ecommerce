@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useVerifyEmail, useResendVerification } from "../api/useAuthMutations";
-import { normalizeError } from "../../../shared/api/transformers";
+import { normalizeError } from "@shared/api"
 
 // MODULE-LEVEL CACHE: Survives React 18 Strict Mode double-mounting!
 let activeToken = null;

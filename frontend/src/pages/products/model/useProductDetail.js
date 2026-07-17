@@ -1,7 +1,8 @@
 // src/hooks/products/useProductDetail.js
 import { useParams } from "react-router-dom";
-import { useProductDetail as useProductDetailQuery } from "../../../entities/product/api/useProductQueries";
-import { normalizeError } from "../../../shared/api/transformers";
+
+import { useProductDetail as useProductDetailQuery } from "@entities/product";
+import { normalizeError } from "@shared/api";
 
 /**
  * useProductDetail — Layer 3b

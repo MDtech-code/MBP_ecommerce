@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useRegister } from "../api/useAuthMutations";
-import { normalizeError, ErrorCode } from "../../../shared/api/transformers";
+import { normalizeError, ErrorCode } from "@shared/api";
 
 export function useRegisterForm() {
   const navigate = useNavigate();

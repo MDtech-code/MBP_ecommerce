@@ -2,7 +2,7 @@
 import { Link } from "react-router-dom";
 import { MailCheck } from "lucide-react";
 import {AuthLayout} from "@widgets/auth-layout";
-import { useVerifyEmailPage } from "@features/auth";
+import { useVerifyEmail } from "@features/auth";
 
 const BRAND_PROPS = {
   title: "CHECK YOUR",
@@ -21,7 +21,7 @@ export default function VerifyEmail() {
     resendErrorMsg,
     resendSuccessMsg,
     handleResend,
-  } = useVerifyEmailPage();
+  } = useVerifyEmail();
 
   // Only show the loading screen if we have a token AND it hasn't errored out
   const showVerifyingState = tokenFromUrl && !verifyErrorMsg;

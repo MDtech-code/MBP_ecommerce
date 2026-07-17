@@ -1,10 +1,10 @@
 // src/components/profile/AvatarModal.jsx
 import { useRef, useState } from "react"
 import { X, Camera, Upload, UserRound } from "lucide-react"
-import Portal from "../../../shared/ui/Portal/Portal"
+import { Portal } from "@shared/ui"
 import { useUploadAvatar } from "../api/useProfileMutations"
-import { getMediaUrl } from "../../../shared/lib/media"
-import { normalizeError } from "../../../shared/api/transformers"
+import { getMediaUrl } from "@shared/lib"
+import { normalizeError } from "@shared/api"
 
 export default function AvatarModal({ currentAvatar, onClose }) {
   const fileRef = useRef(null)

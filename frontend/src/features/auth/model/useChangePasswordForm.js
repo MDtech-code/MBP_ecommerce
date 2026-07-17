@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useChangePassword } from "../api/useAuthMutations";
-import { normalizeError } from "../../../shared/api/transformers";
+import { normalizeError } from "@shared/api";
 
 /**
  * useChangePasswordForm

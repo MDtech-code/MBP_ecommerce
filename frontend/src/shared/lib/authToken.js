@@ -1,6 +1,6 @@
 // src/api/authToken.js
 
-import { api } from "../api/client";
+import { api } from "@shared/api";
 
 let accessToken = null;
 

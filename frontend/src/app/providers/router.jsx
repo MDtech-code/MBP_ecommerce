@@ -3,19 +3,19 @@
 
 import { createBrowserRouter } from "react-router-dom"
 
-import Home from "../../pages/home/ui/HomePage"
-import Register from "../../pages/register/ui/RegisterPage"
-import Login from "../../pages/login/ui/LoginPage"
-import VerifyEmail from "../../pages/auth/ui/VerifyEmailPage"
-import ForgotPassword from "../../pages/auth/ui/ForgotPasswordPage"
-import ResetPassword from "../../pages/auth/ui/ResetPasswordPage"
-import Profile from "../../pages/profile/ui/ProfilePage"
-import ProductListing from "../../pages/products/ui/ProductListingPage"
-import ProductDetail from "../../pages/products/ui/ProductDetailPage"
-import CartPage from "../../pages/cart/ui/CartPage"
-import Security from "../../pages/security/ui/SecurityPage";
-import ChangePassword from "../../pages/security/ui/ChangePasswordPage";
-import ForgotPasswordSent from "../../pages/auth/ui/ForgotPasswordSentPage";
+import { HomePage as Home } from "@pages/home"
+import { RegisterPage as Register } from "@pages/register"
+import { LoginPage as Login } from "@pages/login"
+import { VerifyEmailPage as VerifyEmail } from "@pages/auth"
+import { ForgotPasswordPage as ForgotPassword } from "@pages/auth"
+import { ResetPasswordPage as ResetPassword } from "@pages/auth"
+import { ProfilePage as Profile } from "@pages/profile"
+import { ProductListingPage as ProductListing } from "@pages/products"
+import { ProductDetailPage as ProductDetail } from "@pages/products"
+import { CartPage } from "@pages/cart"
+import { SecurityPage as Security } from "@pages/security";
+import { ChangePasswordPage as ChangePassword } from "@pages/security";
+import { ForgotPasswordSentPage as ForgotPasswordSent } from "@pages/auth";
 
 
 import ProtectedRoute from "../providers/guards/ProtectedRoute"

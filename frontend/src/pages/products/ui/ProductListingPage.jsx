@@ -1,9 +1,10 @@
 // src/pages/products/ProductListing.jsx
-import Header from "../../../widgets/header/ui/Header";
-import ProductSidebar from "../../../widgets/sidebar/ui/ProductSidebar";
-import ProductGrid    from "../../../widgets/product/ui/ProductGrid";
-import ProductToolbar from "../../../features/filtering/ui/ProductToolbar";
-import Pagination     from "../../../shared/ui/Pagination/Pagination";
+
+import { Header } from "@widgets/header"
+import { ProductSidebar } from "@widgets/sidebar"
+import { ProductGrid }    from "@widgets/product"
+import { ProductToolbar } from "@features/filtering"
+import { Pagination }     from "@shared/ui"
 import { useProductList } from "../model/useProductList";
 import { Link } from "react-router-dom";
 

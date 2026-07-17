@@ -1,8 +1,6 @@
 // src/components/products/ProductSidebar.jsx
 import { ChevronDown } from "lucide-react";
-import { useCategoriesFlat } from '../../../entities/product/api/useProductQueries';
-import { useBrands }          from '../../../entities/product/api/useProductQueries';
-import { useBikeModels }      from '../../../entities/product/api/useProductQueries';
+import { useCategoriesFlat, useBrands, useBikeModels } from '@entities/product'
 
 
 /**

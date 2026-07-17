@@ -1,6 +1,6 @@
 // src/hooks/cart/useCartQueries.js
 import { useQuery } from "@tanstack/react-query";
-import { cartService } from "../../../shared/api/services/cartService";
+import { cartService } from "@shared/api";
 
 /**
  * Cart queries — Layer 3a

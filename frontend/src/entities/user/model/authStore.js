@@ -5,8 +5,8 @@ import {
   clearAuth,
   broadcastLogin,
   broadcastLogout,
-} from "../../../shared/lib/authToken";
-import { queryClient } from "../../../shared/lib/queryClient";
+} from "@shared/lib";
+import { queryClient } from "@shared/lib";
 
 /**
  * authStore — single source of truth for client auth state

@@ -1,8 +1,9 @@
 // src/hooks/products/useProductList.js
 import { useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useProducts } from "../../../entities/product/api/useProductQueries";
-import { normalizeError } from "../../../shared/api/transformers";
+
+import { useProducts } from "@entities/product";
+import { normalizeError } from "@shared/api";
 
 /**
  * useProductList — Layer 3b

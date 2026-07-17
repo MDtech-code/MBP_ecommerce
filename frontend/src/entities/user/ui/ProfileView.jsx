@@ -1,7 +1,7 @@
 // src/entities/ui/ProfileView.jsx
 import { UserRound, Camera, Mail, Phone, MapPin, Calendar, Venus, Edit3 } from "lucide-react"
 import ProfileInfoRow from "./ProfileInfoRow"
-import { getMediaUrl } from "../../../shared/lib/media"
+import { getMediaUrl } from "@shared/lib"
 
 export default function ProfileView({ user, onEdit, onAvatarClick , onManageAddresses}) {
   // Address now comes from user.addresses — not user.profile

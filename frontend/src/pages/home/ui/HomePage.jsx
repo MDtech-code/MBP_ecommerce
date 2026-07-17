@@ -1,6 +1,7 @@
-import MainLayout from "../../../widgets/layout/ui/MainLayout";
-import Hero from "../../../widgets/home/ui/Hero";
-import CategorySlider from "../../../widgets/home/ui/CategorySlider";
+
+import { MainLayout } from "@widgets/layout"
+import { Hero } from "@widgets/home"
+import { CategorySlider } from "@widgets/home"
 
 export default function Home(){
 

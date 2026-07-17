@@ -1,7 +1,7 @@
 // src/entities/ui/ProductCard.jsx
 import { Star, ShoppingCart, Heart } from "lucide-react";
 import { Link } from "react-router-dom";
-import { useCart } from "../../../features/cart/model/useCart";
+import { useCart } from "@features/cart";
 
 /**
  * ProductCard — driven by real backend product list item shape.

@@ -2,7 +2,7 @@
 
 import { Navigate, Outlet, useLocation } from "react-router-dom"
 import { useAuthStore } from "@entities/user"
-import { hasAuthToken } from "../../../shared/lib/authToken"
+import { hasAuthToken } from "@shared/lib"
 
 export default function ProtectedRoute() {
   const location = useLocation()

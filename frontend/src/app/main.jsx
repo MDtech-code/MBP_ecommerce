@@ -5,10 +5,10 @@ import App from './App.jsx'
 import {  QueryClientProvider } from '@tanstack/react-query'
 
 import { ApolloProvider } from "@apollo/client/react";
-import { client } from "../shared/api/graphqlClient.js";
-import { setupInterceptors } from '../shared/api/interceptors.js'
-import { initAuthSync } from "../shared/lib/authSync";
-import { queryClient } from "../shared/lib/queryClient.js"
+import { client } from "@shared/api";
+import { setupInterceptors } from '@shared/api'
+import { initAuthSync } from "@shared/lib";
+import { queryClient } from "@shared/lib"
 
 initAuthSync();
 setupInterceptors();

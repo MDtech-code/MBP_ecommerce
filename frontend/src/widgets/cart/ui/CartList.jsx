@@ -1,7 +1,7 @@
 // src/components/cart/CartList.jsx
 import { ArrowLeft, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
-import CartItem from "../../../entities/cart/ui/CartItem";
+import { CartItem } from "@entities/cart"
 
 /**
  * CartList — driven by real backend cart shape.

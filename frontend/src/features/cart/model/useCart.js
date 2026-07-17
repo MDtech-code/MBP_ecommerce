@@ -6,7 +6,7 @@ import {
   useRemoveCartItem,
   useClearCart,
 } from "../api/useCartMutations";
-import { normalizeError } from "../../../shared/api/transformers";
+import { normalizeError } from "@shared/api";
 
 /**
  * useCart — Layer 3b

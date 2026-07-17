@@ -3,12 +3,11 @@ import { useState, useRef, useEffect } from "react"
 import { ShoppingCart, UserRound, LogOut, User, 
          Package, MapPin, Heart, Shield, ChevronDown } from "lucide-react"
 import { Link } from "react-router-dom"
-import Logo from "../../../shared/ui/Logo/Logo"
-import SearchBar from "../../../shared/ui/SearchBar/SearchBar"
-import { useAuthStore } from "../../../entities/user/model/authStore"
-
-import { getMediaUrl } from "../../../shared/lib/media"
-import {useLogoutForm} from "../../../features/auth/model/useLogout";
+import { Logo } from "@shared/ui"
+import { SearchBar } from "@shared/ui"
+import { useAuthStore } from "@entities/user"
+import { getMediaUrl } from "@shared/lib"
+import { useLogoutForm } from "@features/auth"
 
 const dropdownLinks = [
   { label: "Profile",   icon: User,    to: "/profile"    },

@@ -2,12 +2,9 @@
 
 import { useState } from "react"
 import { Plus, ArrowLeft } from "lucide-react"
-import AddressCard from "../../../entities/user/ui/AddressCard"
-import AddressForm from "../../../features/address/ui/AddressForm"
-import {
-  useDeleteAddress,
-  useSetDefaultAddress,
-} from "../../../features/address/api/useAddressMutations"
+import { AddressCard } from "@entities/user"
+import { AddressForm } from "@features/address"
+import { useDeleteAddress, useSetDefaultAddress } from "@features/address"
 import { useAuthStore } from "@entities/user"
 
 export default function AddressManager({ onBack }) {

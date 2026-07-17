@@ -6,7 +6,7 @@ import {CartSummary} from "@widgets/cart";
 import {CartTrust} from "@entities/cart";
 import {YouMayAlsoLike} from "@widgets/cart";
 import { useCart } from "@features/cart";
-import { useProducts } from "../../../entities/product/api/useProductQueries";
+import { useProducts } from "@entities/product"
 
 /**
  * CartPage — Layer 4 (dumb).

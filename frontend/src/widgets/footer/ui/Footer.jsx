@@ -1,7 +1,7 @@
 // src/components/layout/Footer.jsx
 import { FaFacebookF, FaInstagram, FaYoutube, FaTiktok } from "react-icons/fa";
 import { SiVisa, SiMastercard } from "react-icons/si";
-import footer_logo from "../../../shared/assets/images/logo/auth_banner_logo.png";
+import footer_logo from "@shared/assets/images/logo/auth_banner_logo.png"
 
 export default function Footer() {
   return (

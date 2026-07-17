@@ -1,5 +1,5 @@
 // src/components/products/ProductGrid.jsx
-import ProductCard from "../../../entities/product/ui/ProductCard";
+import { ProductCard } from "@entities/product"
 
 /**
  * ProductGrid — pure pass-through, unchanged structure.

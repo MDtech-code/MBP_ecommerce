@@ -2,7 +2,7 @@
 
 import { api } from "../client";
 import { extractResponse } from "../transformers";
-import { getCookie } from "../../lib/getCsrfToken";
+import { getCookie } from "@shared/lib";
 // import axios from "axios";
 
 export const accountService = {

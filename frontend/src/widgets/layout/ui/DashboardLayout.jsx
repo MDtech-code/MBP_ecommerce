@@ -1,5 +1,5 @@
-import Header from "../../header/ui/Header";
-import AccountSidebar from "../../sidebar/ui/AccountSidebar";
+import { Header } from "@widgets/header"
+import { AccountSidebar } from "@widgets/sidebar"
 
 export default function DashboardLayout({ children }) {
   return (

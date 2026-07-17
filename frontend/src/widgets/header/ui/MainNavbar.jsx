@@ -3,15 +3,15 @@ import { useState, useRef, useEffect } from "react";
 import { ShoppingCart, ChevronDown, Menu, UserRound,
          LogOut, User, Package, MapPin, Heart, Shield } from "lucide-react";
 import { Link } from "react-router-dom";
-import Container from "../../../shared/ui/Container/Container";
-import Logo from "../../../shared/ui/Logo/Logo";
+import { Container } from "@shared/ui"
+import { Logo } from "@shared/ui"
 import MobileMenu from "./MobileMenu";
-import SearchBar from "../../../shared/ui/SearchBar/SearchBar";
-import { getMediaUrl } from "../../../shared/lib/media";
-import { useLogoutForm } from "../../../features/auth/model/useLogout";
+import { SearchBar } from "@shared/ui"
+import { getMediaUrl } from "@shared/lib"
+import { useLogoutForm } from "@features/auth"
 import BikePartsMegaMenu from "./BikePartsMegaMenu";
 import BrandsMegaMenu from "./BrandsMegaMenu";
-import CartIcon from "../../../features/cart/ui/CartIcon";
+import { CartIcon } from "@features/cart"
 
 /**
  * Which mega menu is open:

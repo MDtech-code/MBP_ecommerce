@@ -1,12 +1,13 @@
 // src/pages/account/Login.jsx
 import { Mail, Lock } from "lucide-react"
 import { Link } from "react-router-dom"
-import AuthLayout from "../../../widgets/auth-layout/ui/AuthLayout"
-import FormInput from "../../../shared/ui/FormInput/FormInput"
-import SocialLogin from "../../../features/auth/ui/SocialLogin"
-import { useLoginForm } from "../../../features/auth/model/useLoginForm"
 
-import { ErrorCode } from "../../../shared/api/transformers"
+
+import { AuthLayout } from "@widgets/auth-layout"
+import { FormInput } from "@shared/ui"
+import { SocialLogin } from "@features/auth"
+import { useLoginForm } from "@features/auth"
+import { ErrorCode } from "@shared/api"
 
 export default function Login() {
   const {

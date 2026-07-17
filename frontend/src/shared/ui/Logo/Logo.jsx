@@ -1,6 +1,6 @@
 // src/components/layout/Logo.jsx
-import logo from "../../assets/images/logo/logo.png";
-import auth_logo from "../../assets/images/logo/auth_banner_logo.png";
+import logo      from "@shared/assets/images/logo/logo.png"
+import auth_logo from "@shared/assets/images/logo/auth_banner_logo.png"
 
 export default function Logo({ variant = "light", size = "md" }) {
 

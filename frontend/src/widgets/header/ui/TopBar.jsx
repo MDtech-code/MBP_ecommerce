@@ -1,6 +1,6 @@
 // src/components/layout/TopBar.jsx
 import { Truck, WalletCards, RotateCcw, CircleHelp, Phone } from "lucide-react";
-import Container from "../../../shared/ui/Container/Container";
+import { Container } from "@shared/ui"
 
 export default function TopBar() {
   return (

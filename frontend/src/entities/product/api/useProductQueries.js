@@ -1,6 +1,6 @@
 // src/hooks/products/useProductQueries.js
 import { useQuery } from "@tanstack/react-query";
-import { productService } from "../../../shared/api/services/productService";
+import { productService } from "@shared/api";
 
 /**
  * Product queries — Layer 3a

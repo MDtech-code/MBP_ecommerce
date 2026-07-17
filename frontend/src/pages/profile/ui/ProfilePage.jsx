@@ -1,14 +1,17 @@
 // src/pages/account/Profile.jsx
 
 import { useState } from "react"
-import DashboardLayout from "../../../widgets/layout/ui/DashboardLayout"
-import ProfileView from "../../../entities/user/ui/ProfileView"
-import ProfileEditForm from "../../../features/profile/ui/ProfileEditForm"
-import AvatarModal from "../../../features/profile/ui/AvatarModal"
-import AddressManager from "../../../widgets/profile/ui/AddressManager"
+
+import { DashboardLayout } from "@widgets/layout"
+import { ProfileView } from "@entities/user"
+import { ProfileEditForm } from "@features/profile"
+import { AvatarModal } from "@features/profile"
+import { AddressManager } from "@widgets/profile"
+import { useProfile } from "@features/profile"
+import { hasAuthToken } from "@shared/lib"
+
 import { useAuthStore } from "@entities/user"
-import { useProfile } from "../../../features/profile/api/useProfileMutations"
-import { hasAuthToken } from "../../../shared/lib/authToken"
+
 
 // src/pages/account/Profile.jsx
 

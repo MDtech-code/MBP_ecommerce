@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { ChevronRight, Bike } from "lucide-react";
-import { useCategoriesTree } from "../../../entities/product/api/useProductQueries";
+import { useCategoriesTree } from "@entities/product"
 
 /**
  * BikePartsMegaMenu

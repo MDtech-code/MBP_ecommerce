@@ -1,13 +1,14 @@
 // src/pages/products/ProductDetail.jsx
 import { Link } from "react-router-dom";
-import Header         from "../../../widgets/header/ui/Header";
-import ProductGallery from "../../../entities/product/ui/ProductGallery";
-import ProductInfo    from "../../../entities/product/ui/ProductInfo";
-import ProductActions from "../../../entities/product/ui/ProductActions";
-import ProductTrust   from "../../../entities/product/ui/ProductTrust";
-import ProductTabs    from "../../../entities/product/ui/ProductTabs";
-import RelatedProducts from "../../../widgets/product/ui/RelatedProducts";
+
 import { useProductDetail } from "../model/useProductDetail";
+import { Header }         from "@widgets/header"
+import { ProductGallery } from "@entities/product"
+import { ProductInfo }    from "@entities/product"
+import { ProductActions } from "@entities/product"
+import { ProductTrust }   from "@entities/product"
+import { ProductTabs }    from "@entities/product"
+import { RelatedProducts } from "@widgets/product"
 
 /**
  * ProductDetail page — Layer 4 (dumb).

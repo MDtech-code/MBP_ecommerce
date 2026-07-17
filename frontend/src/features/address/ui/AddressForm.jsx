@@ -1,7 +1,7 @@
 // src/components/account/profile/AddressForm.jsx
 
 import { X, Save, MapPin } from "lucide-react"
-import ProfileEditField from "../../profile/ui/ProfileEditField"
+import { ProfileEditField } from "@features/profile"
 import { useAddressForm } from "../model/useAddressForm"
 
 const LABEL_OPTIONS = [

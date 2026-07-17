@@ -3,7 +3,7 @@
 import { Link } from "react-router-dom";
 import { Lock } from "lucide-react";
 import {AuthLayout} from "@widgets/auth-layout";
-import FormInput from "../../../shared/ui/FormInput/FormInput";
+import { FormInput } from "@shared/ui"
 import { useResetPasswordForm } from "@features/auth";
 
 const BRAND_PROPS = {

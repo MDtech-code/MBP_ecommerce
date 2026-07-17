@@ -1,7 +1,7 @@
-import HeroBenefits from "../../home/ui/HeroBenefits";
-import Logo from  "../../../shared/ui/Logo/Logo";
+import { HeroBenefits } from "@widgets/home"
+import { Logo } from "@shared/ui"
 import AuthBrand from "./AuthBrand";
-import auth_banner from "../../../shared/assets/images/accounts/auth_banner.png";
+import auth_banner from "@shared/assets/images/accounts/auth_banner.png"
 
 export default function AuthLayout({ children, brandProps }) {
   return (

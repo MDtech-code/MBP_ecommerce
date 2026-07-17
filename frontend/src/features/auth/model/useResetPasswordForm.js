@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useConfirmPasswordReset } from "../api/useAuthMutations";
-import { normalizeError } from "../../../shared/api/transformers";
+import { normalizeError } from "@shared/api"
 
 /**
  * useResetPasswordForm

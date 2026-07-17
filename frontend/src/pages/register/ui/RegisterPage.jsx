@@ -1,10 +1,9 @@
 
 import {  Link } from "react-router-dom"
 import { User, Mail,  Lock } from "lucide-react";
-import AuthLayout from "../../../widgets/auth-layout/ui/AuthLayout";
-import FormInput from "../../../shared/ui/FormInput/FormInput";
-
-import { useRegisterForm } from "../../../features/auth/model/useRegisterForm"
+import { AuthLayout } from "@widgets/auth-layout"
+import { FormInput } from "@shared/ui"
+import { useRegisterForm } from "@features/auth"
 
 export default function Register() {
 

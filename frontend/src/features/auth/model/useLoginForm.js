@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useLogin, useResendVerification } from "../api/useAuthMutations";
-import { normalizeError } from "../../../shared/api/transformers";
+import { normalizeError } from "@shared/api"
 
 export function useLoginForm() {
   const navigate = useNavigate();

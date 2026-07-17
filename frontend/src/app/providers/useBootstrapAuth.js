@@ -1,9 +1,8 @@
 // src/hooks/account/useBootstrapAuth.js
 console.log("Bootstrap hook mounted");
 import {  useEffect } from "react";
-import { accountService } from "../../shared/api/services/accountService";
-import { setAuthToken } from "../../shared/lib/authToken";
-
+import { accountService } from "@shared/api";
+import { setAuthToken } from "@shared/lib";
 import { useAuthStore } from "@entities/user";
 
 // Module-level — survives StrictMode remounts, resets on true page reload

@@ -1,8 +1,8 @@
 // src/components/layout/megamenu/BrandsMegaMenu.jsx
 import { Link } from "react-router-dom";
 import { ShieldCheck, WalletCards, Truck, RotateCcw, Lock } from "lucide-react";
-import { useBrands, useCategoriesTree } from "../../../entities/product/api/useProductQueries";
-import { getMediaUrl } from "../../../shared/lib/media";
+import { useBrands, useCategoriesTree } from "@entities/product"
+import { getMediaUrl } from "@shared/lib"
 
 /**
  * BrandsMegaMenu

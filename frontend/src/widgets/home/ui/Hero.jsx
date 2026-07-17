@@ -1,7 +1,7 @@
 import { ArrowRight } from "lucide-react";
-import Container from "../../../shared/ui/Container/Container";
+import { Container } from "@shared/ui"
 import HeroBenefits from "./HeroBenefits";
-import bikeHero from "../../../shared/assets/images/hero/bike-hero-1.png";
+import bikeHero from "@shared/assets/images/hero/bike-hero-1.png"
 export default function Hero() {
   return (
     <section className="relative overflow-hidden bg-dark">

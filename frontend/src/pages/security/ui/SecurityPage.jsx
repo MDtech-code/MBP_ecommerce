@@ -1,6 +1,6 @@
-import DashboardLayout from "../../../widgets/layout/ui/DashboardLayout";
-import SecurityGrid from "../../../widgets/security/ui/SecurityGrid";
 
+import { DashboardLayout } from "@widgets/layout"
+import { SecurityGrid } from "@widgets/security"
 export default function Security() {
 
   return (

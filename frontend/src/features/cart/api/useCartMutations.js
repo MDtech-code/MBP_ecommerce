@@ -1,6 +1,6 @@
 // src/hooks/cart/useCartMutations.js
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { cartService } from "../../../shared/api/services/cartService";
+import { cartService } from "@shared/api";
 import { CART_QUERY_KEY } from "./useCartQueries";
 
 /**
