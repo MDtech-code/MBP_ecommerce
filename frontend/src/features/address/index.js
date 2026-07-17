@@ -1,11 +1,9 @@
-// src/features/address/index.js
-// Public API of the address feature.
+export {
+  useCreateAddress,
+  useUpdateAddress,
+  useDeleteAddress,
+  useSetDefaultAddress,
+} from "./api/useAddressMutations";
 
-// api
-export { useAddressMutations } from "./api/useAddressMutations";
-
-// model
-export { useAddressForm } from "./model/useAddressForm";
-
-// ui
+export { useAddressForm, CITY_POSTAL_MAP } from "./model/useAddressForm";
 export { default as AddressForm } from "./ui/AddressForm";
