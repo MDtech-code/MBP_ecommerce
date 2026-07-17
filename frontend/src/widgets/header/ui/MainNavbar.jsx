@@ -12,6 +12,9 @@ import { useLogoutForm } from "@features/auth"
 import BikePartsMegaMenu from "./BikePartsMegaMenu";
 import BrandsMegaMenu from "./BrandsMegaMenu";
 import { CartIcon } from "@features/cart"
+import { useAuthStore }        from "@entities/user"
+import { useNavigate }         from "react-router-dom"
+
 
 /**
  * Which mega menu is open:
@@ -24,7 +27,8 @@ export default function MainNavbar({ user }) {
   const [menuOpen, setMenuOpen]       = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [activeMega, setActiveMega]   = useState(null);
-
+const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  const navigate        = useNavigate()
   const { isPending, handleLogout } = useLogoutForm();
 
   // Close mega menu when clicking outside
@@ -142,7 +146,14 @@ export default function MainNavbar({ user }) {
                                   cursor-pointer hover:text-primary
                                   transition-colors">
                     <ShoppingCart className="w-5 h-5" />
-                    <span className="hidden lg:inline text-sm">Cart</span>
+                    
+                   <span
+  className="hidden lg:inline text-sm cursor-pointer"
+  onClick={() => navigate(isAuthenticated ? "/cart" : "/login")}
+>
+  Cart
+</span>
+
                   </div>
                 </>
               )}
