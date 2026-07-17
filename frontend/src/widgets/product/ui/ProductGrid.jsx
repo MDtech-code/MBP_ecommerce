@@ -1,13 +1,16 @@
-// src/components/products/ProductGrid.jsx
-import { ProductCard } from "@entities/product"
+// src/widgets/product/ui/ProductGrid.jsx
+import { ProductCard }       from "@entities/product"
+import { ProductCardAction } from "@features/cart"
 
 /**
- * ProductGrid — pure pass-through, unchanged structure.
- * products[] now uses real backend shape via ProductCard.
+ * ProductGrid — composes ProductCard (entity) with
+ * ProductCardAction (feature) via the action prop slot.
+ *
+ * Widget layer is the correct place for this composition.
+ * Neither entity nor feature knows the other exists.
  */
 export default function ProductGrid({ products = [], isLoading = false }) {
 
-  // Loading skeleton
   if (isLoading) {
     return (
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -40,7 +43,19 @@ export default function ProductGrid({ products = [], isLoading = false }) {
   return (
     <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
       {products.map((product) => (
-        <ProductCard key={product.id} product={product} />
+        <ProductCard
+          key={product.id}
+          product={product}
+          action={
+            // Widget composes entity + feature here.
+            // ProductCard does not know what this is.
+            // ProductCardAction does not know which card it is in.
+            <ProductCardAction
+              productId={product.id}
+              isInStock={product.is_in_stock}
+            />
+          }
+        />
       ))}
     </div>
   );
