@@ -2,7 +2,6 @@ import { useMutation } from "@tanstack/react-query";
 import { accountService } from "@shared/api";
 import { useAuthStore } from "@entities/user";
 
-// import { queryClient } from "../../../shared/lib/queryClient";
 
 
 
