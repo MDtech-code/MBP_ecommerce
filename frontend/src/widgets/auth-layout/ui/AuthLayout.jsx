@@ -1,7 +1,10 @@
-import { HeroBenefits } from "@widgets/home"
-import { Logo } from "@shared/ui"
+
+import { Link }          from "react-router-dom"
+import { HeroBenefits } from "@shared/ui/HeroBenefits"
+import { Logo } from "@shared/ui/Logo"
 import AuthBrand from "./AuthBrand";
 import auth_banner from "@shared/assets/images/accounts/auth_banner.png"
+
 
 export default function AuthLayout({ children, brandProps }) {
   return (
@@ -24,7 +27,10 @@ export default function AuthLayout({ children, brandProps }) {
         {/* LEFT COLUMN: Branding (flex-1 claims all remaining space to the left of the card) */}
         <div className="hidden lg:flex flex-1 flex-col justify-between py-6 pl-6 lg:pl-10">
           <div>
+            {/* Logo → clicks back to home */}
+          <Link to="/" aria-label="Go to homepage">
             <Logo variant="dark" size="lg" />
+          </Link>
           </div>
 
           <div className="my-auto max-w-lg pr-4">
