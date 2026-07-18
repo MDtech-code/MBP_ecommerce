@@ -34,7 +34,7 @@ export function useRegisterForm() {
        normalized?.errors?.fields?.confirm_password?.code ?? null,
    };
 
-  const formError = normalized?.errors?.non_field_errors?.message ?? null;
+  const formError = normalized?.errors?.non_fields?.message ?? null;
   const formErrorCode = normalized?.errors?.non_fields?.code ?? null;
 
   const handleChange = (e) => {

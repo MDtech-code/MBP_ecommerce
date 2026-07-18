@@ -113,12 +113,12 @@ export function useVerifyEmailPage() {
   const resendNormalized = isResendError ? normalizeError(resendError) : null;
 
   const verifyErrorMsg =
-    verifyNormalized?.errors?.non_field_errors?.message ??
+    verifyNormalized?.errors?.non_fields?.message ??
     verifyNormalized?.message ??
     null;
 
   const resendErrorMsg =
-    resendNormalized?.errors?.non_field_errors?.message ??
+    resendNormalized?.errors?.non_fields?.message ??
     resendNormalized?.message ??
     null;
 
