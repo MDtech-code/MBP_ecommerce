@@ -10,8 +10,14 @@ import { useAuthStore } from "@entities/user"
  */
 export default function GuestRoute() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
-
+  const isBootstrapping  = useAuthStore((state) => state.isBootstrapping)
+  // Wait for bootstrap — same as ProtectedRoute
+  // Without this, GuestRoute makes redirect decisions before
+  // bootstrap has restored the session, causing race conditions
+  if (isBootstrapping) return null
+  console.log("gestPage sa hu yar ",isAuthenticated)
   if (isAuthenticated) {
+    
     return <Navigate to="/" replace />
   }
 

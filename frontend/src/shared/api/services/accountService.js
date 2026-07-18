@@ -3,7 +3,7 @@
 import { api } from "../client";
 import { extractResponse } from "../transformers";
 import { getCookie } from "@shared/lib";
-// import axios from "axios";
+import axios from "axios";
 
 export const accountService = {
   /**
@@ -184,7 +184,8 @@ export const accountService = {
    */
   bootstrap: async () => {
     console.log("i am from the bootstrap");
-    const response = await api.post(
+    // const response = await api.post(
+    const response = await axios.post(
       // "/api/accounts/token/refresh/",
       `${import.meta.env.VITE_API_ORIGIN}/api/accounts/token/refresh/`,
       {},
