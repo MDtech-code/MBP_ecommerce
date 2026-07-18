@@ -92,4 +92,5 @@ logs/
 seed/images/
 
 frontend/repomix-output.xml
+frontend/repomix-output.txt
 frontend/repomix-output-old.xml

@@ -12,7 +12,8 @@
     "build": "vite build",
     "lint": "eslint .",
     "lint:fsd": "node scripts/verify-fsd.js",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "pack": "repomix --include \"src/app/**,src/entities/**,src/features/**,src/pages/**,src/shared/**,src/widgets/**,tailwind.config.js,vite.config.js,index.html\" --ignore \"src/shared/assets/**,src/test/**\" --output repomix-output.txt"
   },
   "dependencies": {
     "@apollo/client": "^4.2.3",
@@ -26,6 +27,7 @@
     "react-dom": "^19.2.6",
     "react-icons": "^5.6.0",
     "react-router-dom": "^7.18.0",
+    "repomix": "^1.16.1",
     "tailwindcss": "^4.3.1",
     "zustand": "^5.0.14"
   },
