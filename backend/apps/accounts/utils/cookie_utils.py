@@ -13,9 +13,10 @@ REFRESH_COOKIE_NAME = "refresh_token"
 COOKIE_SETTINGS = {
     "httponly": True,
     "secure": not settings.DEBUG,   # True in production, False in local dev
+    "secure":True,
     "samesite": "Lax",
     "max_age": 7 * 24 * 60 * 60,   # 7 days in seconds
-    "path": "/api/accounts/token/refresh/",
+    "path": "/api/accounts/",
 }
 
 
