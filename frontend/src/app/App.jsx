@@ -2,12 +2,14 @@
 
 console.log("AppContent render");
 import { RouterProvider } from "react-router-dom"
-import { router } from "./providers/router"
+import { router , GUEST_ROUTES } from "./providers/router"
 import { useBootstrapAuth } from "./providers/useBootstrapAuth"
 
 import { useAuthStore } from "@entities/user"
 function AppContent() {
-  useBootstrapAuth()
+  const currentPath = window.location.pathname.replace(/\/$/, "") || "/";
+  const isGuestRoute = GUEST_ROUTES.includes(currentPath);
+  useBootstrapAuth({ skip: isGuestRoute })
 
   // Show nothing while restoring session
   // This prevents the /login redirect flicker on page refresh

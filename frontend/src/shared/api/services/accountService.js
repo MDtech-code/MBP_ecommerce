@@ -185,7 +185,8 @@ export const accountService = {
   bootstrap: async () => {
     console.log("i am from the bootstrap");
     const response = await api.post(
-      "/api/accounts/token/refresh/",
+      // "/api/accounts/token/refresh/",
+      `${import.meta.env.VITE_API_ORIGIN}/api/accounts/token/refresh/`,
       {},
       {
         withCredentials: true,

@@ -1,8 +1,7 @@
-
+// src/components/layout/ProtectedRoute.jsx
 
 import { Navigate, Outlet, useLocation } from "react-router-dom"
 import { useAuthStore } from "@entities/user"
-import { hasAuthToken } from "@shared/lib"
 
 export default function ProtectedRoute() {
   const location = useLocation()
@@ -11,8 +10,8 @@ export default function ProtectedRoute() {
 
   // Wait for bootstrap to finish before making any redirect decision
   if (isBootstrapping) return null
-  // After bootstrap completes one of these will be true for valid sessions
-  if (!isAuthenticated && !hasAuthToken()) {
+  // After bootstrap completes, isAuthenticated is the sole source of truth
+  if (!isAuthenticated) {
     return (
       <Navigate
         to="/login"

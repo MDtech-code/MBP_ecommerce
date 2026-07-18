@@ -20,6 +20,15 @@ import { SecurityPage,
 import ProtectedRoute from "./guards/ProtectedRoute"
 import GuestRoute     from "./guards/GuestRoute"
 
+export const GUEST_ROUTES = [
+  "/register",
+  "/login",
+  "/verify-email",
+  "/forgot-password",
+  "/forgot-password/sent",
+  "/reset-password",
+];
+
 export const router = createBrowserRouter([
 
   // ── Public routes — MainLayout provides Header + Footer ────────
