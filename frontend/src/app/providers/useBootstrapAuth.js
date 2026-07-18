@@ -4,7 +4,7 @@ import { accountService } from "@shared/api";
 import { setAuthToken } from "@shared/lib";
 import { useAuthStore } from "@entities/user";
 
-export function useBootstrapAuth({ skip = false } = {}) {
+export function useBootstrapAuth() {
   console.log("use bootsrat ma hu ab restore method ki targ ja ra hu ");
   // const [isBootstrapping, setIsBootstrapping] = useState(true);
   const setBootstrapping = useAuthStore((state) => state.setBootstrapping);
@@ -16,11 +16,7 @@ export function useBootstrapAuth({ skip = false } = {}) {
 
   useEffect(() => {
     console.log("Effect running");
-    // Skip bootstrapping on known guest/public routes
-    if (skip) {
-      setBootstrapping(false);
-      return;
-    }
+    
 
     // Already authenticated in this session — skip immediately
     if (isAuthenticated) {
@@ -88,7 +84,7 @@ export function useBootstrapAuth({ skip = false } = {}) {
       bootstrapAttempted.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [skip]);
+  }, []);
 }
 // console.log("Bootstrap hook mounted");
 // import {  useEffect } from "react";

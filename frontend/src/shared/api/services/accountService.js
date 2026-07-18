@@ -182,11 +182,9 @@ export const accountService = {
    * Direct axios call — bypasses our api instance so interceptors
    * do not accidentally catch and loop this call.
    */
-  bootstrap: async () => {
+bootstrap: async () => {
     console.log("i am from the bootstrap");
-    // const response = await api.post(
     const response = await axios.post(
-      // "/api/accounts/token/refresh/",
       `${import.meta.env.VITE_API_ORIGIN}/api/accounts/token/refresh/`,
       {},
       {
