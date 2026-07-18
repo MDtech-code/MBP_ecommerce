@@ -1,4 +1,4 @@
-// src/components/layout/ProtectedRoute.jsx
+
 
 import { Navigate, Outlet, useLocation } from "react-router-dom"
 import { useAuthStore } from "@entities/user"
