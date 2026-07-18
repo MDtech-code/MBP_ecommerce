@@ -1,4 +1,4 @@
-// src/hooks/account/useBootstrapAuth.js
+
 console.log("Bootstrap hook mounted");
 import {  useEffect } from "react";
 import { accountService } from "@shared/api";

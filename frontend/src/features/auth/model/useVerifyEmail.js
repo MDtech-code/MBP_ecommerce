@@ -51,6 +51,7 @@ export function useVerifyEmailPage() {
 
   // AUTO-VERIFY EFFECT
   useEffect(() => {
+    console.log(tokenFromUrl)
     if (!tokenFromUrl) return;
 
     // 1. If this exact token hasn't started verifying yet, start now!
@@ -59,8 +60,6 @@ export function useVerifyEmailPage() {
       cachedStatus = "verifying";
       cachedError = null;
 
-      // FIX FOR REACT WARNING: Defer the React state update asynchronously by 0ms.
-      // This allows React to finish rendering without triggering a synchronous cascading render!
       setTimeout(() => {
         setAutoStatus("verifying");
       }, 0);
