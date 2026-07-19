@@ -38,7 +38,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     email = models.EmailField(
         _("email address"),
         unique=True,
-        db_index=True,
+        
     )
     full_name = models.CharField(
         _("full name"),
