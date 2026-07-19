@@ -1,10 +1,10 @@
 """
 apps/core/api/views.py
 ──────────────────────
-Base API views for production-ready backend architecture.
+
 
 All views in the project must inherit from BaseAPIView.
-Never use APIView or GenericAPIView directly.
+Never use APIView or GenericAPIView directly to stay consistance accross backend 
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from .exceptions import (
     _format_drf_errors,
     _non_fields_domain,
     _status_to_error_code,
-    _status_to_message,
+
 )
 from .mixins import APIResponseMixin
 

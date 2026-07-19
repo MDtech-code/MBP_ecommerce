@@ -7,11 +7,40 @@ from django.contrib.auth.password_validation import validate_password as django_
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import UploadedFile
 from django.utils.translation import gettext_lazy as _
+from apps.core.exceptions import DomainError
 
 from apps.core.error_codes import ErrorCode
 
+def validate_email_format(email: str) -> str:
+    """
+    Responsibilities:
+    - Strip whitespace
+    - Lowercase normalize
+    - Basic format check
+    
+    Args:
+        email: Raw email string from input.
+        
+    Returns:
+        Normalized (lowercase, stripped) email string.
+        
+    Raises:
+        ValidationError: If email FORMAT is invalid.
+    """
+    
 
-def validate_email_unique(email: str, exclude_user_id: int | None = None) -> str:
+    email = email.lower().strip()
+    
+
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    if not re.match(pattern, email):
+        raise ValidationError(
+            _("Enter a valid email address."),
+            code=ErrorCode.EMAIL_INVALID_FORMAT,
+        )
+    
+    return email
+def ensure_email_unique(email: str, exclude_user_id: int | None = None) -> str:
     """
     Validate that email is unique across the system.
 
@@ -36,9 +65,10 @@ def validate_email_unique(email: str, exclude_user_id: int | None = None) -> str
     if exclude_user_id:
         qs = qs.exclude(id=exclude_user_id)
     if qs.exists():
-        raise ValidationError(
-            _("An account with this email already exists."),
+        raise DomainError(
+            "An account with this email already exists. ",
             code=ErrorCode.EMAIL_ALREADY_EXISTS,
+            status_code=409,
         )
     return email
 

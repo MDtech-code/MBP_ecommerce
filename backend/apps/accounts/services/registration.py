@@ -6,7 +6,7 @@ from apps.accounts.models import EmailVerificationToken, User,UserProfile
 from apps.accounts.tasks import send_verification_email_task
 from apps.cart.models import Cart
 from django.db import IntegrityError, transaction
-
+from apps.accounts.validators import ensure_email_unique
 from apps.core.error_codes import ErrorCode
 from apps.core.exceptions import DomainError
 
@@ -20,7 +20,7 @@ def register_user(
     password: str,
 ) -> "User":
     """
-    Complete user registration workflow.
+    Registration workflow:-
 
     Responsibility:
         This function owns the entire registration transaction.
@@ -28,22 +28,12 @@ def register_user(
         in a single atomic transaction, then dispatches the verification
         email after the transaction commits.
 
-    Why profile and cart here instead of signals?
-        Signals are silent, invisible, and outside the transaction boundary.
-        If a signal fails, the user is created but profile/cart are missing
-        and no rollback occurs. Here everything is explicit, visible,
-        transactional, and independently testable.
-
-    Why task dispatch AFTER the transaction?
-        If the task fires inside the transaction and the transaction later
-        rolls back, the worker picks up a user_id that no longer exists.
-        Dispatching after commit guarantees the worker always finds the user.
-
     Phase 1 — Atomic transaction:
-        1. Create User
-        2. Create UserProfile
-        3. Create Cart
-        4. Create EmailVerificationToken
+        1. Uniqueness check
+        2. Create User
+        3. Create UserProfile
+        4. Create Cart
+        5. Create EmailVerificationToken
 
     Phase 2 — After commit:
         5. Dispatch verification email task
@@ -66,12 +56,13 @@ def register_user(
 
     log_context = {"email": email}
 
-    # ── Phase 1: Atomic DB operations ─────────────────────────────────────────
+    #! ── Phase 1: Atomic DB operations ─────────────────────────────────────────
     try:
         with transaction.atomic():
 
             #! Step 1: Create User
             try:
+                ensure_email_unique(email)
                 user = User.objects.create_user(
                     email=email,
                     full_name=full_name,
@@ -125,23 +116,50 @@ def register_user(
         )
         raise
 
-    # ── Phase 2: Task dispatch (after commit) ──────────────────────────────────
-    # User, UserProfile, Cart, Token are all committed at this point.
-    # Worker is guaranteed to find the user.
+    # ── Phase 2: Side effects (after successful commit) ────────────────────────
+    # Transaction is fully committed at this point.
+    # Worker is guaranteed to find User, UserProfile, Cart, Token in DB.
+    # Task failure does NOT undo registration.
+    # Recovery available via resend-verification endpoint.
+    _dispatch_verification_email(
+        user_id=user.id,
+        token=token_obj.token,
+        log_context=log_context,
+    )
+
+    return user
+
+def _dispatch_verification_email(
+    user_id: int,
+    token: str,
+    log_context: dict,
+) -> None:
+    """
+    Dispatch verification email task after registration commits.
+
+    Extracted for:
+        - Single responsibility
+        - Isolated exception handling
+        - Testability
+
+    Failure here does NOT affect registration success.
+    User account is valid and committed.
+
+    Args:
+        user_id:     Newly created user PK.
+        token:       Email verification token value.
+        log_context: Logging context dict from parent.
+    """
     try:
-        send_verification_email_task.delay(user.id, str(token_obj.token))
+        send_verification_email_task.delay(user_id, str(token))
         logger.info(
             "Verification email task dispatched",
-            extra={**log_context, "user_id": user.id},
+            extra={**log_context, "user_id": user_id},
         )
     except Exception:
-        # Task failure does NOT undo registration.
-        # User account is valid — resend endpoint handles recovery.
         logger.exception(
             "Failed to dispatch verification email — "
             "user created but email not sent. "
-            "Resend endpoint available for recovery.",
-            extra={**log_context, "user_id": user.id},
+            "Recovery via resend-verification endpoint.",
+            extra={**log_context, "user_id": user_id},
         )
-
-    return user

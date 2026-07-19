@@ -26,13 +26,12 @@ urlpatterns = [
     path("login/", LoginView.as_view(), name="login"),
     path("logout/", LogoutView.as_view(), name="logout"),
     path("token/refresh/", TokenRefreshView.as_view(), name="token-refresh"),
-    path("me/delete/", DeleteAccountView.as_view(), name="delete-account"),
 
     # ─── Email Verification ───────────────────────────
     path("verify-email/", VerifyEmailView.as_view(), name="verify-email"),
     path("resend-verification/", ResendVerificationView.as_view(), name="resend-verification"),
 
-    # ─── Password ─────────────────────────────────────
+    # ─── Password reset─────────────────────────────────────
     path("password-reset/", PasswordResetRequestView.as_view(), name="password-reset"),
     path("password-reset/confirm/", PasswordResetConfirmView.as_view(), name="password-reset-confirm"),
     path("change-password/", ChangePasswordView.as_view(), name="change-password"),
@@ -50,5 +49,6 @@ urlpatterns = [
     path("update-email/",           EmailChangeRequestView.as_view(),   name="update-email"),
     path("update-email/confirm/",   EmailChangeConfirmView.as_view(),   name="update-email-confirm"),
     # ─── delete account  ────────────────────────────────────────────
+    path("me/delete/", DeleteAccountView.as_view(), name="delete-account"),
 
 ]

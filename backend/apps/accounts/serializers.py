@@ -14,7 +14,7 @@ from rest_framework import serializers
 from apps.core.mixins import TimestampFieldsMixin
 
 from .models import User, UserProfile,UserAddress
-from .validators import validate_email_unique,validate_full_name,validate_image_file,validate_pakistani_phone,validate_passwords_match,validate_strong_password
+from .validators import validate_email_format,validate_full_name,validate_image_file,validate_pakistani_phone,validate_passwords_match,validate_strong_password
 
 logger = logging.getLogger("apps.accounts")
 
@@ -239,7 +239,7 @@ class RegisterSerializer(serializers.Serializer):
     )
 
     def validate_email(self, value: str) -> str:
-        return validate_email_unique(value)
+        return validate_email_format(value)
 
     def validate_full_name(self, value: str) -> str:
         return validate_full_name(value)
@@ -484,7 +484,7 @@ class EmailChangeRequestSerializer(serializers.Serializer):
     )
 
     def validate_new_email(self, value: str) -> str:
-        return validate_email_unique(value)
+        return validate_email_format(value)
 
 
 # ─── Email Change Confirm ──────────────────────────────────────────────────────
