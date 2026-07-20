@@ -57,11 +57,19 @@ export default defineConfig(({ mode }) => {
     test: {
       globals: true,
       environment: "jsdom",
+      setupFiles: ["./src/app/config/test/setup.js"],
 
       // Points to NEW location after Phase 2 moves setup.js to app/config/test/
       // During Phase 1 (right now) this still points to old location.
       // We update this path when we execute the setup.js move in Phase 2.
-      setupFiles: "./src/app/config/test/setup.js",
+      alias: {
+        "@app": new URL("./src/app", import.meta.url).pathname,
+        "@pages": new URL("./src/pages", import.meta.url).pathname,
+        "@widgets": new URL("./src/widgets", import.meta.url).pathname,
+        "@features": new URL("./src/features", import.meta.url).pathname,
+        "@entities": new URL("./src/entities", import.meta.url).pathname,
+        "@shared": new URL("./src/shared", import.meta.url).pathname,
+      },
     },
 
     // ── Dev Server ──────────────────────────────────────────────────────────
