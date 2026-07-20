@@ -8,3 +8,5 @@ export * from "./SearchBar";
 export * from "./SectionTitle";
 export * from "./FormField";
 export * from "./HeroBenefits";
+export * from "./OTPInput";
+export * from "./ResendTimer"
