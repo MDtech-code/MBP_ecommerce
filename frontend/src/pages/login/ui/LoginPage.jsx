@@ -5,7 +5,7 @@ import { Link } from "react-router-dom"
 
 import { AuthLayout } from "@widgets/auth-layout"
 import { FormInput } from "@shared/ui"
-import { SocialLogin } from "@features/auth"
+import  {SocialLogin}  from "@features/auth"
 import { useLoginForm } from "@features/auth"
 import { ErrorCode } from "@shared/api"
 

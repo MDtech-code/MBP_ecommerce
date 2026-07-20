@@ -2,11 +2,6 @@ import { useMutation } from "@tanstack/react-query";
 import { accountService } from "@shared/api";
 import { useAuthStore } from "@entities/user";
 
-
-
-
-
-
 export function useRegister() {
   return useMutation({
     mutationFn: accountService.register,
@@ -16,6 +11,16 @@ export function useRegister() {
   });
 }
 
+/**
+ * Universal social login mutation.
+ * Used by both Google and Facebook buttons.
+ * Provider is passed as part of the payload at call time.
+ */
+export function useSocialLogin() {
+  return useMutation({
+    mutationFn: accountService.socialLogin,
+  });
+}
 
 // ── NEW ──────────────────────────────────────────────────────────────────────
 
@@ -40,8 +45,6 @@ export function useResendVerification() {
   });
 }
 
-
-
 // ── NEW ───────────────────────────────────────────────────────────────────────
 
 /**
@@ -62,7 +65,6 @@ export function useLogin() {
   });
 }
 
-
 /**
  * useLogout
  * On success AND error: always clear client state
@@ -82,8 +84,6 @@ export function useLogout() {
     },
   });
 }
-
-
 
 /**
  * useRequestPasswordReset
@@ -110,22 +110,65 @@ export function useConfirmPasswordReset() {
   });
 }
 
-/**
- * useChangePassword
- * POST /api/accounts/change-password/
- * Backend invalidates all sessions after success — we must also clear
- * client auth state so user is forced to log in again with new password
- * Navigation to login handled in useChangePasswordForm.js after success
- */
-export function useChangePassword() {
-  const logout = useAuthStore((state) => state.logout);
 
-  return useMutation({
-    mutationFn: accountService.changePassword,
-    onSuccess: () => {
-      // Backend has already invalidated all server sessions
-      // Clear client state to match — user must re-authenticate
-      logout();
-    },
-  });
+
+export function useSendSecurityOTP() {
+  return useMutation({ mutationFn: accountService.sendSecurityOTP });
 }
+
+export function useVerifySecurityOTP() {
+  return useMutation({ mutationFn: accountService.verifySecurityOTP });
+}
+
+export function useChangePassword() {
+  return useMutation({ mutationFn: accountService.changePassword });
+}
+
+export function useRequestEmailChange() {
+  return useMutation({ mutationFn: accountService.requestEmailChange });
+}
+
+export function useConfirmEmailChange() {
+  return useMutation({ mutationFn: accountService.confirmEmailChange });
+}
+
+export function useDeleteAccount() {
+  return useMutation({ mutationFn: accountService.deleteAccount });
+}
+// /**
+//  * useChangePassword
+//  * POST /api/accounts/change-password/
+//  * Backend invalidates all sessions after success — we must also clear
+//  * client auth state so user is forced to log in again with new password
+//  * Navigation to login handled in useChangePasswordForm.js after success
+//  */
+// export function useChangePassword() {
+//   const logout = useAuthStore((state) => state.logout);
+
+//   return useMutation({
+//     mutationFn: accountService.changePassword,
+//     onSuccess: () => {
+//       // Backend has already invalidated all server sessions
+//       // Clear client state to match — user must re-authenticate
+//       logout();
+//     },
+//   });
+// }
+
+// export function useRequestEmailChange() {
+//   return useMutation({
+//     mutationFn: accountService.requestEmailChange,
+//   });
+// }
+
+// export function useConfirmEmailChange() {
+//   return useMutation({
+//     mutationFn: accountService.confirmEmailChange,
+//   });
+// }
+
+// export function useDeleteAccount() {
+//   return useMutation({
+//     mutationFn: accountService.deleteAccount,
+//   });
+// }

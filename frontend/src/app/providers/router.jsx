@@ -15,7 +15,12 @@ import { ProductListingPage,
          ProductDetailPage }         from "@pages/products"
 import { CartPage }                  from "@pages/cart"
 import { SecurityPage,
-         ChangePasswordPage }        from "@pages/security"
+         ChangePasswordPage,DeleteAccountPage, SecurityVerificationGatePage,
+  OTPEntryPage,
+  ChangeEmailFormPage,
+  NewEmailOTPPage, }        from "@pages/security"
+
+
 
 import ProtectedRoute from "./guards/ProtectedRoute"
 import GuestRoute     from "./guards/GuestRoute"
@@ -63,6 +68,7 @@ export const router = createBrowserRouter([
       ),
       children: [
         { path: "/cart", element: <CartPage /> },
+        
       ],
     },
   ],
@@ -98,9 +104,26 @@ export const router = createBrowserRouter([
         ),
         children: [                     // Level 3 — pages
           { path: "/profile",                  element: <ProfilePage /> },
-          
-          { path: "/security",                 element: <SecurityPage /> },
-          { path: "/security/change-password", element: <ChangePasswordPage /> },
+           // ── Security section ─────────────────────────────────────────────
+          { path: "/security",                        element: <SecurityPage /> },
+
+          // Step 1 — Gate (choose verification method)
+          { path: "/security/verify",                 element: <SecurityVerificationGatePage /> },
+
+          // Step 2 — OTP entry (identity verification on current email)
+          { path: "/security/verify-otp",             element: <OTPEntryPage /> },
+
+          // Step 3a — Change password form (after identity verified)
+          { path: "/security/change-password",        element: <ChangePasswordPage /> },
+
+          // Step 3b — Change email: enter new address (after identity verified)
+          { path: "/security/change-email/new",       element: <ChangeEmailFormPage /> },
+
+          // Step 3c — Delete account confirmation (after identity verified)
+          { path: "/security/delete-account/confirm", element: <DeleteAccountPage /> },
+
+          // Step 4 — New email OTP (confirm ownership of new address)
+          { path: "/security/verify-new-email-otp",   element: <NewEmailOTPPage /> },
         ],
       },
     ],

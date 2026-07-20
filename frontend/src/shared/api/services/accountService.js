@@ -14,6 +14,24 @@ export const accountService = {
     const response = await api.post("/api/accounts/register/", payload);
     return extractResponse(response);
   },
+
+  /**
+   * POST /api/accounts/auth/social/
+   *
+   * Handles ALL social providers through one endpoint.
+   * Backend strategy pattern resolves the correct provider.
+   *
+   * @param {{ provider: "google" | "facebook", token: string }} payload
+   * @returns {{ access: string }} JWT access token
+   *
+   * Refresh token arrives as HttpOnly cookie automatically.
+   * No manual cookie handling needed on frontend.
+   */
+  socialLogin: async (payload) => {
+    const response = await api.post("/api/accounts/auth/social/", payload);
+    return extractResponse(response);
+  },
+
   // ── NEW ──────────────────────────────────────────────────────────────────
 
   /**
@@ -95,8 +113,6 @@ export const accountService = {
     return extractResponse(response);
   },
 
-  
-
   /**
    * POST /api/accounts/addresses/
    * Create a new shipping address
@@ -164,17 +180,131 @@ export const accountService = {
     return extractResponse(response);
   },
 
+  // ── Security OTP Gate ──────────────────────────────────────────────────────
+
+  /**
+   * POST /api/accounts/security/send-otp/
+   * Sends 6-digit OTP to user's current email.
+   * @param {{ purpose: "change_email"|"change_password"|"delete_account" }} payload
+   * @returns {{ masked_email: string }}
+   */
+  sendSecurityOTP: async (payload) => {
+    const response = await api.post(
+      "/api/accounts/security/send-otp/",
+      payload,
+    );
+    return extractResponse(response);
+  },
+
+  /**
+   * POST /api/accounts/security/verify-otp/
+   * Verifies OTP and returns verification_token for sensitive action.
+   * @param {{ purpose: string, otp_code: string }} payload
+   * @returns {{ verification_token: string }}
+   */
+  verifySecurityOTP: async (payload) => {
+    const response = await api.post(
+      "/api/accounts/security/verify-otp/",
+      payload,
+    );
+    return extractResponse(response);
+  },
+  // ── Change Password ────────────────────────────────────────────────────────
+
   /**
    * POST /api/accounts/change-password/
-   * Authenticated user changes their own password
-   * Backend logs user out after success — frontend must also clear session
-   * @param {{ current_password: string, new_password: string,
-   *            confirm_new_password: string }} payload
+   * Requires verification_token from OTP gate.
+   * @param {{ new_password: string, confirm_new_password: string, verification_token: string }} payload
    */
   changePassword: async (payload) => {
     const response = await api.post("/api/accounts/change-password/", payload);
     return extractResponse(response);
   },
+
+  // ── Email Change ───────────────────────────────────────────────────────────
+
+  /**
+   * POST /api/accounts/update-email/
+   * Requires verification_token from OTP gate.
+   * @param {{ new_email: string, verification_token: string }} payload
+   * @returns {{ masked_new_email: string }}
+   */
+  requestEmailChange: async (payload) => {
+    const response = await api.post("/api/accounts/update-email/", payload);
+    return extractResponse(response);
+  },
+
+  /**
+   * POST /api/accounts/update-email/confirm/
+   * User enters OTP received at new email address.
+   * @param {{ otp_code: string }} payload
+   */
+  confirmEmailChange: async (payload) => {
+    const response = await api.post(
+      "/api/accounts/update-email/confirm/",
+      payload,
+    );
+    return extractResponse(response);
+  },
+
+  // ── Delete Account ─────────────────────────────────────────────────────────
+
+  /**
+   * DELETE /api/accounts/me/delete/
+   * Requires verification_token from OTP gate.
+   * @param {{ verification_token: string }} payload
+   */
+  deleteAccount: async (payload) => {
+    const response = await api.delete("/api/accounts/me/delete/", {
+      data: payload,
+    });
+    return extractResponse(response);
+  },
+  // /**
+  //  * POST /api/accounts/change-password/
+  //  * Authenticated user changes their own password
+  //  * Backend logs user out after success — frontend must also clear session
+  //  * @param {{ current_password: string, new_password: string,
+  //  *            confirm_new_password: string }} payload
+  //  */
+  // changePassword: async (payload) => {
+  //   const response = await api.post("/api/accounts/change-password/", payload);
+  //   return extractResponse(response);
+  // },
+  // /**
+  //  * POST /api/accounts/update-email/
+  //  * Authenticated — requires new_email + password confirmation
+  //  * @param {{ new_email: string, password: string }} payload
+  //  */
+  // requestEmailChange: async (payload) => {
+  //   const response = await api.post("/api/accounts/update-email/", payload);
+  //   return extractResponse(response);
+  // },
+
+  // /**
+  //  * POST /api/accounts/update-email/confirm/
+  //  * Public — token from email link
+  //  * @param {{ token: string }} payload
+  //  */
+  // confirmEmailChange: async (payload) => {
+  //   const response = await api.post(
+  //     "/api/accounts/update-email/confirm/",
+  //     payload,
+  //   );
+  //   return extractResponse(response);
+  // },
+
+  // /**
+  //  * DELETE /api/accounts/me/delete/
+  //  * Authenticated — requires password confirmation
+  //  * @param {{ password: string }} payload
+  //  */
+  // deleteAccount: async (payload) => {
+  //   const response = await api.delete("/api/accounts/me/delete/", {
+  //     data: payload,
+  //   });
+  //   return extractResponse(response);
+  // },
 
   /**
    * Called ONCE on app start to restore session.
