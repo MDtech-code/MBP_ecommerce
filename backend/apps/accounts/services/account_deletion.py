@@ -3,104 +3,66 @@ from __future__ import annotations
 
 import logging
 
-from django.contrib.auth.hashers import check_password
-from apps.accounts.tasks import send_goodbye_email_task
-from apps.core.error_codes import ErrorCode
 from apps.core.exceptions import DomainError
-
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from apps.accounts.models import User
 logger = logging.getLogger("apps.accounts")
 
 
 def delete_user_account(
     *,
     user: "User",
-    password: str,
+    verification_token: str,
 ) -> None:
     """
-    Complete user account deletion workflow.
+    Hard delete user account after identity proven via OTP gate.
 
-    Responsibility:
-        Validates password confirmation, collects user data
-        needed for goodbye email, hard deletes the user,
-        then dispatches goodbye email task after deletion.
+    No password field — OTP verification already proved identity.
 
-    Why collect email and name BEFORE delete?
-        After hard delete the user object is gone from DB.
-        Task needs email and name to send goodbye email.
-        We collect them before deletion and pass directly to task.
-
-    Why task dispatch AFTER delete?
-        Deletion is the critical operation.
-        Email is non-critical — failure must never block or
-        roll back a confirmed account deletion.
-
-    Phase 1 — Validate password:
-        1. Check submitted password against stored hash
-
-    Phase 2 — Collect data + hard delete:
-        2. Collect email and name before delete
-        3. Hard delete user (CASCADE handles all related data)
-
-    Phase 3 — After delete:
-        4. Dispatch goodbye email task
+    Steps:
+        1. Consume SecurityVerifiedSession (purpose=delete_account)
+        2. Collect email + name before deletion
+        3. Hard delete user (CASCADE handles related records)
+        4. Dispatch goodbye email
 
     Args:
-        user:     The authenticated User instance requesting deletion.
-        password: Plain-text password submitted for confirmation.
+        user:               Authenticated user.
+        verification_token: UUID from SecurityVerifiedSession.
 
     Raises:
-        DomainError: If password confirmation fails (400).
-        Exception:   Any unexpected error is logged and re-raised.
+        DomainError: Session invalid or expired.
     """
-    
+    from apps.accounts.services.security_otp import consume_verified_session
+    from apps.accounts.tasks import send_goodbye_email_task
 
     log_context = {"user_id": user.id, "email": user.email}
 
-    # ── Phase 1: Password confirmation ─────────────────────────────────────────
-    if not check_password(password, user.password):
-        logger.warning(
-            "Account deletion failed — incorrect password confirmation",
-            extra=log_context,
-        )
-        raise DomainError(
-            "Incorrect password. Please try again.",
-            code=ErrorCode.INVALID_CREDENTIALS,
-            status_code=400,
-        )
+    # Step 1: Consume verified session
+    consume_verified_session(
+        user    = user,
+        purpose = "delete_account",
+        token   = verification_token,
+    )
 
-    # ── Phase 2: Collect data + hard delete ────────────────────────────────────
-    # Collect before delete — user object will be gone after deletion.
-    # Task needs these to send goodbye email.
+    # Step 2: Collect before deletion
     user_email = user.email
-    user_name = user.short_name
+    user_name  = user.short_name
 
+    # Step 3: Hard delete
     try:
         user.delete()
-        logger.info(
-            "User account hard deleted successfully",
-            extra=log_context,
-        )
+        logger.info("User account deleted", extra=log_context)
     except Exception:
-        logger.exception(
-            "Unexpected error during user account deletion",
-            extra=log_context,
-        )
+        logger.exception("Unexpected error during account deletion", extra=log_context)
         raise
 
-    # ── Phase 3: Goodbye email dispatch (after delete) ─────────────────────────
-    # User is gone from DB at this point.
-    # We pass email and name directly — no DB lookup needed in task.
+    # Step 4: Goodbye email — after deletion
     try:
         send_goodbye_email_task.delay(user_email, user_name)
-        logger.info(
-            "Goodbye email task dispatched",
-            extra=log_context,
-        )
+        logger.info("Goodbye email dispatched", extra=log_context)
     except Exception:
-        # Email failure must NOT affect deletion confirmation.
-        # Account is already deleted — this is non-critical.
         logger.exception(
-            "Failed to dispatch goodbye email after account deletion — "
-            "account is deleted but goodbye email not sent.",
+            "Failed to dispatch goodbye email — account already deleted",
             extra=log_context,
         )

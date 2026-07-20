@@ -38,6 +38,27 @@ class ErrorCode:
     SESSION_EXPIRED         = "session_expired"
     TOKEN_INVALID           = "token_invalid"
     TOKEN_EXPIRED           = "token_expired"
+    
+    
+    # ── OTP ───────────────────────────────────────────────────────────────────
+    OTP_RESEND_COOLDOWN          = "otp_resend_cooldown"
+    OTP_NOT_FOUND                = "otp_not_found"
+    OTP_EXPIRED                  = "otp_expired"
+    OTP_INVALID                  = "otp_invalid"
+    OTP_ATTEMPTS_EXCEEDED        = "otp_attempts_exceeded"
+
+    # ── Verified Session ──────────────────────────────────────────────────────
+    VERIFICATION_SESSION_INVALID = "verification_session_invalid"
+    VERIFICATION_SESSION_EXPIRED = "verification_session_expired"
+
+    # ── Social Auth ───────────────────────────────────────────────────────────
+    UNSUPPORTED_AUTH_PROVIDER    = "unsupported_auth_provider"
+    INVALID_SOCIAL_TOKEN         = "invalid_social_token"
+    AUTH_PROVIDER_UNREACHABLE    = "auth_provider_unreachable"
+    SOCIAL_EMAIL_NOT_VERIFIED    = "social_email_not_verified"
+    SOCIAL_EMAIL_MISSING         = "social_email_missing"
+    ACCOUNT_INACTIVE             = "account_inactive"
+    
 
     # ── Registration / Email ──────────────────────────────────────────────────
     EMAIL_ALREADY_EXISTS    = "email_already_exists"

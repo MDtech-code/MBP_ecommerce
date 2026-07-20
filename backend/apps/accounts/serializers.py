@@ -13,7 +13,7 @@ from rest_framework import serializers
 
 from apps.core.mixins import TimestampFieldsMixin
 
-from .models import User, UserProfile,UserAddress
+from .models import User, UserProfile,UserAddress,SecurityPurpose
 from .validators import validate_email_format,validate_full_name,validate_image_file,validate_pakistani_phone,validate_passwords_match,validate_strong_password
 
 logger = logging.getLogger("apps.accounts")
@@ -404,7 +404,7 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         attrs.pop("confirm_password")
         return attrs
 
-
+'''
 # ─── Change Password ───────────────────────────────────────────────────────────
 
 class ChangePasswordSerializer(serializers.Serializer):
@@ -504,7 +504,7 @@ class EmailChangeConfirmSerializer(serializers.Serializer):
             "blank": _("Token is required."),
         }
     )
-
+'''
 
 
 # ─── Profile Update Serializer ───────────────────────────────────────────────
@@ -574,24 +574,152 @@ class AvatarUploadSerializer(serializers.Serializer):
 
 # ─── Account Deletion ──────────────────────────────────────────────────────────
 
-class DeleteAccountSerializer(serializers.Serializer):
-    """
-    Validate password confirmation for account deletion.
+# class DeleteAccountSerializer(serializers.Serializer):
+#     """
+#     Validate password confirmation for account deletion.
 
-    Responsibility:
-        Validate password field presence only.
-        Password correctness check happens in the service layer
-        against the authenticated user's stored hash.
+#     Responsibility:
+#         Validate password field presence only.
+#         Password correctness check happens in the service layer
+#         against the authenticated user's stored hash.
 
-    Security note:
-        We do NOT check password correctness here.
-        Serializer has no access to request.user safely.
-        Service layer owns that check.
-    """
+#     Security note:
+#         We do NOT check password correctness here.
+#         Serializer has no access to request.user safely.
+#         Service layer owns that check.
+#     """
 
-    password = serializers.CharField(
-        write_only=True,
+#     password = serializers.CharField(
+#         write_only=True,
+#         error_messages={
+#             "blank": _("Password is required to confirm account deletion."),
+#         },
+#     )
+
+
+# apps/accounts/serializers.py — add these
+
+# apps/accounts/serializers.py — security serializers section
+
+from apps.accounts.models import SecurityPurpose
+
+
+# ─── Security OTP ─────────────────────────────────────────────────────────────
+
+class SendSecurityOTPSerializer(serializers.Serializer):
+    purpose = serializers.ChoiceField(
+        choices=SecurityPurpose.choices,
         error_messages={
-            "blank": _("Password is required to confirm account deletion."),
+            "invalid_choice": _("Invalid purpose."),
+            "blank":          _("Purpose is required."),
+        },
+    )
+
+
+class VerifySecurityOTPSerializer(serializers.Serializer):
+    purpose = serializers.ChoiceField(
+        choices=SecurityPurpose.choices,
+        error_messages={"invalid_choice": _("Invalid purpose.")},
+    )
+    otp_code = serializers.CharField(
+        min_length=6,
+        max_length=6,
+        error_messages={
+            "min_length": _("Verification code must be 6 digits."),
+            "max_length": _("Verification code must be 6 digits."),
+            "blank":      _("Verification code is required."),
+        },
+    )
+
+    def validate_otp_code(self, value: str) -> str:
+        if not value.isdigit():
+            raise serializers.ValidationError(
+                _("Verification code must contain digits only.")
+            )
+        return value
+
+
+# ─── Change Password ───────────────────────────────────────────────────────────
+
+class ChangePasswordSerializer(serializers.Serializer):
+    new_password = serializers.CharField(
+        write_only=True,
+        min_length=8,
+        error_messages={
+            "blank":      _("New password is required."),
+            "min_length": _("Password must be at least 8 characters."),
+        },
+    )
+    confirm_new_password = serializers.CharField(
+        write_only=True,
+        error_messages={"blank": _("Please confirm your new password.")},
+    )
+    verification_token = serializers.UUIDField(
+        error_messages={
+            "invalid": _("Invalid verification token."),
+            "blank":   _("Verification token is required."),
+        },
+    )
+
+    def validate_new_password(self, value: str) -> str:
+        return validate_strong_password(value)
+
+    def validate(self, attrs: dict) -> dict:
+        if attrs["new_password"] != attrs["confirm_new_password"]:
+            raise serializers.ValidationError(
+                {"confirm_new_password": _("Passwords do not match.")}
+            )
+        attrs.pop("confirm_new_password")
+        return attrs
+
+
+# ─── Email Change Request ──────────────────────────────────────────────────────
+
+class EmailChangeRequestSerializer(serializers.Serializer):
+    new_email = serializers.EmailField(
+        error_messages={
+            "blank":   _("New email address is required."),
+            "invalid": _("Enter a valid email address."),
+        }
+    )
+    verification_token = serializers.UUIDField(
+        error_messages={
+            "invalid": _("Invalid verification token."),
+            "blank":   _("Verification token is required."),
+        },
+    )
+
+    def validate_new_email(self, value: str) -> str:
+        return validate_email_format(value)
+
+
+# ─── Email Change Confirm ──────────────────────────────────────────────────────
+
+class EmailChangeConfirmSerializer(serializers.Serializer):
+    otp_code = serializers.CharField(
+        min_length=6,
+        max_length=6,
+        error_messages={
+            "min_length": _("Verification code must be 6 digits."),
+            "max_length": _("Verification code must be 6 digits."),
+            "blank":      _("Verification code is required."),
+        },
+    )
+
+    def validate_otp_code(self, value: str) -> str:
+        if not value.isdigit():
+            raise serializers.ValidationError(
+                _("Verification code must contain digits only.")
+            )
+        return value
+
+
+# ─── Delete Account ────────────────────────────────────────────────────────────
+
+class DeleteAccountSerializer(serializers.Serializer):
+    verification_token = serializers.UUIDField(
+        error_messages={
+            "invalid": _("Invalid verification token."),
+            "blank":   _("Verification token is required."),
         },
     )

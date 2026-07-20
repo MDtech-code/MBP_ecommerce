@@ -7,3 +7,5 @@ class AccountsConfig(AppConfig):
 
     def ready(self) -> None:
         import apps.accounts.signals  
+        import apps.accounts.auth_strategies.google    
+        import apps.accounts.auth_strategies.facebook  

@@ -15,7 +15,8 @@ from .views import (
     AddressDetailView,
     AddressSetDefaultView,
     DeleteAccountView,
-    EmailChangeConfirmView,EmailChangeRequestView
+    EmailChangeConfirmView,EmailChangeRequestView,SocialAuthView,
+    SendSecurityOTPView,VerifySecurityOTPView
 )
 
 app_name = "accounts"
@@ -26,6 +27,11 @@ urlpatterns = [
     path("login/", LoginView.as_view(), name="login"),
     path("logout/", LogoutView.as_view(), name="logout"),
     path("token/refresh/", TokenRefreshView.as_view(), name="token-refresh"),
+    path("auth/social/", SocialAuthView.as_view(), name="social-auth"),
+    # apps/accounts/urls.py — add new routes
+
+    path("security/send-otp/",    SendSecurityOTPView.as_view(),   name="security-send-otp"),
+    path("security/verify-otp/",  VerifySecurityOTPView.as_view(), name="security-verify-otp"),
 
     # ─── Email Verification ───────────────────────────
     path("verify-email/", VerifyEmailView.as_view(), name="verify-email"),
@@ -50,5 +56,6 @@ urlpatterns = [
     path("update-email/confirm/",   EmailChangeConfirmView.as_view(),   name="update-email-confirm"),
     # ─── delete account  ────────────────────────────────────────────
     path("me/delete/", DeleteAccountView.as_view(), name="delete-account"),
+
 
 ]

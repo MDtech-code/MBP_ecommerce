@@ -557,7 +557,8 @@ class PendingEmailChange(BaseVerificationToken):
         is_expired, is_valid, mark_used(), save()
     """
 
-    expiry_hours = 24
+    # expiry_hours = 24
+    REQUEST_EXPIRY_HOURS = 24
 
     user = models.OneToOneField(
         User,
@@ -569,20 +570,34 @@ class PendingEmailChange(BaseVerificationToken):
         _("new email address"),
         help_text=_("Email address waiting to be verified."),
     )
+    expires_at = models.DateTimeField(
+        _(" expires at"),
+        help_text=_("Overall request window. 24 hours from creation."),
+    )
+    
+
+    
 
     class Meta:
         verbose_name        = _("pending email change")
         verbose_name_plural = _("pending email changes")
 
     def save(self, *args, **kwargs) -> None:
-        # BaseVerificationToken.save() handles expires_at auto-set
+        if not self.expires_at:
+            self.expires_at = timezone.now() + timedelta(
+                hours=self.REQUEST_EXPIRY_HOURS
+            )
         super().save(*args, **kwargs)
         logger.debug(
-            "PendingEmailChange saved: user=%s new_email=%s expires_at=%s",
+            "PendingEmailChange saved: user=%s new_email=%s",
             self.user_id,
             self.new_email,
-            self.expires_at,
         )
+
+    @property
+    def is_expired(self) -> bool:
+        """Overall 24-hour request window expired."""
+        return timezone.now() > self.expires_at
 
     def __str__(self) -> str:
         return f"Email change: {self.user.email} → {self.new_email}"
@@ -702,3 +717,301 @@ class UserLoginActivity(models.Model):
                 "and cannot be updated."
             )
         super().save(*args, **kwargs)
+
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SOCIAL ACCOUNT
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class SocialProvider(models.TextChoices):
+    GOOGLE   = "google",   _("Google")
+    FACEBOOK = "facebook", _("Facebook")
+    APPLE    = "apple",    _("Apple")
+
+
+class SocialAccount(TimeStampedModel):
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="social_accounts",
+        verbose_name=_("user"),
+    )
+    provider = models.CharField(
+        _("provider"),
+        max_length=20,
+        choices=SocialProvider.choices,
+    )
+    provider_id = models.CharField(
+        _("provider user ID"),
+        max_length=255,
+    )
+    provider_email = models.EmailField(
+        _("provider email"),
+    )
+    is_provider_email_verified = models.BooleanField(
+        _("provider email verified"),
+        default=False,
+        help_text=_("True if the OAuth provider confirmed ownership of the email at login."),
+    )
+    avatar_url = models.URLField(
+        _("avatar URL"),
+        max_length=2048,
+        blank=True,
+        default="",
+    )
+    access_token = models.TextField(
+        _("access token"),
+        blank=True,
+        default="",
+    )
+    refresh_token = models.TextField(
+        _("refresh token"),
+        blank=True,
+        default="",
+    )
+    token_expires_at = models.DateTimeField(
+        _("token expires at"),
+        null=True,
+        blank=True,
+    )
+    extra_data = models.JSONField(
+        _("extra data"),
+        default=dict,
+        blank=True,
+        help_text=_("Raw OAuth profile payload returned by the provider for auditing and debugging."),
+    )
+    last_login_at = models.DateTimeField(
+        _("last login at"),
+        null=True,
+        blank=True,
+    )
+
+    class Meta:
+        verbose_name        = _("social account")
+        verbose_name_plural = _("social accounts")
+        ordering            = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["provider", "provider_id"],
+                name="unique_provider_identity",
+            ),
+            models.UniqueConstraint(
+                fields=["user", "provider"],
+                name="unique_provider_per_user",
+            ),
+        ]
+        indexes = [
+            # Removed redundant composite indexes (already covered by UniqueConstraint)
+            models.Index(
+                fields=["provider"],
+                name="accounts_social_provider_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user.email} via {self.get_provider_display()}"
+
+    def update_login_timestamp(self) -> None:
+        self.last_login_at = timezone.now()
+        self.save(update_fields=["last_login_at"])
+
+    def update_tokens(
+        self,
+        *,
+        access_token: str,
+        refresh_token: str = "",
+        token_expires_at=None,
+        extra_data: dict | None = None,
+    ) -> None:
+        self.access_token = access_token
+        self.refresh_token = refresh_token
+        self.token_expires_at = token_expires_at
+        
+        fields_to_update = ["access_token", "refresh_token", "token_expires_at"]
+        if extra_data is not None:
+            self.extra_data = extra_data
+            fields_to_update.append("extra_data")
+            
+        self.save(update_fields=fields_to_update)
+
+    @property
+    def is_token_expired(self) -> bool:
+        if not self.token_expires_at:
+            return False
+        return timezone.now() > self.token_expires_at
+
+
+
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# OTP SECURITY
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class SecurityPurpose(models.TextChoices):
+    CHANGE_EMAIL    = "change_email",    _("Change Email")
+    CHANGE_PASSWORD = "change_password", _("Change Password")
+    DELETE_ACCOUNT  = "delete_account",  _("Delete Account")
+    VERIFY_NEW_EMAIL = "verify_new_email", _("Verify New Email") 
+
+
+class SecurityVerificationOTP(models.Model):
+    expiry_minutes = 10
+    max_attempts   = 5
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="security_otps",
+        verbose_name=_("user"),
+    )
+    purpose = models.CharField(
+        _("purpose"),
+        max_length=20,
+        choices=SecurityPurpose.choices,
+    )
+    otp_hash = models.CharField(
+        _("OTP hash"),
+        max_length=128,
+    )
+    attempts = models.PositiveSmallIntegerField(
+        _("attempts"),
+        default=0,
+    )
+    is_used = models.BooleanField(
+        _("is used"),
+        default=False,
+    )
+    metadata = models.JSONField(
+        _("metadata"),
+        default=dict,
+        blank=True,
+        help_text=_("Contextual data like {'new_email': 'foo@bar.com'} bound to this OTP."),
+    )
+    expires_at = models.DateTimeField(
+        _("expires at"),
+    )
+    created_at = models.DateTimeField(
+        _("created at"),
+        auto_now_add=True,
+        db_index=True,
+    )
+
+    class Meta:
+        verbose_name        = _("security verification OTP")
+        verbose_name_plural = _("security verification OTPs")
+        ordering            = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "purpose"],
+                condition=models.Q(is_used=False),
+                name="unique_active_otp_per_user_purpose",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=["user", "purpose", "is_used"],
+                name="accounts_otp_lookup_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"OTP for {self.user.email} — {self.get_purpose_display()}"
+
+    def save(self, *args, **kwargs) -> None:
+        if not self.expires_at:
+            self.expires_at = timezone.now() + timedelta(minutes=self.expiry_minutes)
+        super().save(*args, **kwargs)
+
+    @property
+    def is_expired(self) -> bool:
+        return timezone.now() > self.expires_at
+
+    @property
+    def is_attempts_exceeded(self) -> bool:
+        return self.attempts >= self.max_attempts
+
+    @property
+    def is_valid(self) -> bool:
+        return (
+            not self.is_used
+            and not self.is_expired
+            and not self.is_attempts_exceeded
+        )
+
+    def increment_attempts(self) -> None:
+        """Increment failed attempt counter atomically."""
+        self.attempts = models.F("attempts") + 1
+        self.save(update_fields=["attempts"])
+        self.refresh_from_db(fields=["attempts"])
+
+    def mark_used(self) -> None:
+        self.is_used = True
+        self.save(update_fields=["is_used"])
+
+
+class SecurityVerifiedSession(models.Model):
+    expiry_minutes = 15
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="security_verified_sessions",
+        verbose_name=_("user"),
+    )
+    purpose = models.CharField(
+        _("purpose"),
+        max_length=20,
+        choices=SecurityPurpose.choices,
+    )
+    token = models.UUIDField(
+        _("token"),
+        default=uuid.uuid4,
+        unique=True,  # Automatically creates unique B-tree index
+        editable=False,
+    )
+    is_used = models.BooleanField(
+        _("is used"),
+        default=False,
+    )
+    metadata = models.JSONField(
+        _("metadata"),
+        default=dict,
+        blank=True,
+        help_text=_("Carried over from SecurityVerificationOTP metadata."),
+    )
+    expires_at = models.DateTimeField(
+        _("expires at"),
+    )
+    created_at = models.DateTimeField(
+        _("created at"),
+        auto_now_add=True,
+    )
+
+    class Meta:
+        verbose_name        = _("security verified session")
+        verbose_name_plural = _("security verified sessions")
+        ordering            = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"VerifiedSession for {self.user.email} — {self.get_purpose_display()}"
+
+    def save(self, *args, **kwargs) -> None:
+        if not self.expires_at:
+            self.expires_at = timezone.now() + timedelta(minutes=self.expiry_minutes)
+        super().save(*args, **kwargs)
+
+    @property
+    def is_expired(self) -> bool:
+        return timezone.now() > self.expires_at
+
+    @property
+    def is_valid(self) -> bool:
+        return not self.is_used and not self.is_expired
+
+    def mark_used(self) -> None:
+        self.is_used = True
+        self.save(update_fields=["is_used"])

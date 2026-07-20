@@ -245,7 +245,68 @@ def send_goodbye_email_task(self, user_email: str, user_name: str) -> None:
 
 
 
+# apps/accounts/tasks.py — add this task
 
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def send_security_otp_task(self, user_id: int, otp_code: str, purpose: str,recipient_email: str | None = None, ) -> None:
+    
+    """
+    Send 6-digit security OTP to user's current email address.
+
+    Args:
+        user_id:  PK of the User.
+        otp_code: Plain-text 6-digit OTP (never stored — only in transit here).
+        purpose:  SecurityPurpose string for subject line context.
+    """
+    from .models import User
+
+    PURPOSE_LABELS = {
+        "change_email":    "Email Change",
+        "change_password": "Password Change",
+        "delete_account":  "Account Deletion",
+    }
+
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        logger.warning(
+            "Security OTP task skipped — user not found",
+            extra={"user_id": user_id},
+        )
+        return
+
+    purpose_label = PURPOSE_LABELS.get(purpose, "Security Verification")
+
+    subject = f"Your BikeExpress verification code — {purpose_label}"
+    message = (
+        f"Hi {user.short_name},\n\n"
+        f"Your verification code for {purpose_label} is:\n\n"
+        f"    {otp_code}\n\n"
+        f"This code expires in 10 minutes.\n"
+        f"Do not share this code with anyone.\n\n"
+        f"If you did not request this, please contact support immediately.\n\n"
+        f"BikeExpress Security Team"
+    )
+
+    try:
+        # print("Enter in a task ",user_id,otp_code,purpose)
+        send_mail(
+            subject      = subject,
+            message      = message,
+            from_email   = settings.DEFAULT_FROM_EMAIL,
+            recipient_list = [recipient_email or user.email],
+            fail_silently  = False,
+        )
+        logger.info(
+            "Security OTP email sent",
+            extra={"user_id": user.id, "purpose": purpose},
+        )
+    except Exception as exc:
+        logger.exception(
+            "Failed to send security OTP email — will retry",
+            extra={"user_id": user.id, "purpose": purpose},
+        )
+        raise self.retry(exc=exc)
 
 
 
@@ -368,5 +429,71 @@ def send_email_change_notification_task(
         logger.exception(
             "Failed to send email change security notification — will retry",
             extra={"user_id": user_id, "attempt": self.request.retries},
+        )
+        raise self.retry(exc=exc)
+    
+
+
+
+
+
+# apps/accounts/tasks.py — add this task
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def send_security_otp_task(self, user_id: int, otp_code: str, purpose: str) -> None:
+    """
+    Send 6-digit security OTP to user's current email address.
+
+    Args:
+        user_id:  PK of the User.
+        otp_code: Plain-text 6-digit OTP (never stored — only in transit here).
+        purpose:  SecurityPurpose string for subject line context.
+    """
+    from .models import User
+
+    PURPOSE_LABELS = {
+        "change_email":    "Email Change",
+        "change_password": "Password Change",
+        "delete_account":  "Account Deletion",
+    }
+
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        logger.warning(
+            "Security OTP task skipped — user not found",
+            extra={"user_id": user_id},
+        )
+        return
+
+    purpose_label = PURPOSE_LABELS.get(purpose, "Security Verification")
+
+    subject = f"Your BikeExpress verification code — {purpose_label}"
+    message = (
+        f"Hi {user.short_name},\n\n"
+        f"Your verification code for {purpose_label} is:\n\n"
+        f"    {otp_code}\n\n"
+        f"This code expires in 10 minutes.\n"
+        f"Do not share this code with anyone.\n\n"
+        f"If you did not request this, please contact support immediately.\n\n"
+        f"BikeExpress Security Team"
+    )
+
+    try:
+        send_mail(
+            subject      = subject,
+            message      = message,
+            from_email   = settings.DEFAULT_FROM_EMAIL,
+            recipient_list = [user.email],
+            fail_silently  = False,
+        )
+        logger.info(
+            "Security OTP email sent",
+            extra={"user_id": user.id, "purpose": purpose},
+        )
+    except Exception as exc:
+        logger.exception(
+            "Failed to send security OTP email — will retry",
+            extra={"user_id": user.id, "purpose": purpose},
         )
         raise self.retry(exc=exc)

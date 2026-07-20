@@ -219,6 +219,13 @@ SIMPLE_JWT = {
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
 
+# ─── Google credential  ──────────────────────────────────────────────
+GOOGLE_CLIENT_ID     = env("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = env("GOOGLE_CLIENT_SECRET")
+# ─── facebook credential  ──────────────────────────────────────────────
+FACEBOOK_APP_ID     = env("FACEBOOK_APP_ID")
+FACEBOOK_APP_SECRET = env("FACEBOOK_APP_SECRET")
+
 
 # ─── Internationalisation ─────────────────────────────
 

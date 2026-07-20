@@ -188,79 +188,79 @@ def confirm_password_reset(
         )
 
 
-def change_password(
-    *,
-    user: "User",
-    current_password: str,
-    new_password: str,
-) -> None:
-    """
-    Change password for an authenticated user.
+# def change_password(
+#     *,
+#     user: "User",
+#     current_password: str,
+#     new_password: str,
+# ) -> None:
+#     """
+#     Change password for an authenticated user.
 
-    Phase 1 — Atomic transaction:
-        1. Verify current password against stored hash
-        2. Set and save new password
+#     Phase 1 — Atomic transaction:
+#         1. Verify current password against stored hash
+#         2. Set and save new password
 
-    Phase 2 — After commit:
-        3. Blacklist all outstanding JWT tokens
+#     Phase 2 — After commit:
+#         3. Blacklist all outstanding JWT tokens
 
-    Args:
-        user:             Authenticated User instance from request.
-        current_password: Plain-text current password for confirmation.
-        new_password:     Validated plain-text new password from serializer.
+#     Args:
+#         user:             Authenticated User instance from request.
+#         current_password: Plain-text current password for confirmation.
+#         new_password:     Validated plain-text new password from serializer.
 
-    Raises:
-        DomainError: Current password incorrect (400).
-        Exception:   Any unexpected error is logged and re-raised.
-    """
-    log_context = {"user_id": user.id}
+#     Raises:
+#         DomainError: Current password incorrect (400).
+#         Exception:   Any unexpected error is logged and re-raised.
+#     """
+#     log_context = {"user_id": user.id}
 
-    # ── Phase 1: Atomic transaction ────────────────────────────────────────────
-    try:
-        with transaction.atomic():
+#     # ── Phase 1: Atomic transaction ────────────────────────────────────────────
+#     try:
+#         with transaction.atomic():
 
-            # Step 1: Verify current password
-            if not check_password(current_password, user.password):
-                logger.warning(
-                    "Password change failed — incorrect current password",
-                    extra=log_context,
-                )
-                raise DomainError(
-                    "Current password is incorrect.",
-                    code=ErrorCode.INVALID_CREDENTIALS,
-                    status_code=400,
-                )
+#             # Step 1: Verify current password
+#             if not check_password(current_password, user.password):
+#                 logger.warning(
+#                     "Password change failed — incorrect current password",
+#                     extra=log_context,
+#                 )
+#                 raise DomainError(
+#                     "Current password is incorrect.",
+#                     code=ErrorCode.INVALID_CREDENTIALS,
+#                     status_code=400,
+#                 )
 
-            # Step 2: Set new password
-            user.set_password(new_password)
-            user.save(update_fields=["password"])
+#             # Step 2: Set new password
+#             user.set_password(new_password)
+#             user.save(update_fields=["password"])
 
-            logger.info(
-                "Password changed successfully",
-                extra=log_context,
-            )
+#             logger.info(
+#                 "Password changed successfully",
+#                 extra=log_context,
+#             )
 
-    except DomainError:
-        raise
+#     except DomainError:
+#         raise
 
-    except Exception:
-        logger.exception(
-            "Unexpected error during password change transaction — "
-            "all changes rolled back.",
-            extra=log_context,
-        )
-        raise
+#     except Exception:
+#         logger.exception(
+#             "Unexpected error during password change transaction — "
+#             "all changes rolled back.",
+#             extra=log_context,
+#         )
+#         raise
 
-    # ── Phase 2: Blacklist all JWT tokens (after commit) ──────────────────────
-    try:
-        blacklist_all_user_tokens(user)
-        logger.info(
-            "All JWT tokens blacklisted after password change",
-            extra=log_context,
-        )
-    except Exception:
-        logger.exception(
-            "Failed to blacklist JWT tokens after password change — "
-            "password changed but existing sessions may remain active.",
-            extra=log_context,
-        )
+#     # ── Phase 2: Blacklist all JWT tokens (after commit) ──────────────────────
+#     try:
+#         blacklist_all_user_tokens(user)
+#         logger.info(
+#             "All JWT tokens blacklisted after password change",
+#             extra=log_context,
+#         )
+#     except Exception:
+#         logger.exception(
+#             "Failed to blacklist JWT tokens after password change — "
+#             "password changed but existing sessions may remain active.",
+#             extra=log_context,
+#         )

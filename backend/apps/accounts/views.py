@@ -20,7 +20,8 @@ from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
 from rest_framework.exceptions import ErrorDetail
-
+from apps.accounts.auth_strategies.registry import auth_strategy_registry
+from apps.accounts.services.social_auth import login_or_register_social_user
 from apps.core.error_codes import ErrorCode
 from apps.core.api.views import BaseAPIView
 from apps.core.permissions import IsNotAuthenticated
@@ -44,7 +45,7 @@ from .services import (
     delete_user_account,
     request_email_change,
     request_password_reset,
-    confirm_email_change,confirm_password_reset,change_password,login_user,
+    confirm_password_reset,login_user,
     logout_user,
     refresh_access_token,
     get_user_profile,
@@ -58,7 +59,13 @@ from .services import (
     
     
     
+    
+    
+    
 )
+from .services.security_otp import verify_security_otp,send_security_otp
+from .services.change_password import change_user_password
+from .services.account_deletion import delete_user_account
 from apps.core.exceptions import DomainError
 
 from .serializers import (
@@ -75,7 +82,9 @@ from .serializers import (
     UserAddressSerializer,
     DeleteAccountSerializer,
     EmailChangeRequestSerializer,
-    EmailChangeConfirmSerializer
+    EmailChangeConfirmSerializer,
+    VerifySecurityOTPSerializer,
+    SendSecurityOTPSerializer
 )
 
 
@@ -531,7 +540,7 @@ class PasswordResetConfirmView(BaseAPIView):
             message=_("Password reset successfully. Please log in again."),
         )
 
-
+'''
 # ─── Change Password ───────────────────────────────────────────────────────────
 
 class ChangePasswordView(BaseAPIView):
@@ -569,7 +578,7 @@ class ChangePasswordView(BaseAPIView):
 
         # Service raises DomainError if current password is wrong.
         # Global exception handler converts it to correct response.
-        change_password(
+        change_user_password(
             user=request.user,
             current_password=serializer.validated_data["current_password"],
             new_password=serializer.validated_data["new_password"],
@@ -689,7 +698,7 @@ class EmailChangeConfirmView(BaseAPIView):
             ),
         )
 
-
+'''
 
 
 
@@ -987,7 +996,7 @@ class AddressSetDefaultView(BaseAPIView):
         )
 
 # ─── Delete Account ────────────────────────────────────────────────────────────
-
+'''
 class DeleteAccountView(BaseAPIView):
     """
     DELETE /api/accounts/me/delete/
@@ -1045,6 +1054,369 @@ class DeleteAccountView(BaseAPIView):
             "User account deleted successfully",
             extra=log_context,
         )
+
+        return self.success_response(
+            message=_(
+                "Your account has been permanently deleted. "
+                "We are sad to see you go. "
+                "You are always welcome back."
+            ),
+        )
+    
+'''
+
+# ─── Social login ─────────────────────────────────────────────────────
+
+
+
+
+
+
+
+
+
+class SocialAuthView(BaseAPIView):
+    """
+    POST /api/accounts/auth/social/
+
+    Universal social authentication endpoint.
+    One URL handles all providers — provider determined by request body.
+
+    Request:
+        {
+            "provider": "google" | "facebook",
+            "token":    "<token_from_frontend>"
+        }
+
+    Success 200:
+        {
+            "access":  "<jwt_access_token>",
+            "refresh": "<jwt_refresh_token>"
+        }
+
+    Errors:
+        400 — Missing fields, invalid token, unsupported provider,
+              email not provided by Facebook, account inactive.
+    """
+
+    permission_classes = [AllowAny]
+    throttle_classes   = [AnonRateThrottle]
+
+    def post(self, request: Request):
+        log_context = {"request_id": getattr(request, "id", None)}
+
+        provider = request.data.get("provider", "").strip().lower()
+        token    = request.data.get("token", "").strip()
+
+        if not provider or not token:
+            return self.error_response(
+                message=_("Both 'provider' and 'token' fields are required."),
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            strategy    = auth_strategy_registry.get(provider)
+            social_data = strategy.authenticate(token)
+            user        = login_or_register_social_user(social_data)
+            refresh = RefreshToken.for_user(user)
+
+        except DomainError as exc:
+            logger.warning(
+                "Social auth failed",
+                extra={
+                    **log_context,
+                    "provider": provider,
+                    "code":     exc.code,
+                },
+            )
+            return self.error_response(
+                message=exc.message,
+                status_code=exc.status_code,
+            )
+
+        logger.info(
+            "Social auth success",
+            extra={
+                **log_context,
+                "provider": provider,
+                "user_id":  user.id,
+            },
+        )
+
+        # ── Build response — mirrors email/password login exactly ──────────────
+        response = self.success_response(
+            data={"access": str(refresh.access_token),"user": UserSerializer(user).data,},
+            
+            message=_("Authentication successful."),
+        )
+
+        # Refresh token in HttpOnly cookie — never in response body
+        set_refresh_cookie(response, str(refresh))
+        set_csrf_cookie(request, response)
+
+        return response
+    
+
+
+# apps/accounts/views.py — security views section
+
+from apps.accounts.services.security_otp import (
+    send_security_otp,
+    verify_security_otp,
+)
+from apps.accounts.services.email_change import (
+    request_email_change,
+    confirm_email_change_otp,
+)
+from apps.accounts.services.change_password import change_user_password
+from apps.accounts.services.account_deletion import delete_user_account
+
+
+# ─── Send Security OTP ────────────────────────────────────────────────────────
+
+class SendSecurityOTPView(BaseAPIView):
+    """
+    POST /api/accounts/security/send-otp/
+
+    Sends 6-digit OTP to user's current email.
+    Enforces 60-second resend cooldown.
+
+    Permissions: IsAuthenticated
+    """
+    permission_classes = [IsAuthenticated]
+    throttle_classes   = [AnonRateThrottle]
+    serializer_class   = SendSecurityOTPSerializer
+
+    def post(self, request: Request) -> Response:
+        log_context = {"request_id": request.id, "user_id": request.user.id}
+
+        serializer = self.serializer_class(data=request.data)
+        if not serializer.is_valid():
+            return self.error_response(
+                message=_("Invalid request."),
+                errors=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        masked_email = send_security_otp(
+            user    = request.user,
+            purpose = serializer.validated_data["purpose"],
+        )
+
+        logger.info(
+            "Security OTP sent",
+            extra={**log_context, "purpose": serializer.validated_data["purpose"]},
+        )
+
+        return self.success_response(
+            data    = {"masked_email": masked_email},
+            message = _("Verification code sent to your email address."),
+        )
+
+
+# ─── Verify Security OTP ──────────────────────────────────────────────────────
+
+class VerifySecurityOTPView(BaseAPIView):
+    """
+    POST /api/accounts/security/verify-otp/
+
+    Verifies OTP and returns verification_token for sensitive action.
+
+    Permissions: IsAuthenticated
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class   = VerifySecurityOTPSerializer
+
+    def post(self, request: Request) -> Response:
+        log_context = {"request_id": request.id, "user_id": request.user.id}
+
+        serializer = self.serializer_class(data=request.data)
+        if not serializer.is_valid():
+            return self.error_response(
+                message=_("Invalid request."),
+                errors=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        verification_token = verify_security_otp(
+            user     = request.user,
+            purpose  = serializer.validated_data["purpose"],
+            otp_code = serializer.validated_data["otp_code"],
+        )
+
+        logger.info(
+            "Security OTP verified",
+            extra={**log_context, "purpose": serializer.validated_data["purpose"]},
+        )
+
+        return self.success_response(
+            data    = {"verification_token": verification_token},
+            message = _("Identity verified successfully."),
+        )
+
+
+# ─── Change Password ───────────────────────────────────────────────────────────
+
+class ChangePasswordView(BaseAPIView):
+    """
+    POST /api/accounts/change-password/
+
+    Requires verification_token from OTP gate.
+    No current_password needed — identity proven via OTP.
+
+    Permissions: IsAuthenticated
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class   = ChangePasswordSerializer
+
+    def post(self, request: Request) -> Response:
+        log_context = {"request_id": request.id, "user_id": request.user.id}
+
+        serializer = self.serializer_class(data=request.data)
+        if not serializer.is_valid():
+            logger.warning(
+                "Password change failed — validation error",
+                extra={**log_context, "errors": serializer.errors},
+            )
+            return self.error_response(
+                message=_("Password change failed."),
+                errors=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        change_user_password(
+            user               = request.user,
+            new_password       = serializer.validated_data["new_password"],
+            verification_token = str(serializer.validated_data["verification_token"]),
+        )
+
+        return self.success_response(
+            message=_("Password changed successfully. Please log in again."),
+        )
+
+
+# ─── Email Change Request ──────────────────────────────────────────────────────
+
+class EmailChangeRequestView(BaseAPIView):
+    """
+    POST /api/accounts/update-email/
+
+    Requires verification_token from OTP gate.
+    Sends OTP to new email address.
+
+    Permissions: IsAuthenticated
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class   = EmailChangeRequestSerializer
+
+    def post(self, request: Request) -> Response:
+        log_context = {"request_id": request.id, "user_id": request.user.id}
+
+        serializer = self.serializer_class(data=request.data)
+        if not serializer.is_valid():
+            logger.warning(
+                "Email change request failed — validation error",
+                extra={**log_context, "errors": serializer.errors},
+            )
+            return self.error_response(
+                message=_("Email change request failed."),
+                errors=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        masked_new_email = request_email_change(
+            user               = request.user,
+            new_email          = serializer.validated_data["new_email"],
+            verification_token = str(serializer.validated_data["verification_token"]),
+        )
+
+        return self.success_response(
+            data    = {"masked_new_email": masked_new_email},
+            message = _(
+                "Verification code sent to your new email address. "
+                "Enter the code to complete the change."
+            ),
+        )
+
+
+# ─── Email Change Confirm ──────────────────────────────────────────────────────
+
+class EmailChangeConfirmView(BaseAPIView):
+    """
+    POST /api/accounts/update-email/confirm/
+
+    User enters OTP received at new email address.
+    IsAuthenticated — user still has valid JWT here.
+    Tokens blacklisted AFTER confirmation inside service.
+
+    Permissions: IsAuthenticated
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class   = EmailChangeConfirmSerializer
+
+    def post(self, request: Request) -> Response:
+        log_context = {"request_id": request.id, "user_id": request.user.id}
+
+        serializer = self.serializer_class(data=request.data)
+        if not serializer.is_valid():
+            logger.warning(
+                "Email change confirm failed — invalid input",
+                extra={**log_context, "errors": serializer.errors},
+            )
+            return self.error_response(
+                message=_("Invalid verification code."),
+                errors=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        confirm_email_change_otp(
+            user     = request.user,
+            otp_code = serializer.validated_data["otp_code"],
+        )
+
+        return self.success_response(
+            message=_(
+                "Email updated successfully. "
+                "Please log in again with your new email address."
+            ),
+        )
+
+
+# ─── Delete Account ────────────────────────────────────────────────────────────
+
+class DeleteAccountView(BaseAPIView):
+    """
+    DELETE /api/accounts/me/delete/
+
+    Requires verification_token from OTP gate.
+    No password field — identity proven via OTP.
+
+    Permissions: IsAuthenticated
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class   = DeleteAccountSerializer
+
+    def delete(self, request: Request) -> Response:
+        log_context = {"request_id": request.id, "user_id": request.user.id}
+
+        serializer = self.serializer_class(data=request.data)
+        if not serializer.is_valid():
+            logger.warning(
+                "Account deletion failed — invalid request data",
+                extra={**log_context, "errors": serializer.errors},
+            )
+            return self.error_response(
+                message=_("Verification token is required."),
+                errors=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        delete_user_account(
+            user               = request.user,
+            verification_token = str(serializer.validated_data["verification_token"]),
+        )
+
+        logger.info("User account deleted successfully", extra=log_context)
 
         return self.success_response(
             message=_(

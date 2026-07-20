@@ -6,11 +6,11 @@ from .account_deletion import delete_user_account
 from .password import (
     request_password_reset,
     confirm_password_reset,
-    change_password,
+    
 )
 from .email_change import (
     request_email_change,
-    confirm_email_change,
+    
 )
 from .auth import (
     login_user,
@@ -36,9 +36,9 @@ __all__ = [
     "delete_user_account",
     "request_password_reset",
     "confirm_password_reset",
-    "change_password",
+    
     "request_email_change",
-    "confirm_email_change",
+    
     "login_user",
     "logout_user",
     "refresh_access_token",
