@@ -103,6 +103,16 @@ class CartSerializer(TimestampFieldsMixin,serializers.ModelSerializer):
         decimal_places=2,
         read_only=True,
     )
+    discount_amount = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        read_only=True,
+    )
+    total_price = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        read_only=True,
+    )
     is_empty = serializers.BooleanField(read_only=True)
 
     class Meta:
@@ -110,8 +120,12 @@ class CartSerializer(TimestampFieldsMixin,serializers.ModelSerializer):
         fields = [
             "id",
             "items",
+            "coupon",              # FK id — null if no coupon applied
+            "coupon_code_input",   # last typed code — preserved across sessions
             "total_items",
             "subtotal",
+            "discount_amount",
+            "total_price",
             "is_empty",
             "updated_at",
         ]

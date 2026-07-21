@@ -63,6 +63,7 @@ class CartAdmin(admin.ModelAdmin):
     # ── List view ─────────────────────────────────────────────────────────────
     list_display = [
         "user",
+         "coupon",
         "display_total_items",
         "display_total_price",
         "display_is_empty",
@@ -79,6 +80,7 @@ class CartAdmin(admin.ModelAdmin):
     # ── Detail view ───────────────────────────────────────────────────────────
     readonly_fields = [
         "user",
+         "coupon_code_input",  
         "display_total_items",
         "display_total_price",
         "display_is_empty",
@@ -92,6 +94,17 @@ class CartAdmin(admin.ModelAdmin):
                 "fields": ("user",),
             },
         ),
+        (
+    _("Coupon"),
+    {
+        "fields": ("coupon", "coupon_code_input"),
+        "description": _(
+            "Applied coupon and last entered coupon code. "
+            "Coupon is set/cleared by the coupon application endpoint — "
+            "do not assign manually unless correcting a stuck state."
+        ),
+    },
+),
         (
             _("Summary"),
             {
