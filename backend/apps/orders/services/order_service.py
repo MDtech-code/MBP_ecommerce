@@ -453,19 +453,17 @@ class OrderService:
             affected_slugs,
         )
 
+        
         # Step N — Fire order confirmation email (Celery task)
-        # Wrapped in try/except — task may not exist yet in notifications app.
-        # This must NEVER be inside transaction.atomic().
-        # If email server is down, atomic would roll back the entire order.
-        try:
-            from apps.notifications.tasks import send_order_confirmation_email
-            send_order_confirmation_email.delay(order_id=order.pk)
-        except ImportError:
-            logger.warning(
-                "OrderService.checkout: notifications task not available | "
-                "order=%s — email skipped (notifications app not wired yet)",
-                order.order_number,
-            )
+        # Must NEVER be inside transaction.atomic() — if email server is down,
+        # atomic would roll back the entire order.
+        from apps.notifications.tasks import send_order_confirmation_email
+        send_order_confirmation_email.delay(order_id=order.pk)
+
+        logger.info(
+            "OrderService.checkout: confirmation email task queued | order=%s",
+            order.order_number,
+        )
 
         # Step O — Low stock alert per affected product (post-atomic)
         # F() UPDATE in Step I does NOT trigger Django post_save signal.
@@ -570,16 +568,24 @@ class OrderService:
         for slug in affected_slugs:
             ProductService.invalidate_detail_cache(slug)
 
+        # # Fire cancellation email (Celery task)
+        # try:
+        #     from apps.notifications.tasks import send_order_cancellation_email
+        #     send_order_cancellation_email.delay(order_id=order.pk)
+        # except ImportError:
+        #     logger.warning(
+        #         "OrderService.cancel_order: notifications task not available | "
+        #         "order=%s — email skipped",
+        #         order.order_number,
+        #     )
         # Fire cancellation email (Celery task)
-        try:
-            from apps.notifications.tasks import send_order_cancellation_email
-            send_order_cancellation_email.delay(order_id=order.pk)
-        except ImportError:
-            logger.warning(
-                "OrderService.cancel_order: notifications task not available | "
-                "order=%s — email skipped",
-                order.order_number,
-            )
+        from apps.notifications.tasks import send_order_cancellation_email
+        send_order_cancellation_email.delay(order_id=order.pk)
+        
+        logger.info(
+            "OrderService.cancel_order: cancellation email task queued | order=%s",
+            order.order_number,
+        )
 
         # Low stock alerts post-atomic (after stock restored — clear resolved)
         for item in order_items:

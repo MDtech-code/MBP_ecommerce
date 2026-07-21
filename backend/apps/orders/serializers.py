@@ -232,30 +232,25 @@ class OrderListSerializer(TimestampFieldsMixin, serializers.ModelSerializer):
             return len(obj._prefetched_objects_cache["items"])
         return obj.items.count()
 
-
 class OrderDetailSerializer(TimestampFieldsMixin, serializers.ModelSerializer):
     """
     Full read-only output for the order detail page.
 
     Includes nested shipping address, all line items, payment status,
-    and action flags (is_cancellable). TimestampFieldsMixin adds
-    created_at and updated_at as ISO-8601 timezone-aware fields.
+    and action flags (is_cancellable, is_terminal). TimestampFieldsMixin
+    adds created_at and updated_at as ISO-8601 timezone-aware fields.
+
+    payment_status, is_cancellable, is_terminal are model properties —
+    SerializerMethodField used for all three. Using source= on a field
+    whose name matches the property name causes DRF to raise a
+    redundant source error at serializer class construction time.
     """
 
     shipping_address = OrderShippingAddressSerializer(read_only=True)
-    items = OrderItemSerializer(many=True, read_only=True)
-    payment_status = serializers.CharField(
-        source="payment_status",
-        read_only=True,
-    )
-    is_cancellable = serializers.BooleanField(
-        source="is_cancellable",
-        read_only=True,
-    )
-    is_terminal = serializers.BooleanField(
-        source="is_terminal",
-        read_only=True,
-    )
+    items            = OrderItemSerializer(many=True, read_only=True)
+    payment_status   = serializers.SerializerMethodField()
+    is_cancellable   = serializers.SerializerMethodField()
+    is_terminal      = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -281,3 +276,77 @@ class OrderDetailSerializer(TimestampFieldsMixin, serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+
+    def get_payment_status(self, obj: Order) -> str:
+        """
+        Read payment status from Order.payment_status property.
+
+        Property queries payment_transactions related manager and
+        returns the latest transaction status, or 'PENDING' if none.
+        """
+        return obj.payment_status
+
+    def get_is_cancellable(self, obj: Order) -> bool:
+        """
+        Return whether this order can be cancelled by the customer.
+
+        True only when order status is PENDING.
+        """
+        return obj.is_cancellable
+
+    def get_is_terminal(self, obj: Order) -> bool:
+        """
+        Return whether this order has reached a terminal state.
+
+        True when status is CANCELLED or REFUNDED — no further
+        transitions are possible from these states.
+        """
+        return obj.is_terminal
+# class OrderDetailSerializer(TimestampFieldsMixin, serializers.ModelSerializer):
+#     """
+#     Full read-only output for the order detail page.
+
+#     Includes nested shipping address, all line items, payment status,
+#     and action flags (is_cancellable). TimestampFieldsMixin adds
+#     created_at and updated_at as ISO-8601 timezone-aware fields.
+#     """
+
+#     shipping_address = OrderShippingAddressSerializer(read_only=True)
+#     items = OrderItemSerializer(many=True, read_only=True)
+#     payment_status = serializers.CharField(
+#         source="payment_status",
+#         read_only=True,
+#     )
+#     is_cancellable = serializers.BooleanField(
+#         source="is_cancellable",
+#         read_only=True,
+#     )
+#     is_terminal = serializers.BooleanField(
+#         source="is_terminal",
+#         read_only=True,
+#     )
+
+#     class Meta:
+#         model = Order
+#         fields = [
+#             "order_number",
+#             "status",
+#             "payment_method",
+#             "notes",
+#             "subtotal",
+#             "shipping_fee",
+#             "discount_amount",
+#             "tax_amount",
+#             "total_price",
+#             "coupon_code_snapshot",
+#             "placed_at",
+#             "confirmed_at",
+#             "cancelled_at",
+#             "shipping_address",
+#             "items",
+#             "payment_status",
+#             "is_cancellable",
+#             "is_terminal",
+#             "created_at",
+#             "updated_at",
+#         ]
