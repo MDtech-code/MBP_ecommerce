@@ -21,36 +21,65 @@ from apps.products.constants import (
     PRODUCT_DETAIL_CACHE_PREFIX,
 )
 from .models import Product, ProductImage, Category, BikeModel, Brand
-
+from apps.products.services.category_service import CategoryService
 logger = logging.getLogger("apps.products")
 
 
 # ── Category invalidation ──────────────────────────────────────────────────
 
-_CATEGORY_CACHE_KEYS = (
-    CATEGORIES_FLAT_CACHE_KEY,
-    CATEGORIES_TREE_CACHE_KEY,
-)
-
-
-def _invalidate_all_category_caches(instance: Category, reason: str) -> None:
-    for key in _CATEGORY_CACHE_KEYS:
-        two_level_cache.delete(key)
-        logger.info(
-            "Category cache invalidated | reason=%s key=%s id=%s name=%s",
-            reason, key, instance.pk, instance.name,
-        )
-
-
 @receiver(post_save, sender=Category)
-def on_category_saved(sender, instance: Category, created: bool, **kwargs):
+def on_category_saved(
+    sender,
+    instance: Category,
+    created: bool,
+    **kwargs,
+) -> None:
     action = "created" if created else "updated"
-    _invalidate_all_category_caches(instance, reason=action)
+    CategoryService.invalidate_cache()
+    logger.info(
+        "Category signal: cache invalidated | action=%s id=%s name=%s",
+        action,
+        instance.pk,
+        instance.name,
+    )
 
 
 @receiver(post_delete, sender=Category)
-def on_category_deleted(sender, instance: Category, **kwargs):
-    _invalidate_all_category_caches(instance, reason="deleted")
+def on_category_deleted(
+    sender,
+    instance: Category,
+    **kwargs,
+) -> None:
+    CategoryService.invalidate_cache()
+    logger.info(
+        "Category signal: cache invalidated | action=deleted id=%s name=%s",
+        instance.pk,
+        instance.name,
+    )
+# _CATEGORY_CACHE_KEYS = (
+#     CATEGORIES_FLAT_CACHE_KEY,
+#     CATEGORIES_TREE_CACHE_KEY,
+# )
+
+
+# def _invalidate_all_category_caches(instance: Category, reason: str) -> None:
+#     for key in _CATEGORY_CACHE_KEYS:
+#         two_level_cache.delete(key)
+#         logger.info(
+#             "Category cache invalidated | reason=%s key=%s id=%s name=%s",
+#             reason, key, instance.pk, instance.name,
+#         )
+
+
+# @receiver(post_save, sender=Category)
+# def on_category_saved(sender, instance: Category, created: bool, **kwargs):
+#     action = "created" if created else "updated"
+#     _invalidate_all_category_caches(instance, reason=action)
+
+
+# @receiver(post_delete, sender=Category)
+# def on_category_deleted(sender, instance: Category, **kwargs):
+#     _invalidate_all_category_caches(instance, reason="deleted")
 
 
 # ── Brand invalidation ─────────────────────────────────────────────────────

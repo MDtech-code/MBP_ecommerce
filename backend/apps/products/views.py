@@ -16,6 +16,7 @@ from apps.core.permissions import IsAdminOrReadOnly
 from apps.core.cache import two_level_cache
 from apps.core.pagination import get_pagination_params, build_pagination_meta
 from apps.common.utils.tree import build_tree
+from apps.products.selectors.category import list_active_categories
 
 from .constants import (
     CATEGORIES_FLAT_CACHE_KEY,
@@ -51,128 +52,94 @@ logger = logging.getLogger("apps.products")
 
 
 # ─── Category Views ─────────────────────────────────────────────────────────
-# CATEGORIES_FLAT_CACHE_KEY = "products_categories_flat"
-# CATEGORIES_TREE_CACHE_KEY = "products_categories_tree"
-
-# CATEGORIES_L1_TTL = 86400
-# CATEGORIES_L2_TTL = 86400*7
-
 
 class CategoryListAPIView(BaseAPIView):
     """
     GET /api/products/categories/
-    GET /api/products/categories/?view=flat
+    GET /api/products/categories/?view=flat   (default)
     GET /api/products/categories/?view=tree
 
-    Both views are powered by ONE database query.
+    Flat  → simple list, one object per category.
+            Use for: dropdowns, search filters, admin selects.
 
-    Query strategy:
-        Always fetch all active categories in one flat query.
-        For flat view  → return the list directly.
-        For tree view  → pass the flat list to build_tree() in Python.
+    Tree  → nested structure, children embedded in parent objects.
+            Use for: storefront navigation menus, category sidebar.
 
-    Why one query for both:
-        The previous tree approach used 4 queries (one per depth level).
-        build_tree() converts flat→tree in O(n) Python — much cheaper
-        than extra DB round trips, especially with cache in front.
+    Cache strategy:
+        Both views share ONE DB query on cache miss.
+        Flat result is cached separately from tree result.
+        On cache hit: zero DB queries, zero serialization work.
+        On cache miss: 1 DB query → serialize → build tree if needed → cache.
 
-    DB query breakdown:
-        .filter(is_active=True)                    → only active
-        .select_related("parent")                  → parent_name field, free
-        .annotate(subcategories_count=Count(...))  → count field, zero extra queries
-        .order_by("name")                          → deterministic cache payload
-        Total: 1 query always.
+    This view contains zero business logic.
+    Reads go through selector. Cache invalidation goes through service via signals.
     """
 
     permission_classes = [AllowAny]
 
-    def _fetch_flat_data(self) -> list[dict[str, Any]]:
-        """
-        Single DB query that powers BOTH flat and tree responses.
-
-        Why this is the only DB method:
-            Tree view calls this then passes result to build_tree().
-            Flat view calls this and returns directly.
-            No code duplication, one query for both.
-
-        Why list():
-            DRF returns ReturnList — a custom list subclass.
-            Some cache backends cannot serialize it.
-            list() gives a plain Python list — always serializable.
-        """
-        queryset = (
-            Category.objects
-            .filter(is_active=True)
-            .select_related("parent")
-            .annotate(subcategories_count=Count("subcategories"))
-            .order_by("name")
-        )
-        return list(CategoryFlatSerializer(queryset, many=True).data)
+    _VALID_VIEW_TYPES = frozenset({"flat", "tree"})
 
     def get(self, request: Request, *args: Any, **kwargs: Any):
         start = time.monotonic()
 
-        view_type = request.query_params.get("view", "flat").lower()
+        # ── 1. Parse and validate query param ─────────────────────────────
+        view_type = request.query_params.get("view", "flat").lower().strip()
 
-        if view_type not in ("flat", "tree"):
+        if view_type not in self._VALID_VIEW_TYPES:
+            logger.warning(
+                "CategoryListAPIView: invalid view_type=%s request_id=%s",
+                view_type,
+                getattr(request, "id", "n/a"),
+            )
             return self.error_response(
                 message="Invalid view type. Use ?view=flat or ?view=tree.",
                 status_code=400,
             )
 
-        # ── Determine cache key per view type ─────────────────────────────
+        # ── 2. Select cache key based on view type ─────────────────────────
         cache_key = (
             CATEGORIES_TREE_CACHE_KEY
             if view_type == "tree"
             else CATEGORIES_FLAT_CACHE_KEY
         )
 
-        try:
-            if view_type == "flat":
-                # Flat: cache and return the serialized list directly
-                data, source = two_level_cache.get_or_set(
-                    cache_key,
-                    self._fetch_flat_data,
-                    l1_timeout=CATEGORIES_L1_TTL,
-                    l2_timeout=CATEGORIES_L2_TTL,
-                )
+        # ── 3. Try cache first ─────────────────────────────────────────────
+        data, source = two_level_cache.get(cache_key)
 
+        if source == "miss":
+            # ── 4. Cache miss: query DB → serialize → build tree if needed ─
+            queryset = list_active_categories()
+            flat_data = list(CategoryFlatSerializer(queryset, many=True).data)
+
+            if view_type == "tree":
+                data = build_tree(flat_data)
             else:
-                # Tree: cache the tree-shaped data
-                # Why cache tree separately:
-                #   build_tree() is fast (O(n) Python) but still CPU work.
-                #   Caching the already-built tree means zero work on cache hit.
-                #   On cache miss: fetch flat → build tree → cache tree.
-                def build_tree_data() -> list[dict[str, Any]]:
-                    flat = self._fetch_flat_data()
-                    return build_tree(flat)
+                data = flat_data
 
-                data, source = two_level_cache.get_or_set(
-                    cache_key,
-                    build_tree_data,
-                    l1_timeout=CATEGORIES_L1_TTL,
-                    l2_timeout=CATEGORIES_L2_TTL,
-                )
-
-        except Exception as exc:
-            logger.error(
-                "CategoryListAPIView: failed | view=%s key=%s error=%s",
-                view_type,
+            # ── 5. Populate cache for next request ─────────────────────────
+            two_level_cache.set(
                 cache_key,
-                exc,
-                exc_info=True,
+                data,
+                l1_timeout=CATEGORIES_L1_TTL,
+                l2_timeout=CATEGORIES_L2_TTL,
             )
-            return self.error_response(
-                message="Unable to retrieve categories. Please try again.",
-                status_code=503,
+            source = "database"
+
+            logger.debug(
+                "CategoryListAPIView: cache miss, DB queried | "
+                "view=%s count=%d request_id=%s",
+                view_type,
+                len(data),
+                getattr(request, "id", "n/a"),
             )
 
+        # ── 6. Build response ──────────────────────────────────────────────
         elapsed_ms = round((time.monotonic() - start) * 1000, 2)
         count = len(data) if data else 0
 
         logger.info(
-            "CategoryListAPIView: OK | view=%s source=%s count=%d "
-            "elapsed_ms=%s request_id=%s",
+            "CategoryListAPIView: OK | view=%s source=%s "
+            "count=%d elapsed_ms=%s request_id=%s",
             view_type,
             source,
             count,
@@ -182,14 +149,159 @@ class CategoryListAPIView(BaseAPIView):
 
         return self.success_response(
             data=data,
-            message="Categories retrieved successfully",
+            message="Categories retrieved successfully.",
             meta={
                 "view": view_type,
-                "source": source,
                 "count": count,
+                "source": source,
                 "elapsed_ms": elapsed_ms,
             },
         )
+
+
+
+
+
+
+# CATEGORIES_FLAT_CACHE_KEY = "products_categories_flat"
+# CATEGORIES_TREE_CACHE_KEY = "products_categories_tree"
+
+# CATEGORIES_L1_TTL = 86400
+# CATEGORIES_L2_TTL = 86400*7
+
+
+# class CategoryListAPIView(BaseAPIView):
+#     """
+#     GET /api/products/categories/
+#     GET /api/products/categories/?view=flat
+#     GET /api/products/categories/?view=tree
+
+#     Both views are powered by ONE database query.
+
+#     Query strategy:
+#         Always fetch all active categories in one flat query.
+#         For flat view  → return the list directly.
+#         For tree view  → pass the flat list to build_tree() in Python.
+
+#     Why one query for both:
+#         The previous tree approach used 4 queries (one per depth level).
+#         build_tree() converts flat→tree in O(n) Python — much cheaper
+#         than extra DB round trips, especially with cache in front.
+
+#     DB query breakdown:
+#         .filter(is_active=True)                    → only active
+#         .select_related("parent")                  → parent_name field, free
+#         .annotate(subcategories_count=Count(...))  → count field, zero extra queries
+#         .order_by("name")                          → deterministic cache payload
+#         Total: 1 query always.
+#     """
+
+#     permission_classes = [AllowAny]
+
+#     def _fetch_flat_data(self) -> list[dict[str, Any]]:
+#         """
+#         Single DB query that powers BOTH flat and tree responses.
+
+#         Why this is the only DB method:
+#             Tree view calls this then passes result to build_tree().
+#             Flat view calls this and returns directly.
+#             No code duplication, one query for both.
+
+#         Why list():
+#             DRF returns ReturnList — a custom list subclass.
+#             Some cache backends cannot serialize it.
+#             list() gives a plain Python list — always serializable.
+#         """
+#         queryset = (
+#             Category.objects
+#             .filter(is_active=True)
+#             .select_related("parent")
+#             .annotate(subcategories_count=Count("subcategories"))
+#             .order_by("name")
+#         )
+#         return list(CategoryFlatSerializer(queryset, many=True).data)
+
+#     def get(self, request: Request, *args: Any, **kwargs: Any):
+#         start = time.monotonic()
+
+#         view_type = request.query_params.get("view", "flat").lower()
+
+#         if view_type not in ("flat", "tree"):
+#             return self.error_response(
+#                 message="Invalid view type. Use ?view=flat or ?view=tree.",
+#                 status_code=400,
+#             )
+
+#         # ── Determine cache key per view type ─────────────────────────────
+#         cache_key = (
+#             CATEGORIES_TREE_CACHE_KEY
+#             if view_type == "tree"
+#             else CATEGORIES_FLAT_CACHE_KEY
+#         )
+
+#         try:
+#             if view_type == "flat":
+#                 # Flat: cache and return the serialized list directly
+#                 data, source = two_level_cache.get_or_set(
+#                     cache_key,
+#                     self._fetch_flat_data,
+#                     l1_timeout=CATEGORIES_L1_TTL,
+#                     l2_timeout=CATEGORIES_L2_TTL,
+#                 )
+
+#             else:
+#                 # Tree: cache the tree-shaped data
+#                 # Why cache tree separately:
+#                 #   build_tree() is fast (O(n) Python) but still CPU work.
+#                 #   Caching the already-built tree means zero work on cache hit.
+#                 #   On cache miss: fetch flat → build tree → cache tree.
+#                 def build_tree_data() -> list[dict[str, Any]]:
+#                     flat = self._fetch_flat_data()
+#                     return build_tree(flat)
+
+#                 data, source = two_level_cache.get_or_set(
+#                     cache_key,
+#                     build_tree_data,
+#                     l1_timeout=CATEGORIES_L1_TTL,
+#                     l2_timeout=CATEGORIES_L2_TTL,
+#                 )
+
+#         except Exception as exc:
+#             logger.error(
+#                 "CategoryListAPIView: failed | view=%s key=%s error=%s",
+#                 view_type,
+#                 cache_key,
+#                 exc,
+#                 exc_info=True,
+#             )
+#             return self.error_response(
+#                 message="Unable to retrieve categories. Please try again.",
+#                 status_code=503,
+#             )
+
+#         elapsed_ms = round((time.monotonic() - start) * 1000, 2)
+#         count = len(data) if data else 0
+
+#         logger.info(
+#             "CategoryListAPIView: OK | view=%s source=%s count=%d "
+#             "elapsed_ms=%s request_id=%s",
+#             view_type,
+#             source,
+#             count,
+#             elapsed_ms,
+#             getattr(request, "id", "n/a"),
+#         )
+
+#         return self.success_response(
+#             data=data,
+#             message="Categories retrieved successfully",
+#             meta={
+#                 "view": view_type,
+#                 "source": source,
+#                 "count": count,
+#                 "elapsed_ms": elapsed_ms,
+#             },
+#         )
 
 
 # ─── Brand Views ────────────────────────────────────────────────────────────
