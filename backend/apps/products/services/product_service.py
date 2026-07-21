@@ -1,6 +1,8 @@
 # apps/products/services/product_service.py
 from __future__ import annotations
-
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from apps.products.models import Product
 """
 Product service — business operations for products.
 
@@ -98,3 +100,70 @@ class ProductService:
             slug,
             cache_key,
         )
+    
+
+
+
+    @staticmethod
+    def create_low_stock_alert(instance: "Product") -> None:
+        """
+        Create a LowStockAlert if product is low on stock and no
+        unresolved alert already exists for it.
+
+        Why check for existing unresolved alert:
+            Stock can drop multiple times while already below threshold.
+            10 → 4 → 3 → 2 → 1 with threshold=5 should produce ONE alert.
+            Without this guard, admin inbox floods with duplicate alerts
+            for the same restock action required.
+
+        Why create here not in signal:
+            Service owns business logic. Signal is just the trigger.
+            This method is independently testable without firing signals.
+            Future: management command or admin action can also call this.
+
+        Why import inside method:
+            LowStockAlert imports Product (FK).
+            product_service.py imports Product for type hint.
+            Top-level import of LowStockAlert here would not cause circular
+            import but keeping model imports local to where they are used
+            is cleaner — service does not need to declare all models at top.
+
+        Args:
+            instance: Product instance after save — is_low_stock already
+                      computed from current stock and threshold values.
+        """
+        from apps.products.models import LowStockAlert
+
+        if not instance.is_low_stock:
+            return
+
+        already_alerted = LowStockAlert.objects.filter(
+            product=instance,
+            is_resolved=False,
+        ).exists()
+
+        if already_alerted:
+            logger.debug(
+                "ProductService.create_low_stock_alert: "
+                "unresolved alert already exists | product_id=%s stock=%s",
+                instance.pk,
+                instance.stock,
+            )
+            return
+
+        LowStockAlert.objects.create(
+            product=instance,
+            stock_at_alert=instance.stock,
+            threshold_at_alert=instance.low_stock_threshold,
+        )
+        logger.warning(
+            "ProductService.create_low_stock_alert: "
+            "alert created | product_id=%s name=%s stock=%s threshold=%s",
+            instance.pk,
+            instance.name,
+            instance.stock,
+            instance.low_stock_threshold,
+        )
+
+
+    

@@ -344,3 +344,26 @@ def on_product_image_deleted(
 # def on_product_image_deleted(sender, instance: ProductImage, **kwargs) -> None:
 #     _invalidate_product_list_cache(instance.product, reason="image_deleted")
 #     _invalidate_product_detail_cache(instance.product.slug, reason="image_deleted")
+@receiver(post_save, sender=Product)
+def on_product_saved(
+    sender, instance: Product, created: bool, **kwargs
+) -> None:
+    """
+    Why low stock alert check here:
+        Stock changes happen on Product save — admin edit, bulk import,
+        order fulfillment deduction. All paths go through save().
+        This is the single correct place to catch any stock drop.
+
+    Why cache invalidation runs regardless of low stock:
+        Stock change always makes list + detail cache stale.
+        Low stock alert is an additional side effect, not a replacement.
+    """
+    ProductService.invalidate_list_cache()
+    ProductService.invalidate_detail_cache(instance.slug)
+    ProductService.create_low_stock_alert(instance)        # ← ADD THIS LINE
+    logger.info(
+        "Product signal: list + detail caches invalidated | "
+        "action=%s id=%s slug=%s",
+        "created" if created else "updated",
+        instance.pk, instance.slug,
+    )
