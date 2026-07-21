@@ -186,10 +186,7 @@ class OrderListSerializer(TimestampFieldsMixin, serializers.ModelSerializer):
     loading the full items queryset.
     """
 
-    payment_status = serializers.CharField(
-        source="payment_status",
-        read_only=True,
-    )
+    payment_status = serializers.SerializerMethodField()
     city = serializers.CharField(
         source="shipping_address.city",
         read_only=True,
@@ -219,6 +216,11 @@ class OrderListSerializer(TimestampFieldsMixin, serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+    def get_payment_status(self, obj: Order) -> str:
+        """
+        Read payment status from Order.payment_status property.
+        """
+        return obj.payment_status
 
     def get_item_count(self, obj: Order) -> int:
         """
