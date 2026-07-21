@@ -197,3 +197,38 @@ class UpdateCartItemSerializer(serializers.Serializer):
             "required": _("Quantity is required."),
         },
     )
+
+
+class CouponApplySerializer(serializers.Serializer):
+    """
+    Input validation for applying a coupon code to the cart.
+
+    Strips whitespace and uppercases the code so the service
+    receives a clean, normalized string matching the stored format.
+
+    Validates only that code is a non-empty string.
+    All business validation (expiry, limits, eligibility) is
+    handled by CouponService.apply_to_cart() — not here.
+    """
+
+    code = serializers.CharField(
+        max_length=50,
+        error_messages={
+            "required": _("Coupon code is required."),
+            "blank": _("Coupon code cannot be empty."),
+        },
+    )
+
+    def validate_code(self, value: str) -> str:
+        """
+        Normalize coupon code — strip whitespace and uppercase.
+
+        Normalization here means the service and selector always
+        receive a clean string regardless of how user typed it.
+        """
+        normalized = value.strip().upper()
+        if not normalized:
+            raise serializers.ValidationError(
+                _("Coupon code cannot be empty.")
+            )
+        return normalized

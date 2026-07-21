@@ -43,15 +43,16 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
-
+from apps.core.exceptions import DomainError
 from apps.core.api.views import BaseAPIView
-
+from apps.coupons.services.coupon_service import CouponService
 from .models import Cart
 from .selectors.cart import get_cart_for_user, get_cart_with_items
 from .serializers import (
     AddToCartSerializer,
     CartItemSerializer,
     CartSerializer,
+    CouponApplySerializer,
     UpdateCartItemSerializer,
 )
 from .services.cart_service import CartService
@@ -379,6 +380,157 @@ class ClearCartAPIView(BaseAPIView):
         )
 
 
+
+
+
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# COUPON APPLY
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class CouponApplyAPIView(BaseAPIView):
+    """
+    POST /api/cart/coupon/
+
+    Validates and applies a coupon code to the authenticated user's cart.
+    Returns the full updated cart with discount_amount and total_price
+    reflecting the applied coupon.
+
+    Phase 1 validation only — not concurrency-safe.
+    Phase 2 re-validation happens inside OrderService.checkout()
+    atomic block before any CouponUsage is created.
+
+    DomainError from CouponService propagates to global handler.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request: Request):
+        # ── 1. Validate input ──────────────────────────────────────────────
+        serializer = CouponApplySerializer(data=request.data)
+        if not serializer.is_valid():
+            logger.warning(
+                "CouponApplyAPIView: validation failed | "
+                "user_id=%s request_id=%s errors=%s",
+                request.user.pk,
+                getattr(request, "id", "n/a"),
+                serializer.errors,
+            )
+            return self.error_response(
+                message=_("Invalid coupon code."),
+                errors=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        code = serializer.validated_data["code"]
+
+        # ── 2. Fetch cart ──────────────────────────────────────────────────
+        try:
+            cart = get_cart_for_user(request.user)
+        except Cart.DoesNotExist:
+            logger.error(
+                "CouponApplyAPIView: cart missing | "
+                "user_id=%s request_id=%s — post_save signal failure suspected",
+                request.user.pk,
+                getattr(request, "id", "n/a"),
+            )
+            return self.error_response(
+                message=_("Cart not found. Please contact support."),
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        # ── 3. Delegate to coupon service ──────────────────────────────────
+        # DomainError (invalid code, expired, limit reached) propagates
+        # to global handler — no try/except needed here.
+        CouponService.apply_to_cart(
+            cart=cart,
+            code=code,
+            user=request.user,
+        )
+
+        logger.info(
+            "CouponApplyAPIView: OK | "
+            "code=%s user_id=%s request_id=%s",
+            code,
+            request.user.pk,
+            getattr(request, "id", "n/a"),
+        )
+
+        # ── 4. Re-fetch with full prefetch for serialization ───────────────
+        # Re-fetch ensures coupon FK and financial totals are fresh.
+        cart = get_cart_with_items(request.user)
+        return self.success_response(
+            data=CartSerializer(cart, context={"request": request}).data,
+            message=_("Coupon applied successfully."),
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# COUPON REMOVE
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class CouponRemoveAPIView(BaseAPIView):
+    """
+    DELETE /api/cart/coupon/
+
+    Removes the currently applied coupon from the authenticated user's cart.
+    Returns the full updated cart with coupon cleared and original totals.
+
+    Returns 400 if no coupon is currently applied — removing nothing
+    is a client-side logic error, not a silent no-op.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request: Request):
+        # ── 1. Fetch cart ──────────────────────────────────────────────────
+        try:
+            cart = get_cart_for_user(request.user)
+        except Cart.DoesNotExist:
+            logger.error(
+                "CouponRemoveAPIView: cart missing | "
+                "user_id=%s request_id=%s — post_save signal failure suspected",
+                request.user.pk,
+                getattr(request, "id", "n/a"),
+            )
+            return self.error_response(
+                message=_("Cart not found. Please contact support."),
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        # ── 2. Guard — no coupon to remove ────────────────────────────────
+        if not cart.coupon_id:
+            logger.warning(
+                "CouponRemoveAPIView: no coupon applied | "
+                "user_id=%s request_id=%s",
+                request.user.pk,
+                getattr(request, "id", "n/a"),
+            )
+            raise DomainError(
+                "No coupon is currently applied to your cart.",
+                code="coupon_not_applied",
+                status_code=400,
+            )
+
+        # ── 3. Delegate to coupon service ──────────────────────────────────
+        CouponService.remove_from_cart(cart=cart)
+
+        logger.info(
+            "CouponRemoveAPIView: OK | "
+            "user_id=%s request_id=%s",
+            request.user.pk,
+            getattr(request, "id", "n/a"),
+        )
+
+        # ── 4. Re-fetch with full prefetch for serialization ───────────────
+        cart = get_cart_with_items(request.user)
+        return self.success_response(
+            data=CartSerializer(cart, context={"request": request}).data,
+            message=_("Coupon removed successfully."),
+        )
 # # apps/cart/views.py
 # from __future__ import annotations
 

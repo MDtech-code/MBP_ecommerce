@@ -170,6 +170,7 @@ class Coupon(TimeStampedModel):
         """
         return self.usages.count()
 
+    # 
     @property
     def is_currently_valid(self) -> bool:
         """
@@ -177,10 +178,19 @@ class Coupon(TimeStampedModel):
         Does not check usage limits — use can_be_used_by() for full check.
         """
         now = timezone.now()
-        return (
-            self.is_active
-            and self.valid_from <= now <= self.valid_until
-        )
+    
+        if not self.is_active:
+            return False
+    
+        # valid_from must exist and be <= now
+        if self.valid_from and now < self.valid_from:
+            return False
+    
+        # valid_until must exist and be >= now
+        if self.valid_until and now > self.valid_until:
+            return False
+    
+        return True
 
     # ─── Business Methods ─────────────────────────────────────────────────────
 
