@@ -24,6 +24,7 @@ from .models import Product, ProductImage, Category, BikeModel, Brand
 from apps.products.services.category_service import CategoryService
 from .services.brand_service import BrandService
 from .services.bike_model_service import BikeModelService
+from .services.product_service import ProductService
 logger = logging.getLogger("apps.products")
 
 
@@ -215,63 +216,131 @@ def on_bike_model_deleted(
 # @receiver(post_delete, sender=BikeModel)
 # def on_bike_model_deleted(sender, instance: BikeModel, **kwargs):
 #     _invalidate_bike_model_caches(instance, reason="deleted")
-
-
-# ── Product invalidation ───────────────────────────────────────────────────
-
-def _invalidate_product_list_cache(instance: Product, reason: str) -> None:
-    """
-    Why delete by prefix:
-        List cache has hundreds of variants — filter + sort + page.
-        Prefix delete clears ALL variants in one operation.
-    """
-    two_level_cache.delete(PRODUCTS_LIST_CACHE_PREFIX)
-    logger.info(
-        "Product list cache invalidated | reason=%s id=%s name=%s",
-        reason, instance.pk, instance.name,
-    )
-
-
-def _invalidate_product_detail_cache(slug: str, reason: str) -> None:
-    """
-    Why accept slug not instance:
-        Called from both Product signals (instance.slug)
-        and ProductImage signals (instance.product.slug).
-        Slug string makes it reusable for both callers.
-
-    Why exact key not prefix:
-        Each product has its own detail cache key.
-        Only THIS product's cache needs clearing.
-        Other products stay warm — no unnecessary DB hits.
-    """
-    cache_key = f"{PRODUCT_DETAIL_CACHE_PREFIX}_{slug}"
-    two_level_cache.delete(cache_key)
-    logger.info(
-        "Product detail cache invalidated | reason=%s slug=%s",
-        reason, slug,
-    )
-
+# ─────────────────────────────────────────────────────────────────────────────
+# PRODUCT SIGNALS
+# ─────────────────────────────────────────────────────────────────────────────
 
 @receiver(post_save, sender=Product)
-def on_product_saved(sender, instance: Product, created: bool, **kwargs) -> None:
-    action = "created" if created else "updated"
-    _invalidate_product_list_cache(instance, reason=action)
-    _invalidate_product_detail_cache(instance.slug, reason=action)
+def on_product_saved(
+    sender, instance: Product, created: bool, **kwargs
+) -> None:
+    """
+    Invalidate both list prefix (all filter combos) and
+    exact detail key (this product only).
+    """
+    ProductService.invalidate_list_cache()
+    ProductService.invalidate_detail_cache(instance.slug)
+    logger.info(
+        "Product signal: list + detail caches invalidated | "
+        "action=%s id=%s slug=%s",
+        "created" if created else "updated",
+        instance.pk, instance.slug,
+    )
 
 
 @receiver(post_delete, sender=Product)
-def on_product_deleted(sender, instance: Product, **kwargs) -> None:
-    _invalidate_product_list_cache(instance, reason="deleted")
-    _invalidate_product_detail_cache(instance.slug, reason="deleted")
+def on_product_deleted(
+    sender, instance: Product, **kwargs
+) -> None:
+    ProductService.invalidate_list_cache()
+    ProductService.invalidate_detail_cache(instance.slug)
+    logger.info(
+        "Product signal: list + detail caches invalidated | "
+        "action=deleted id=%s slug=%s",
+        instance.pk, instance.slug,
+    )
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PRODUCT IMAGE SIGNALS
+# ─────────────────────────────────────────────────────────────────────────────
 
 @receiver(post_save, sender=ProductImage)
-def on_product_image_saved(sender, instance: ProductImage, **kwargs) -> None:
-    _invalidate_product_list_cache(instance.product, reason="image_saved")
-    _invalidate_product_detail_cache(instance.product.slug, reason="image_saved")
+def on_product_image_saved(
+    sender, instance: ProductImage, **kwargs
+) -> None:
+    """
+    Why invalidate product caches on image change:
+        ProductListSerializer.get_primary_image() is cached in the list payload.
+        ProductDetailSerializer.images is cached in the detail payload.
+        Any image change (upload, set primary, reorder) makes both stale.
+    """
+    ProductService.invalidate_list_cache()
+    ProductService.invalidate_detail_cache(instance.product.slug)
+    logger.info(
+        "ProductImage signal: list + detail caches invalidated | "
+        "action=saved product_id=%s product_slug=%s",
+        instance.product_id, instance.product.slug,
+    )
 
 
 @receiver(post_delete, sender=ProductImage)
-def on_product_image_deleted(sender, instance: ProductImage, **kwargs) -> None:
-    _invalidate_product_list_cache(instance.product, reason="image_deleted")
-    _invalidate_product_detail_cache(instance.product.slug, reason="image_deleted")
+def on_product_image_deleted(
+    sender, instance: ProductImage, **kwargs
+) -> None:
+    ProductService.invalidate_list_cache()
+    ProductService.invalidate_detail_cache(instance.product.slug)
+    logger.info(
+        "ProductImage signal: list + detail caches invalidated | "
+        "action=deleted product_id=%s product_slug=%s",
+        instance.product_id, instance.product.slug,
+    )
+
+# # ── Product invalidation ───────────────────────────────────────────────────
+
+# def _invalidate_product_list_cache(instance: Product, reason: str) -> None:
+#     """
+#     Why delete by prefix:
+#         List cache has hundreds of variants — filter + sort + page.
+#         Prefix delete clears ALL variants in one operation.
+#     """
+#     two_level_cache.delete(PRODUCTS_LIST_CACHE_PREFIX)
+#     logger.info(
+#         "Product list cache invalidated | reason=%s id=%s name=%s",
+#         reason, instance.pk, instance.name,
+#     )
+
+
+# def _invalidate_product_detail_cache(slug: str, reason: str) -> None:
+#     """
+#     Why accept slug not instance:
+#         Called from both Product signals (instance.slug)
+#         and ProductImage signals (instance.product.slug).
+#         Slug string makes it reusable for both callers.
+
+#     Why exact key not prefix:
+#         Each product has its own detail cache key.
+#         Only THIS product's cache needs clearing.
+#         Other products stay warm — no unnecessary DB hits.
+#     """
+#     cache_key = f"{PRODUCT_DETAIL_CACHE_PREFIX}_{slug}"
+#     two_level_cache.delete(cache_key)
+#     logger.info(
+#         "Product detail cache invalidated | reason=%s slug=%s",
+#         reason, slug,
+#     )
+
+
+# @receiver(post_save, sender=Product)
+# def on_product_saved(sender, instance: Product, created: bool, **kwargs) -> None:
+#     action = "created" if created else "updated"
+#     _invalidate_product_list_cache(instance, reason=action)
+#     _invalidate_product_detail_cache(instance.slug, reason=action)
+
+
+# @receiver(post_delete, sender=Product)
+# def on_product_deleted(sender, instance: Product, **kwargs) -> None:
+#     _invalidate_product_list_cache(instance, reason="deleted")
+#     _invalidate_product_detail_cache(instance.slug, reason="deleted")
+
+
+# @receiver(post_save, sender=ProductImage)
+# def on_product_image_saved(sender, instance: ProductImage, **kwargs) -> None:
+#     _invalidate_product_list_cache(instance.product, reason="image_saved")
+#     _invalidate_product_detail_cache(instance.product.slug, reason="image_saved")
+
+
+# @receiver(post_delete, sender=ProductImage)
+# def on_product_image_deleted(sender, instance: ProductImage, **kwargs) -> None:
+#     _invalidate_product_list_cache(instance.product, reason="image_deleted")
+#     _invalidate_product_detail_cache(instance.product.slug, reason="image_deleted")

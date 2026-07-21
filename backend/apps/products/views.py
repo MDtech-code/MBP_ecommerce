@@ -19,6 +19,7 @@ from apps.common.utils.tree import build_tree
 from apps.products.selectors.category import list_active_categories
 from apps.products.selectors.brand import list_active_brands
 from apps.products.selectors.bike_model import list_active_bike_models
+from apps.products.selectors.product import get_product_detail_queryset,get_product_list_queryset
 from .constants import (
     CATEGORIES_FLAT_CACHE_KEY,
     CATEGORIES_TREE_CACHE_KEY,
@@ -761,6 +762,347 @@ class BikeModelListAPIView(BaseAPIView):
 # DEFAULT_SORT = "newest"
 
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PRODUCT LIST
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ProductListAPIView(BaseAPIView):
+    """
+    GET /api/products/
+
+    Product listing with filtering, sorting, and pagination.
+    Cached per unique filter + sort + page combination.
+
+    Filters:
+        ?category=<slug>     filter by category slug
+        ?brand=<slug>        filter by brand slug
+        ?bike_model=<id>     compatibility filter
+        ?min_price=<decimal> minimum price
+        ?max_price=<decimal> maximum price
+        ?q=<string>          search name, description, SKU
+        ?featured=true       featured products only
+
+    Sorting (?sort=):
+        featured / newest / price_asc / price_desc / name_asc
+
+    Pagination:
+        ?page=<int>       default 1
+        ?page_size=<int>  default 12, max 48
+    """
+
+    permission_classes = [AllowAny]
+
+    # ── Param parsers (view concern — HTTP params → validated Python) ──────
+
+    @staticmethod
+    def _parse_price_params(
+        request: Request,
+    ) -> tuple[Optional[float], Optional[float], bool]:
+        """
+        Returns (min_price, max_price, is_valid).
+        Validates both are numeric and min <= max.
+        """
+        raw_min = request.query_params.get("min_price")
+        raw_max = request.query_params.get("max_price")
+
+        try:
+            min_price = float(raw_min) if raw_min else None
+        except (ValueError, TypeError):
+            return None, None, False
+
+        try:
+            max_price = float(raw_max) if raw_max else None
+        except (ValueError, TypeError):
+            return None, None, False
+
+        if min_price is not None and max_price is not None:
+            if min_price > max_price:
+                return None, None, False
+
+        return min_price, max_price, True
+
+    @staticmethod
+    def _parse_bike_model_id(
+        request: Request,
+    ) -> tuple[Optional[int], bool]:
+        """Returns (bike_model_id, is_valid)."""
+        param = request.query_params.get("bike_model")
+        if param is None:
+            return None, True
+        try:
+            return int(param), True
+        except (ValueError, TypeError):
+            return None, False
+
+    @staticmethod
+    def _parse_sort_param(request: Request) -> tuple[str, str]:
+        """
+        Returns (sort_key, order_by_field).
+        sort_key → cache key + meta
+        order_by_field → passed to selector
+        """
+        sort_key = request.query_params.get("sort", DEFAULT_SORT).lower()
+        if sort_key not in SORT_OPTIONS:
+            sort_key = DEFAULT_SORT
+        return sort_key, SORT_OPTIONS[sort_key]
+
+    # ── Cache key builder (view concern — encodes HTTP params) ────────────
+
+    @staticmethod
+    def _build_cache_key(
+        request: Request,
+        page: int,
+        page_size: int,
+        sort_key: str,
+    ) -> str:
+        """
+        Encodes every filter + sort + page into a unique cache key.
+
+        Why raw query param strings not validated values:
+            Empty string '' for unused filters is consistent.
+            Validated Python values (None vs 0) could collide in edge cases.
+            Raw strings from the same request always produce the same key.
+        """
+        parts = [
+            f"p{page}",
+            f"ps{page_size}",
+            f"s{sort_key}",
+            f"cat{request.query_params.get('category', '')}",
+            f"br{request.query_params.get('brand', '')}",
+            f"bk{request.query_params.get('bike_model', '')}",
+            f"mn{request.query_params.get('min_price', '')}",
+            f"mx{request.query_params.get('max_price', '')}",
+            f"q{request.query_params.get('q', '')}",
+            f"ft{request.query_params.get('featured', '')}",
+        ]
+        return f"{PRODUCTS_LIST_CACHE_PREFIX}_" + "_".join(parts)
+
+    # ── Request handler ────────────────────────────────────────────────────
+
+    def get(self, request: Request, *args: Any, **kwargs: Any):
+        start = time.monotonic()
+
+        # ── 1. Validate all params upfront ────────────────────────────────
+        params = get_pagination_params(
+            request, default_page_size=12, max_page_size=48
+        )
+        if not params.is_valid:
+            return self.error_response(
+                message="Invalid page or page_size parameter.",
+                status_code=400,
+            )
+
+        min_price, max_price, price_valid = self._parse_price_params(request)
+        if not price_valid:
+            return self.error_response(
+                message=(
+                    "Invalid price range. min_price and max_price must be "
+                    "positive numbers and min_price must not exceed max_price."
+                ),
+                status_code=400,
+            )
+
+        bike_model_id, bike_valid = self._parse_bike_model_id(request)
+        if not bike_valid:
+            return self.error_response(
+                message="Invalid bike_model ID. Must be a positive integer.",
+                status_code=400,
+            )
+
+        sort_key, order_by = self._parse_sort_param(request)
+
+        # ── 2. Try cache ───────────────────────────────────────────────────
+        cache_key = self._build_cache_key(
+            request, params.page, params.page_size, sort_key
+        )
+        cached, source = two_level_cache.get(cache_key)
+
+        if source != "miss":
+            elapsed_ms = round((time.monotonic() - start) * 1000, 2)
+            logger.info(
+                "ProductListAPIView: OK (cached) | source=%s page=%d "
+                "elapsed_ms=%s request_id=%s",
+                source, params.page, elapsed_ms,
+                getattr(request, "id", "n/a"),
+            )
+            return self.success_response(
+                data=cached["data"],
+                message="Products retrieved successfully.",
+                meta=build_pagination_meta(
+                    params.page,
+                    params.page_size,
+                    cached["total"],
+                    source=source,
+                    sort=sort_key,
+                    elapsed_ms=elapsed_ms,
+                ),
+            )
+
+        # ── 3. Cache miss: call selector → paginate → serialize ───────────
+        queryset = get_product_list_queryset(
+            category_slug=request.query_params.get("category"),
+            brand_slug=request.query_params.get("brand"),
+            bike_model_id=bike_model_id,
+            min_price=min_price,
+            max_price=max_price,
+            search_query=request.query_params.get("q", "").strip() or None,
+            featured_only=(
+                request.query_params.get("featured", "").lower() == "true"
+            ),
+            order_by=order_by,
+        )
+
+        total = queryset.count()
+        offset = (params.page - 1) * params.page_size
+        page_qs = queryset[offset: offset + params.page_size]
+
+        serialized = list(
+            ProductListSerializer(
+                page_qs,
+                many=True,
+                context={"request": request},
+            ).data
+        )
+
+        # ── 4. Write to cache ──────────────────────────────────────────────
+        # Why try/except here specifically:
+        #   Data was fetched and serialized successfully.
+        #   A cache write failure must not prevent serving this response.
+        #   This is deliberate degraded-mode — not hiding a bug.
+        try:
+            two_level_cache.set(
+                cache_key,
+                {"data": serialized, "total": total},
+                l1_timeout=PRODUCTS_LIST_L1_TTL,
+                l2_timeout=PRODUCTS_LIST_L2_TTL,
+            )
+        except Exception as exc:
+            logger.warning(
+                "ProductListAPIView: cache write failed | "
+                "key=%s error=%s — serving response without cache",
+                cache_key, exc,
+            )
+
+        elapsed_ms = round((time.monotonic() - start) * 1000, 2)
+
+        logger.info(
+            "ProductListAPIView: OK (database) | total=%d page=%d "
+            "sort=%s elapsed_ms=%s request_id=%s",
+            total, params.page, sort_key, elapsed_ms,
+            getattr(request, "id", "n/a"),
+        )
+
+        return self.success_response(
+            data=serialized,
+            message="Products retrieved successfully.",
+            meta=build_pagination_meta(
+                params.page,
+                params.page_size,
+                total,
+                source="database",
+                sort=sort_key,
+                elapsed_ms=elapsed_ms,
+            ),
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PRODUCT DETAIL
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ProductDetailAPIView(BaseAPIView):
+    """
+    GET /api/products/<slug>/
+
+    Public endpoint. Returns full product data for the detail page:
+        - Full image gallery
+        - Complete compatible bikes list
+        - Nested category with parent (breadcrumb)
+        - Nested brand
+        - Specifications (key-value table)
+        - Related products (same category, up to 4)
+        - All computed price/discount/stock fields
+        - Timestamps
+    """
+
+    permission_classes = [AllowAny]
+
+    def get(
+        self,
+        request: Request,
+        slug: str,
+        *args: Any,
+        **kwargs: Any,
+    ):
+        start = time.monotonic()
+        cache_key = f"{PRODUCT_DETAIL_CACHE_PREFIX}_{slug}"
+
+        # ── 1. Try cache ───────────────────────────────────────────────────
+        data, source = two_level_cache.get(cache_key)
+
+        if source == "miss":
+            # ── 2. Cache miss: fetch from DB ───────────────────────────────
+            # get_object_or_404 raises Http404 if not found.
+            # Http404 propagates naturally — DRF exception handler
+            # does NOT catch Http404 (it is a Django exception).
+            # Django itself converts it to a 404 response.
+            # We do not catch it — correct behavior is automatic.
+            product = get_object_or_404(
+                get_product_detail_queryset(),
+                slug=slug,
+            )
+
+            # ── 3. Serialize in view (correct layer) ───────────────────────
+            data = dict(
+                ProductDetailSerializer(
+                    product,
+                    context={"request": request},
+                ).data
+            )
+
+            # ── 4. Write to cache ──────────────────────────────────────────
+            # Same deliberate try/except as ProductListAPIView.
+            # Serve data even if cache write fails.
+            try:
+                two_level_cache.set(
+                    cache_key,
+                    data,
+                    l1_timeout=PRODUCT_DETAIL_L1_TTL,
+                    l2_timeout=PRODUCT_DETAIL_L2_TTL,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "ProductDetailAPIView: cache write failed | "
+                    "slug=%s error=%s — serving response without cache",
+                    slug, exc,
+                )
+
+            source = "database"
+
+            logger.debug(
+                "ProductDetailAPIView: cache miss, DB queried | "
+                "slug=%s request_id=%s",
+                slug, getattr(request, "id", "n/a"),
+            )
+
+        elapsed_ms = round((time.monotonic() - start) * 1000, 2)
+
+        logger.info(
+            "ProductDetailAPIView: OK | slug=%s source=%s "
+            "elapsed_ms=%s request_id=%s",
+            slug, source, elapsed_ms, getattr(request, "id", "n/a"),
+        )
+
+        return self.success_response(
+            data=data,
+            message="Product retrieved successfully.",
+            meta={
+                "source": source,
+                "elapsed_ms": elapsed_ms,
+            },
+        )
+'''
 class ProductListAPIView(BaseAPIView):
     """
     GET /api/products/
@@ -1211,3 +1553,4 @@ class ProductDetailAPIView(BaseAPIView):
 
 
 
+'''
