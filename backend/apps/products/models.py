@@ -690,3 +690,29 @@ class LowStockAlert(TimeStampedModel):
             f"Low stock — {self.product.name} "
             f"({self.stock_at_alert} units remaining)"
         )
+'''
+LowStockAlert
+─────────────
+Belongs: Products app — now
+Reason:  Triggered by Product post_save signal
+         Admin resolves it in admin panel
+         Zero dependency on orders app
+         Can and should be wired up NOW
+         Signal: on_product_saved → check is_low_stock → create LowStockAlert
+         Admin: already registered in admin.py
+         No endpoint needed — admin-only workflow
+
+StockReservation  
+────────────────
+Belongs: Orders app — later
+Reason:  Created at checkout start (orders workflow)
+         Deleted at order confirmation (orders workflow)
+         Celery cleanup task belongs with checkout logic
+         Has zero purpose until orders app exists
+         Wiring it now means writing dead code with no caller
+         The model can sit in models.py — migrations exist — but
+         NO signal, NO service method, NO endpoint, NO Celery task
+         until orders app is being built
+
+
+'''

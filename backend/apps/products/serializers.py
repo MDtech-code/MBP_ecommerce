@@ -6,7 +6,7 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 from django.db.models import Prefetch
 
-from .models import Category, Brand, BikeModel, Product, ProductImage
+from .models import Category, Brand, BikeModel, Product, ProductImage,ProductSpecification
 from apps.core.mixins import TimestampFieldsMixin
 logger = logging.getLogger("apps.products")
 
@@ -283,6 +283,32 @@ class ProductListSerializer(serializers.ModelSerializer):
 
 
 # ─── Product Detail Serializer (full) ──────────────────────────────────────
+
+class ProductSpecificationSerializer(serializers.ModelSerializer):
+    """
+    Serializer for key-value product specifications.
+
+    Nested inside ProductDetailSerializer.specifications field.
+    Frontend renders these as a specification table on the detail page.
+
+    Why no TimestampFieldsMixin:
+        Specification rows are detail data, not auditable resources.
+        Frontend spec table needs name, value, unit, order — not timestamps.
+
+    Why display_order included:
+        Frontend must render specs in the correct admin-defined order.
+        display_order field drives the ordering — must be in response.
+    """
+
+    class Meta:
+        model = ProductSpecification
+        fields = [
+            "id",
+            "name",
+            "value",
+            "unit",
+            "display_order",
+        ]
 class ProductDetailSerializer(TimestampFieldsMixin, serializers.ModelSerializer):
     """
     Full serializer for single product detail page.
@@ -326,6 +352,7 @@ class ProductDetailSerializer(TimestampFieldsMixin, serializers.ModelSerializer)
     discount_percentage = serializers.IntegerField(read_only=True)
     is_in_stock = serializers.BooleanField(read_only=True)
     related_products = serializers.SerializerMethodField()
+    specifications = ProductSpecificationSerializer(many=True, read_only=True)
 
     class Meta:
         model = Product
@@ -349,6 +376,7 @@ class ProductDetailSerializer(TimestampFieldsMixin, serializers.ModelSerializer)
             "status",
             "is_featured",
             "related_products",
+            "specifications",
             "created_at",
             "updated_at",
         ]
