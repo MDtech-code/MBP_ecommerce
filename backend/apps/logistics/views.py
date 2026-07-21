@@ -42,14 +42,11 @@ from apps.logistics.models import Shipment, ShipmentStatusLog
 from apps.logistics.selectors.shipment import (
     get_shipment_by_tracking,
     get_shipment_for_order,
-    list_shipments,
+    
 )
 from apps.logistics.serializers import (
     OrderTrackingSerializer,
-    ShipmentCreateSerializer,
-    ShipmentDetailSerializer,
-    ShipmentListSerializer,
-    ShipmentStatusUpdateSerializer,
+   
 )
 from apps.logistics.services.shipment_service import ShipmentService
 from apps.orders.models import Order
@@ -57,7 +54,7 @@ from apps.orders.selectors.order import get_order_by_number
 
 logger = logging.getLogger("apps.logistics")
 
-
+'''
 # ─────────────────────────────────────────────────────────────────────────────
 # SHIPMENT LIST + CREATE (Admin)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -297,7 +294,7 @@ class ShipmentStatusUpdateAPIView(BaseAPIView):
             message=_("Shipment status updated successfully."),
         )
 
-
+'''
 # ─────────────────────────────────────────────────────────────────────────────
 # ORDER TRACKING (Customer-facing)
 # ─────────────────────────────────────────────────────────────────────────────

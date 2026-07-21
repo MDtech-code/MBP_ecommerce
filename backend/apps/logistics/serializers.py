@@ -25,7 +25,7 @@ from apps.core.mixins import TimestampFieldsMixin
 
 from .models import CourierPartner, Shipment, ShipmentStatusLog
 
-
+'''
 class ShipmentCreateSerializer(serializers.Serializer):
     """
     Input validation for creating a shipment for a CONFIRMED order.
@@ -212,7 +212,33 @@ class ShipmentDetailSerializer(TimestampFieldsMixin, serializers.ModelSerializer
             "updated_at",
         ]
 
+'''
 
+
+class ShipmentStatusLogSerializer(serializers.ModelSerializer):
+    """
+    Read-only output for a single shipment status log entry.
+
+    source_display gives the human-readable source label.
+    No timestamps mixin — created_at is the only timestamp
+    and it is already a model field exposed directly.
+    """
+
+    source_display = serializers.CharField(
+        source="get_source_display",
+        read_only=True,
+    )
+
+    class Meta:
+        model = ShipmentStatusLog
+        fields = [
+            "id",
+            "from_status",
+            "to_status",
+            "source",
+            "source_display",
+            "created_at",
+        ]
 class OrderTrackingSerializer(serializers.ModelSerializer):
     """
     Customer-facing read-only tracking output.
