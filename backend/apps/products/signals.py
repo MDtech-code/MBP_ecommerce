@@ -22,6 +22,8 @@ from apps.products.constants import (
 )
 from .models import Product, ProductImage, Category, BikeModel, Brand
 from apps.products.services.category_service import CategoryService
+from .services.brand_service import BrandService
+from .services.bike_model_service import BikeModelService
 logger = logging.getLogger("apps.products")
 
 
@@ -83,46 +85,136 @@ def on_category_deleted(
 
 
 # ── Brand invalidation ─────────────────────────────────────────────────────
+@receiver(post_save, sender=Brand)
+def on_brand_saved(
+    sender,
+    instance: Brand,
+    created: bool,
+    **kwargs,
+) -> None:
+    """
+    Invalidate brand list cache on any brand change.
 
-def _invalidate_brand_cache(instance: Brand, reason: str) -> None:
-    two_level_cache.delete(BRANDS_CACHE_KEY)
+    Why also invalidate bike model cache:
+        BikeModelSerializer includes brand_name.
+        If a brand is renamed, all cached bike model responses
+        still show the old brand name — they are stale.
+        We must clear bike model caches too.
+    """
+    BrandService.invalidate_cache()
+    BikeModelService.invalidate_cache()
     logger.info(
-        "Brand cache invalidated | reason=%s key=%s id=%s name=%s",
-        reason, BRANDS_CACHE_KEY, instance.pk, instance.name,
+        "Brand signal: brand + bike_model caches invalidated | "
+        "action=%s id=%s name=%s",
+        "created" if created else "updated",
+        instance.pk,
+        instance.name,
     )
 
 
-@receiver(post_save, sender=Brand)
-def on_brand_saved(sender, instance: Brand, created: bool, **kwargs):
-    action = "created" if created else "updated"
-    _invalidate_brand_cache(instance, reason=action)
-
-
 @receiver(post_delete, sender=Brand)
-def on_brand_deleted(sender, instance: Brand, **kwargs):
-    _invalidate_brand_cache(instance, reason="deleted")
+def on_brand_deleted(
+    sender,
+    instance: Brand,
+    **kwargs,
+) -> None:
+    """
+    Invalidate brand and bike model caches on brand deletion.
+
+    Note: BikeModel has on_delete=CASCADE to Brand.
+    Django fires post_delete for each cascaded BikeModel before
+    firing post_delete for Brand. BikeModel signals will also fire.
+    This signal clears brand list cache as a final cleanup.
+    """
+    BrandService.invalidate_cache()
+    BikeModelService.invalidate_cache()
+    logger.info(
+        "Brand signal: brand + bike_model caches invalidated | "
+        "action=deleted id=%s name=%s",
+        instance.pk,
+        instance.name,
+    )
+# def _invalidate_brand_cache(instance: Brand, reason: str) -> None:
+#     two_level_cache.delete(BRANDS_CACHE_KEY)
+#     logger.info(
+#         "Brand cache invalidated | reason=%s key=%s id=%s name=%s",
+#         reason, BRANDS_CACHE_KEY, instance.pk, instance.name,
+#     )
+
+
+# @receiver(post_save, sender=Brand)
+# def on_brand_saved(sender, instance: Brand, created: bool, **kwargs):
+#     action = "created" if created else "updated"
+#     _invalidate_brand_cache(instance, reason=action)
+
+
+# @receiver(post_delete, sender=Brand)
+# def on_brand_deleted(sender, instance: Brand, **kwargs):
+#     _invalidate_brand_cache(instance, reason="deleted")
 
 
 # ── BikeModel invalidation ─────────────────────────────────────────────────
 
-def _invalidate_bike_model_caches(instance: BikeModel, reason: str) -> None:
-    two_level_cache.delete(BIKE_MODELS_CACHE_PREFIX)
+@receiver(post_save, sender=BikeModel)
+def on_bike_model_saved(
+    sender,
+    instance: BikeModel,
+    created: bool,
+    **kwargs,
+) -> None:
+    """
+    Invalidate ALL bike model cache keys on any bike model change.
+
+    Why prefix delete clears all variants:
+        We cache per brand filter combination.
+        A change to brand_id=3 model makes both:
+            products_bike_models_brand_3   stale (direct)
+            products_bike_models_brand_all stale (appears in all-brands list)
+        Prefix delete clears both in one SCAN pass.
+    """
+    BikeModelService.invalidate_cache()
     logger.info(
-        "BikeModel cache invalidated | reason=%s prefix=%s id=%s name=%s brand_id=%s",
-        reason, BIKE_MODELS_CACHE_PREFIX,
-        instance.pk, instance.name, instance.brand_id,
+        "BikeModel signal: all bike_model caches invalidated | "
+        "action=%s id=%s name=%s brand_id=%s",
+        "created" if created else "updated",
+        instance.pk,
+        instance.name,
+        instance.brand_id,
     )
 
 
-@receiver(post_save, sender=BikeModel)
-def on_bike_model_saved(sender, instance: BikeModel, created: bool, **kwargs):
-    action = "created" if created else "updated"
-    _invalidate_bike_model_caches(instance, reason=action)
-
-
 @receiver(post_delete, sender=BikeModel)
-def on_bike_model_deleted(sender, instance: BikeModel, **kwargs):
-    _invalidate_bike_model_caches(instance, reason="deleted")
+def on_bike_model_deleted(
+    sender,
+    instance: BikeModel,
+    **kwargs,
+) -> None:
+    BikeModelService.invalidate_cache()
+    logger.info(
+        "BikeModel signal: all bike_model caches invalidated | "
+        "action=deleted id=%s name=%s brand_id=%s",
+        instance.pk,
+        instance.name,
+        instance.brand_id,
+    )
+# def _invalidate_bike_model_caches(instance: BikeModel, reason: str) -> None:
+#     two_level_cache.delete(BIKE_MODELS_CACHE_PREFIX)
+#     logger.info(
+#         "BikeModel cache invalidated | reason=%s prefix=%s id=%s name=%s brand_id=%s",
+#         reason, BIKE_MODELS_CACHE_PREFIX,
+#         instance.pk, instance.name, instance.brand_id,
+#     )
+
+
+# @receiver(post_save, sender=BikeModel)
+# def on_bike_model_saved(sender, instance: BikeModel, created: bool, **kwargs):
+#     action = "created" if created else "updated"
+#     _invalidate_bike_model_caches(instance, reason=action)
+
+
+# @receiver(post_delete, sender=BikeModel)
+# def on_bike_model_deleted(sender, instance: BikeModel, **kwargs):
+#     _invalidate_bike_model_caches(instance, reason="deleted")
 
 
 # ── Product invalidation ───────────────────────────────────────────────────

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any
+from typing import Any,Optional
 from rest_framework.request import Request
 from django.conf import settings
 from django.db.models import Count, Prefetch
@@ -17,7 +17,8 @@ from apps.core.cache import two_level_cache
 from apps.core.pagination import get_pagination_params, build_pagination_meta
 from apps.common.utils.tree import build_tree
 from apps.products.selectors.category import list_active_categories
-
+from apps.products.selectors.brand import list_active_brands
+from apps.products.selectors.bike_model import list_active_bike_models
 from .constants import (
     CATEGORIES_FLAT_CACHE_KEY,
     CATEGORIES_TREE_CACHE_KEY,
@@ -305,99 +306,285 @@ class CategoryListAPIView(BaseAPIView):
 
 
 # ─── Brand Views ────────────────────────────────────────────────────────────
-
-# BRANDS_CACHE_KEY = "products_brands_list"
-
-# # Why longer TTL than default:
-# # Brands change very rarely — Honda/Yamaha/Suzuki are stable data.
-# # Admin adds a new brand maybe once a month.
-# # Signal invalidation keeps it fresh on writes.
-# BRANDS_L1_TTL = 86400    # 1 day
-# BRANDS_L2_TTL = 86400*7    # 1 weeks 
-
 class BrandListAPIView(BaseAPIView):
     """
     GET /api/products/brands/
 
     Returns all active brands for filter dropdowns and brand pages.
 
-    Query strategy:
-        .filter(is_active=True)   → never expose inactive brands
-        .order_by("name")         → deterministic ordering for stable cache
-
     Cache strategy:
-        L1 TTL : 180s
-        L2 TTL : 900s
-        Purge  : Brand post_save / post_delete signals
+        Single cache key — brands do not vary by any filter param.
+        On cache hit  → zero DB queries, zero serialization.
+        On cache miss → 1 DB query → serialize → cache.
+
+        L1 TTL: 1 day   (brands change rarely)
+        L2 TTL: 1 week
+        Purge:  Brand post_save / post_delete → BrandService.invalidate_cache()
     """
 
     permission_classes = [AllowAny]
 
-    def _build_fresh_data(self) -> list:
-        """
-        Why order_by("name"):
-            Without explicit ordering, DB may return different row orders
-            on different requests. Two workers could cache different orderings
-            for the same data — inconsistent frontend display.
-
-        Why list():
-            DRF ReturnList is not reliably serializable by all cache backends.
-            list() gives a plain Python list — always safe to cache.
-        """
-        queryset = (
-            Brand.objects
-            .filter(is_active=True)
-            .order_by("name")
-        )
-        return list(BrandSerializer(queryset, many=True).data)
-
     def get(self, request: Request, *args: Any, **kwargs: Any):
         start = time.monotonic()
 
-        try:
-            data, source = two_level_cache.get_or_set(
+        # ── 1. Try cache first ─────────────────────────────────────────────
+        data, source = two_level_cache.get(BRANDS_CACHE_KEY)
+
+        if source == "miss":
+            # ── 2. Cache miss: query DB → serialize → cache ────────────────
+            queryset = list_active_brands()
+            data = list(BrandSerializer(queryset, many=True).data)
+
+            two_level_cache.set(
                 BRANDS_CACHE_KEY,
-                self._build_fresh_data,
+                data,
                 l1_timeout=BRANDS_L1_TTL,
                 l2_timeout=BRANDS_L2_TTL,
             )
-        except Exception as exc:
-            logger.error(
-                "BrandListAPIView: retrieval failed | key=%s error=%s",
-                BRANDS_CACHE_KEY,
-                exc,
-                exc_info=True,
-            )
-            return self.error_response(
-                message="Unable to retrieve brands. Please try again.",
-                status_code=503,
+            source = "database"
+
+            logger.debug(
+                "BrandListAPIView: cache miss, DB queried | "
+                "count=%d request_id=%s",
+                len(data),
+                getattr(request, "id", "n/a"),
             )
 
         elapsed_ms = round((time.monotonic() - start) * 1000, 2)
         count = len(data) if data else 0
 
         logger.info(
-            "BrandListAPIView: OK | source=%s count=%d elapsed_ms=%s request_id=%s",
-            source,
-            count,
-            elapsed_ms,
+            "BrandListAPIView: OK | source=%s count=%d "
+            "elapsed_ms=%s request_id=%s",
+            source, count, elapsed_ms,
             getattr(request, "id", "n/a"),
         )
 
         return self.success_response(
             data=data,
-            message="Brands retrieved successfully",
+            message="Brands retrieved successfully.",
             meta={
-                "source": source,
                 "count": count,
+                "source": source,
                 "elapsed_ms": elapsed_ms,
             },
         )
+
+# # BRANDS_CACHE_KEY = "products_brands_list"
+
+# # # Why longer TTL than default:
+# # # Brands change very rarely — Honda/Yamaha/Suzuki are stable data.
+# # # Admin adds a new brand maybe once a month.
+# # # Signal invalidation keeps it fresh on writes.
+# # BRANDS_L1_TTL = 86400    # 1 day
+# # BRANDS_L2_TTL = 86400*7    # 1 weeks 
+
+# class BrandListAPIView(BaseAPIView):
+#     """
+#     GET /api/products/brands/
+
+#     Returns all active brands for filter dropdowns and brand pages.
+
+#     Query strategy:
+#         .filter(is_active=True)   → never expose inactive brands
+#         .order_by("name")         → deterministic ordering for stable cache
+
+#     Cache strategy:
+#         L1 TTL : 180s
+#         L2 TTL : 900s
+#         Purge  : Brand post_save / post_delete signals
+#     """
+
+#     permission_classes = [AllowAny]
+
+#     def _build_fresh_data(self) -> list:
+#         """
+#         Why order_by("name"):
+#             Without explicit ordering, DB may return different row orders
+#             on different requests. Two workers could cache different orderings
+#             for the same data — inconsistent frontend display.
+
+#         Why list():
+#             DRF ReturnList is not reliably serializable by all cache backends.
+#             list() gives a plain Python list — always safe to cache.
+#         """
+#         queryset = (
+#             Brand.objects
+#             .filter(is_active=True)
+#             .order_by("name")
+#         )
+#         return list(BrandSerializer(queryset, many=True).data)
+
+#     def get(self, request: Request, *args: Any, **kwargs: Any):
+#         start = time.monotonic()
+
+#         try:
+#             data, source = two_level_cache.get_or_set(
+#                 BRANDS_CACHE_KEY,
+#                 self._build_fresh_data,
+#                 l1_timeout=BRANDS_L1_TTL,
+#                 l2_timeout=BRANDS_L2_TTL,
+#             )
+#         except Exception as exc:
+#             logger.error(
+#                 "BrandListAPIView: retrieval failed | key=%s error=%s",
+#                 BRANDS_CACHE_KEY,
+#                 exc,
+#                 exc_info=True,
+#             )
+#             return self.error_response(
+#                 message="Unable to retrieve brands. Please try again.",
+#                 status_code=503,
+#             )
+
+#         elapsed_ms = round((time.monotonic() - start) * 1000, 2)
+#         count = len(data) if data else 0
+
+#         logger.info(
+#             "BrandListAPIView: OK | source=%s count=%d elapsed_ms=%s request_id=%s",
+#             source,
+#             count,
+#             elapsed_ms,
+#             getattr(request, "id", "n/a"),
+#         )
+
+#         return self.success_response(
+#             data=data,
+#             message="Brands retrieved successfully",
+#             meta={
+#                 "source": source,
+#                 "count": count,
+#                 "elapsed_ms": elapsed_ms,
+#             },
+#         )
 #! old brand view
 
 
 # ─── Bike Model Views ───────────────────────────────────────────────────────
 
+class BikeModelListAPIView(BaseAPIView):
+    """
+    GET /api/products/bike-models/
+    GET /api/products/bike-models/?brand=<id>
+
+    Returns active bike models for the compatibility filter dropdown.
+
+    Why brand filter:
+        Frontend compatibility filter works in two steps:
+            Step 1 → user selects brand  → fetch models for that brand
+            Step 2 → user selects model  → fetch compatible products
+        ?brand=<id> powers step 1 without returning all models at once.
+
+    Cache strategy:
+        Each brand filter combination gets its own cache key:
+            no filter → products_bike_models_brand_all
+            brand=1   → products_bike_models_brand_1
+            brand=2   → products_bike_models_brand_2
+
+        On cache hit  → zero DB queries, zero serialization.
+        On cache miss → 1 DB query → serialize → cache key for this filter.
+
+        L1 TTL: 2 minutes
+        L2 TTL: 10 minutes
+        Purge:  BikeModel post_save / post_delete →
+                BikeModelService.invalidate_cache() clears ALL prefix keys
+    """
+
+    permission_classes = [AllowAny]
+
+    @staticmethod
+    def _parse_brand_id(
+        brand_id_param: Optional[str],
+    ) -> tuple[Optional[int], bool]:
+        """
+        Parse and validate the ?brand= query param.
+
+        Returns:
+            (None, True)  → param absent, no filter, show all brands
+            (int,  True)  → valid integer, apply brand filter
+            (None, False) → invalid value, caller returns 400
+
+        Why static method not inline in get():
+            Single responsibility — param parsing is its own concern.
+            Independently testable without instantiating the view.
+
+        Why not DRF FilterSet for this:
+            One integer param does not justify a full FilterSet.
+            Simple coercion is cleaner and faster here.
+        """
+        if brand_id_param is None:
+            return None, True
+        try:
+            return int(brand_id_param), True
+        except (ValueError, TypeError):
+            return None, False
+
+    def get(self, request: Request, *args: Any, **kwargs: Any):
+        start = time.monotonic()
+
+        # ── 1. Parse and validate brand filter param ───────────────────────
+        brand_id, is_valid = self._parse_brand_id(
+            request.query_params.get("brand")
+        )
+
+        if not is_valid:
+            logger.warning(
+                "BikeModelListAPIView: invalid brand param=%s request_id=%s",
+                request.query_params.get("brand"),
+                getattr(request, "id", "n/a"),
+            )
+            return self.error_response(
+                message="Invalid brand ID. Must be a positive integer.",
+                status_code=400,
+            )
+
+        # ── 2. Build cache key per filter combination ──────────────────────
+        cache_key = f"{BIKE_MODELS_CACHE_PREFIX}_{brand_id or 'all'}"
+
+        # ── 3. Try cache first ─────────────────────────────────────────────
+        data, source = two_level_cache.get(cache_key)
+
+        if source == "miss":
+            # ── 4. Cache miss: query DB → serialize → cache ────────────────
+            queryset = list_active_bike_models(brand_id=brand_id)
+            data = list(BikeModelSerializer(queryset, many=True).data)
+
+            two_level_cache.set(
+                cache_key,
+                data,
+                l1_timeout=BIKE_MODELS_L1_TTL,
+                l2_timeout=BIKE_MODELS_L2_TTL,
+            )
+            source = "database"
+
+            logger.debug(
+                "BikeModelListAPIView: cache miss, DB queried | "
+                "brand_id=%s count=%d request_id=%s",
+                brand_id or "all",
+                len(data),
+                getattr(request, "id", "n/a"),
+            )
+
+        elapsed_ms = round((time.monotonic() - start) * 1000, 2)
+        count = len(data) if data else 0
+
+        logger.info(
+            "BikeModelListAPIView: OK | brand_id=%s source=%s "
+            "count=%d elapsed_ms=%s request_id=%s",
+            brand_id or "all", source, count, elapsed_ms,
+            getattr(request, "id", "n/a"),
+        )
+
+        return self.success_response(
+            data=data,
+            message="Bike models retrieved successfully.",
+            meta={
+                "count": count,
+                "source": source,
+                "elapsed_ms": elapsed_ms,
+                "brand_filter": brand_id,
+            },
+        )
 # # Why "all" suffix for unfiltered key:
 # #   Cache key must be unique per filter combination.
 # #   brand=1  → "products_bike_models_brand_1"
@@ -412,144 +599,144 @@ class BrandListAPIView(BaseAPIView):
 # BIKE_MODELS_L2_TTL = 600    # 10 minutes
 
 
-class BikeModelListAPIView(BaseAPIView):
-    """
-    GET /api/products/bike-models/
-    GET /api/products/bike-models/?brand=<id>
+# class BikeModelListAPIView(BaseAPIView):
+#     """
+#     GET /api/products/bike-models/
+#     GET /api/products/bike-models/?brand=<id>
 
-    Returns active bike models for the compatibility filter dropdown.
+#     Returns active bike models for the compatibility filter dropdown.
 
-    Why brand filter:
-        Frontend compatibility filter works in two steps:
-            Step 1 → user selects brand  → fetch models for that brand
-            Step 2 → user selects model  → fetch products for that model
-        ?brand=<id> enables step 1 without returning all models for all brands.
+#     Why brand filter:
+#         Frontend compatibility filter works in two steps:
+#             Step 1 → user selects brand  → fetch models for that brand
+#             Step 2 → user selects model  → fetch products for that model
+#         ?brand=<id> enables step 1 without returning all models for all brands.
 
-    Cache strategy:
-        Each brand filter value gets its own cache key.
-        brand=None  → key: products_bike_models_brand_all
-        brand=1     → key: products_bike_models_brand_1
-        brand=2     → key: products_bike_models_brand_2
+#     Cache strategy:
+#         Each brand filter value gets its own cache key.
+#         brand=None  → key: products_bike_models_brand_all
+#         brand=1     → key: products_bike_models_brand_1
+#         brand=2     → key: products_bike_models_brand_2
 
-        Why per-brand cache keys:
-            Invalidation on BikeModel change only clears affected brand key.
-            Other brands' caches stay warm — no unnecessary DB hits.
+#         Why per-brand cache keys:
+#             Invalidation on BikeModel change only clears affected brand key.
+#             Other brands' caches stay warm — no unnecessary DB hits.
 
-        L1 TTL : 120s
-        L2 TTL : 600s
-        Purge  : BikeModel post_save / post_delete signals
+#         L1 TTL : 120s
+#         L2 TTL : 600s
+#         Purge  : BikeModel post_save / post_delete signals
 
-    Query strategy:
-        .filter(is_active=True)       → never expose inactive models
-        .select_related("brand")      → brand_name field, zero extra queries
-        .filter(brand_id=brand_id)    → optional brand filter, applied at DB
-        .order_by("brand__name","name") → stable ordering for cache
-    """
+#     Query strategy:
+#         .filter(is_active=True)       → never expose inactive models
+#         .select_related("brand")      → brand_name field, zero extra queries
+#         .filter(brand_id=brand_id)    → optional brand filter, applied at DB
+#         .order_by("brand__name","name") → stable ordering for cache
+#     """
 
-    permission_classes = [AllowAny]
+#     permission_classes = [AllowAny]
 
-    def _validate_brand_id(self, brand_id_param: str | None) -> tuple[int | None, bool]:
-        """
-        Validates and converts the brand query param.
+#     def _validate_brand_id(self, brand_id_param: str | None) -> tuple[int | None, bool]:
+#         """
+#         Validates and converts the brand query param.
 
-        Returns (brand_id, is_valid).
-            brand_id=None, is_valid=True  → no filter, show all brands
-            brand_id=int,  is_valid=True  → valid filter
-            brand_id=None, is_valid=False → invalid param, caller returns 400
+#         Returns (brand_id, is_valid).
+#             brand_id=None, is_valid=True  → no filter, show all brands
+#             brand_id=int,  is_valid=True  → valid filter
+#             brand_id=None, is_valid=False → invalid param, caller returns 400
 
-        Why validate here instead of in get():
-            Keeps the handler clean — one concern per method.
-            Also makes this independently testable.
+#         Why validate here instead of in get():
+#             Keeps the handler clean — one concern per method.
+#             Also makes this independently testable.
 
-        Why not use DRF filters/serializers for this:
-            This is a simple integer coercion, not schema validation.
-            A full FilterSet would be over-engineering for one param.
-        """
-        if brand_id_param is None:
-            return None, True
-        try:
-            return int(brand_id_param), True
-        except (ValueError, TypeError):
-            return None, False
+#         Why not use DRF filters/serializers for this:
+#             This is a simple integer coercion, not schema validation.
+#             A full FilterSet would be over-engineering for one param.
+#         """
+#         if brand_id_param is None:
+#             return None, True
+#         try:
+#             return int(brand_id_param), True
+#         except (ValueError, TypeError):
+#             return None, False
 
-    def _build_fresh_data(self, brand_id: int | None) -> list:
-        """
-        Why brand_id as parameter and not reading from request:
-            This method is passed as a lambda to get_or_set().
-            get_or_set() calls it with zero arguments.
-            We capture brand_id via closure — clean, no request coupling.
-        """
-        queryset = (
-            BikeModel.objects
-            .filter(is_active=True)
-            .select_related("brand")
-            .order_by("brand__name", "name")
-        )
-        if brand_id is not None:
-            queryset = queryset.filter(brand_id=brand_id)
+#     def _build_fresh_data(self, brand_id: int | None) -> list:
+#         """
+#         Why brand_id as parameter and not reading from request:
+#             This method is passed as a lambda to get_or_set().
+#             get_or_set() calls it with zero arguments.
+#             We capture brand_id via closure — clean, no request coupling.
+#         """
+#         queryset = (
+#             BikeModel.objects
+#             .filter(is_active=True)
+#             .select_related("brand")
+#             .order_by("brand__name", "name")
+#         )
+#         if brand_id is not None:
+#             queryset = queryset.filter(brand_id=brand_id)
 
-        return list(BikeModelSerializer(queryset, many=True).data)
+#         return list(BikeModelSerializer(queryset, many=True).data)
 
-    def get(self, request: Request, *args: Any, **kwargs: Any):
-        start = time.monotonic()
+#     def get(self, request: Request, *args: Any, **kwargs: Any):
+#         start = time.monotonic()
 
-        # ── Validate brand query param ─────────────────────────────────────
-        brand_id_param = request.query_params.get("brand")
-        brand_id, is_valid = self._validate_brand_id(brand_id_param)
+#         # ── Validate brand query param ─────────────────────────────────────
+#         brand_id_param = request.query_params.get("brand")
+#         brand_id, is_valid = self._validate_brand_id(brand_id_param)
 
-        if not is_valid:
-            return self.error_response(
-                message="Invalid brand ID. Must be a positive integer.",
-                status_code=400,
-            )
+#         if not is_valid:
+#             return self.error_response(
+#                 message="Invalid brand ID. Must be a positive integer.",
+#                 status_code=400,
+#             )
 
-        # ── Build cache key per filter combination ─────────────────────────
-        cache_key = f"{BIKE_MODELS_CACHE_PREFIX}_{brand_id or 'all'}"
+#         # ── Build cache key per filter combination ─────────────────────────
+#         cache_key = f"{BIKE_MODELS_CACHE_PREFIX}_{brand_id or 'all'}"
 
-        try:
-            data, source = two_level_cache.get_or_set(
-                cache_key,
-                lambda: self._build_fresh_data(brand_id),
-                l1_timeout=BIKE_MODELS_L1_TTL,
-                l2_timeout=BIKE_MODELS_L2_TTL,
-            )
-        except Exception as exc:
-            logger.error(
-                "BikeModelListAPIView: retrieval failed | "
-                "brand_id=%s key=%s error=%s",
-                brand_id,
-                cache_key,
-                exc,
-                exc_info=True,
-            )
-            return self.error_response(
-                message="Unable to retrieve bike models. Please try again.",
-                status_code=503,
-            )
+#         try:
+#             data, source = two_level_cache.get_or_set(
+#                 cache_key,
+#                 lambda: self._build_fresh_data(brand_id),
+#                 l1_timeout=BIKE_MODELS_L1_TTL,
+#                 l2_timeout=BIKE_MODELS_L2_TTL,
+#             )
+#         except Exception as exc:
+#             logger.error(
+#                 "BikeModelListAPIView: retrieval failed | "
+#                 "brand_id=%s key=%s error=%s",
+#                 brand_id,
+#                 cache_key,
+#                 exc,
+#                 exc_info=True,
+#             )
+#             return self.error_response(
+#                 message="Unable to retrieve bike models. Please try again.",
+#                 status_code=503,
+#             )
 
-        elapsed_ms = round((time.monotonic() - start) * 1000, 2)
-        count = len(data) if data else 0
+#         elapsed_ms = round((time.monotonic() - start) * 1000, 2)
+#         count = len(data) if data else 0
 
-        logger.info(
-            "BikeModelListAPIView: OK | brand_id=%s source=%s count=%d "
-            "elapsed_ms=%s request_id=%s",
-            brand_id or "all",
-            source,
-            count,
-            elapsed_ms,
-            getattr(request, "id", "n/a"),
-        )
+#         logger.info(
+#             "BikeModelListAPIView: OK | brand_id=%s source=%s count=%d "
+#             "elapsed_ms=%s request_id=%s",
+#             brand_id or "all",
+#             source,
+#             count,
+#             elapsed_ms,
+#             getattr(request, "id", "n/a"),
+#         )
 
-        return self.success_response(
-            data=data,
-            message="Bike models retrieved successfully",
-            meta={
-                "source": source,
-                "count": count,
-                "elapsed_ms": elapsed_ms,
-                "brand_filter": brand_id,
-            },
-        )
+#         return self.success_response(
+#             data=data,
+#             message="Bike models retrieved successfully",
+#             meta={
+#                 "source": source,
+#                 "count": count,
+#                 "elapsed_ms": elapsed_ms,
+#                 "brand_filter": brand_id,
+#             },
+#         )
 
 
 # ─── Product List / Filter View ─────────────────────────────────────────────
