@@ -9,6 +9,7 @@ from .views import (
     ProductListAPIView,
     ProductDetailAPIView,
 )
+from apps.reviews.views import ProductReviewListAPIView
 
 app_name = "products"
 
@@ -21,6 +22,9 @@ urlpatterns = [
     # ─── Product CRUD ──────────────────────────────────
     path("", ProductListAPIView.as_view(), name="product-list"),
     path("<slug:slug>/", ProductDetailAPIView.as_view(), name="product-detail"),
+
+    # ─── Product review ────────────────────────────────── 
+    path("products/<slug:slug>/reviews/", ProductReviewListAPIView.as_view())
 
    
 ]
