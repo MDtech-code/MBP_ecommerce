@@ -212,7 +212,7 @@ CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=[
 # ─── JWT ──────────────────────────────────────────────
 from datetime import timedelta
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=1),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=50),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
@@ -225,8 +225,10 @@ GOOGLE_CLIENT_SECRET = env("GOOGLE_CLIENT_SECRET")
 # ─── facebook credential  ──────────────────────────────────────────────
 FACEBOOK_APP_ID     = env("FACEBOOK_APP_ID")
 FACEBOOK_APP_SECRET = env("FACEBOOK_APP_SECRET")
-
-
+# ── Courier Webhook Secrets ────────────────────────────────────────────────
+POSTEX_WEBHOOK_SECRET  = env("POSTEX_WEBHOOK_SECRET",  default="")
+TCS_WEBHOOK_SECRET     = env("TCS_WEBHOOK_SECRET",     default="")
+LEOPARDS_WEBHOOK_SECRET = env("LEOPARDS_WEBHOOK_SECRET", default="")
 # ─── Internationalisation ─────────────────────────────
 
 LANGUAGE_CODE = 'en-us'

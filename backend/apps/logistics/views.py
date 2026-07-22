@@ -51,6 +51,12 @@ from apps.logistics.serializers import (
 from apps.logistics.services.shipment_service import ShipmentService
 from apps.orders.models import Order
 from apps.orders.selectors.order import get_order_by_number
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
+from rest_framework.permissions import AllowAny
+
+from apps.payments.models import WebhookLog
+from apps.logistics.tasks import process_courier_webhook
 
 logger = logging.getLogger("apps.logistics")
 
@@ -348,3 +354,120 @@ class OrderTrackingAPIView(BaseAPIView):
             data=OrderTrackingSerializer(shipment).data,
             message=_("Tracking information retrieved successfully."),
         )
+
+
+
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# COURIER WEBHOOK BASE VIEW
+# ─────────────────────────────────────────────────────────────────────────────
+
+@method_decorator(csrf_exempt, name="dispatch")
+class BaseCourierWebhookView(BaseAPIView):
+    """
+    Base class for all courier webhook receiver views.
+
+    Security model:
+        CSRF exempt — couriers cannot send CSRF tokens.
+        AllowAny — courier servers are not authenticated users.
+        HMAC verification happens in the Celery task AFTER we
+        return 200. The view never rejects based on signature —
+        it always saves and returns 200 so the courier does not retry.
+
+    Critical rule:
+        Return HTTP 200 immediately — always.
+        Couriers interpret anything other than 200 as failure
+        and will retry (sometimes hundreds of times).
+        Heavy processing always happens in the Celery task.
+
+    Subclasses set courier_name to match CourierPartner values.
+    """
+
+    permission_classes = [AllowAny]
+    courier_name: str = ""   # override in subclass
+
+    def post(self, request):
+
+        # ── 1. Save raw payload immediately — immutable evidence ──────────
+
+        try:
+            webhook_log = WebhookLog.objects.create(
+                gateway=self.courier_name,
+                payload=request.data if request.data else {},
+                headers=dict(request.headers),
+                ip_address=request.META.get("REMOTE_ADDR"),
+                # is_verified=False, processed_successfully=False by default
+            )
+        except Exception:
+            # Even if WebhookLog save fails, return 200
+            # We never want courier to retry due to our DB issue
+            logger.exception(
+                "%s webhook: WebhookLog creation failed | ip=%s",
+                self.courier_name,
+                request.META.get("REMOTE_ADDR"),
+            )
+            return self.success_response(
+                message="Webhook received.",
+                data={"received": True},
+            )
+
+        logger.info(
+            "%s webhook: raw payload saved | "
+            "webhook_log_id=%s ip=%s",
+            self.courier_name,
+            webhook_log.pk,
+            request.META.get("REMOTE_ADDR"),
+        )
+
+        # ── 2. Dispatch Celery task — async processing ────────────────────
+
+        try:
+            process_courier_webhook.delay(
+                webhook_log_id=webhook_log.pk,
+                courier=self.courier_name,
+            )
+        except Exception:
+            # Task dispatch failure — log but still return 200
+            # WebhookLog is saved — can be reprocessed manually
+            logger.exception(
+                "%s webhook: Celery task dispatch failed | "
+                "webhook_log_id=%s",
+                self.courier_name,
+                webhook_log.pk,
+            )
+
+        # ── 3. Return 200 immediately — never block on processing ─────────
+
+        return self.success_response(
+            message="Webhook received.",
+            data={"received": True},
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# COURIER-SPECIFIC WEBHOOK VIEWS
+# ─────────────────────────────────────────────────────────────────────────────
+
+class PostExWebhookView(BaseCourierWebhookView):
+    """
+    POST /api/logistics/webhooks/postex/
+    Receives PostEx shipment status update webhooks.
+    """
+    courier_name = "postex"
+
+
+class TCSWebhookView(BaseCourierWebhookView):
+    """
+    POST /api/logistics/webhooks/tcs/
+    Receives TCS shipment status update webhooks.
+    """
+    courier_name = "tcs"
+
+
+class LeopardsWebhookView(BaseCourierWebhookView):
+    """
+    POST /api/logistics/webhooks/leopards/
+    Receives Leopards shipment status update webhooks.
+    """
+    courier_name = "leopards"
