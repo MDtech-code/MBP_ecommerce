@@ -95,6 +95,10 @@ class ErrorCode:
     SETTLEMENT_ALREADY_RECONCILED = "settlement_already_reconciled"
     SHIPMENT_NOT_DELIVERED        = "shipment_not_delivered"
     SHIPMENT_ALREADY_SETTLED      = "shipment_already_settled"
+    # ── Logistics / courier ──────────────────────────────────────────────────
+    COURIER_API_NOT_CONFIGURED = "courier_api_not_configured"
+    COURIER_API_TIMEOUT        = "courier_api_timeout"
+    COURIER_API_ERROR          = "courier_api_error"
 
     # ── Top-level category codes (go into errors.code) ───────────────────────
     # These describe WHAT KIND of error occurred, not the specific cause.

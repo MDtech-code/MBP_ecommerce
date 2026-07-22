@@ -229,6 +229,19 @@ FACEBOOK_APP_SECRET = env("FACEBOOK_APP_SECRET")
 POSTEX_WEBHOOK_SECRET  = env("POSTEX_WEBHOOK_SECRET",  default="")
 TCS_WEBHOOK_SECRET     = env("TCS_WEBHOOK_SECRET",     default="")
 LEOPARDS_WEBHOOK_SECRET = env("LEOPARDS_WEBHOOK_SECRET", default="")
+
+# ── Courier Outbound API Credentials ──────────────────────────────────────
+# Set in .env after creating courier seller accounts.
+# Empty string = API path disabled, falls back to manual AWB entry.
+
+POSTEX_API_KEY      = env("POSTEX_API_KEY",      default="")
+POSTEX_API_BASE_URL = env("POSTEX_API_BASE_URL",  default="")
+
+TCS_API_KEY         = env("TCS_API_KEY",          default="")
+TCS_API_BASE_URL    = env("TCS_API_BASE_URL",      default="")
+
+LEOPARDS_API_KEY    = env("LEOPARDS_API_KEY",     default="")
+LEOPARDS_API_BASE_URL = env("LEOPARDS_API_BASE_URL", default="")
 # ─── Internationalisation ─────────────────────────────
 
 LANGUAGE_CODE = 'en-us'
