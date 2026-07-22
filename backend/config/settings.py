@@ -212,7 +212,7 @@ CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=[
 # ─── JWT ──────────────────────────────────────────────
 from datetime import timedelta
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=1),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=50),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
@@ -225,8 +225,23 @@ GOOGLE_CLIENT_SECRET = env("GOOGLE_CLIENT_SECRET")
 # ─── facebook credential  ──────────────────────────────────────────────
 FACEBOOK_APP_ID     = env("FACEBOOK_APP_ID")
 FACEBOOK_APP_SECRET = env("FACEBOOK_APP_SECRET")
+# ── Courier Webhook Secrets ────────────────────────────────────────────────
+POSTEX_WEBHOOK_SECRET  = env("POSTEX_WEBHOOK_SECRET",  default="")
+TCS_WEBHOOK_SECRET     = env("TCS_WEBHOOK_SECRET",     default="")
+LEOPARDS_WEBHOOK_SECRET = env("LEOPARDS_WEBHOOK_SECRET", default="")
 
+# ── Courier Outbound API Credentials ──────────────────────────────────────
+# Set in .env after creating courier seller accounts.
+# Empty string = API path disabled, falls back to manual AWB entry.
 
+POSTEX_API_KEY      = env("POSTEX_API_KEY",      default="")
+POSTEX_API_BASE_URL = env("POSTEX_API_BASE_URL",  default="")
+
+TCS_API_KEY         = env("TCS_API_KEY",          default="")
+TCS_API_BASE_URL    = env("TCS_API_BASE_URL",      default="")
+
+LEOPARDS_API_KEY    = env("LEOPARDS_API_KEY",     default="")
+LEOPARDS_API_BASE_URL = env("LEOPARDS_API_BASE_URL", default="")
 # ─── Internationalisation ─────────────────────────────
 
 LANGUAGE_CODE = 'en-us'

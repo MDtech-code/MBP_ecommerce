@@ -296,3 +296,384 @@ def send_order_cancellation_email(self, *, order_id: int) -> None:
         )
 
         raise self.retry(exc=exc)
+    
+
+
+
+
+@shared_task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+    name="notifications.send_order_shipped_notification",
+)
+def send_order_shipped_notification(
+    self,
+    *,
+    order_id: int,
+    tracking_number: str,
+    courier: str,
+) -> None:
+    """
+    Notify customer that their order has been shipped with AWB details.
+
+    Args:
+        order_id:        Primary key of the shipped Order.
+        tracking_number: AWB number assigned by courier.
+        courier:         CourierPartner value for display.
+    """
+    from apps.notifications.models import Notification, NotificationDeliveryAttempt
+    from apps.orders.models import Order
+
+    logger.info(
+        "send_order_shipped_notification: started | order_id=%s",
+        order_id,
+    )
+
+    try:
+        order = Order.objects.select_related("user").get(pk=order_id)
+    except Order.DoesNotExist:
+        logger.error(
+            "send_order_shipped_notification: Order not found | order_id=%s",
+            order_id,
+        )
+        return
+
+    user            = order.user
+    recipient_email = user.email if user else None
+    if not recipient_email:
+        return
+
+    title = f"Your Order Has Been Shipped — {order.order_number}"
+    body  = (
+        f"Assalam-o-Alaikum {user.get_full_name() or user.email},\n\n"
+        f"Great news! Your order {order.order_number} is on its way.\n\n"
+        f"Courier         : {courier}\n"
+        f"Tracking Number : {tracking_number}\n\n"
+        f"You can track your parcel using the tracking number above.\n\n"
+        f"Thank you for shopping with us."
+    )
+
+    notification = Notification.objects.create(
+        user=user,
+        order=order,
+        recipient_email=recipient_email,
+        channel=Notification.Channel.EMAIL,
+        notification_type=Notification.Type.ORDER_SHIPPED,
+        title=title,
+        body=body,
+        context_data={
+            "order_number":    order.order_number,
+            "tracking_number": tracking_number,
+            "courier":         courier,
+        },
+    )
+
+    try:
+        send_mail(
+            subject=title,
+            message=body,
+            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@store.pk"),
+            recipient_list=[recipient_email],
+            fail_silently=False,
+        )
+        notification.is_sent = True
+        notification.sent_at  = timezone.now()
+        notification.save(update_fields=["is_sent", "sent_at"])
+        NotificationDeliveryAttempt.objects.create(
+            notification=notification,
+            outcome=NotificationDeliveryAttempt.Outcome.SUCCESS,
+        )
+        logger.info(
+            "send_order_shipped_notification: delivered | order_id=%s",
+            order_id,
+        )
+    except Exception as exc:
+        notification.failure_reason = str(exc)
+        notification.save(update_fields=["failure_reason"])
+        NotificationDeliveryAttempt.objects.create(
+            notification=notification,
+            outcome=NotificationDeliveryAttempt.Outcome.FAILED,
+            failure_reason=str(exc),
+        )
+        raise self.retry(exc=exc)
+
+
+@shared_task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+    name="notifications.send_out_for_delivery_notification",
+)
+def send_out_for_delivery_notification(
+    self,
+    *,
+    order_id: int,
+    tracking_number: str,
+) -> None:
+    """
+    Notify customer that their order is out for delivery today.
+
+    Args:
+        order_id:        Primary key of the Order.
+        tracking_number: AWB number for reference.
+    """
+    from apps.notifications.models import Notification, NotificationDeliveryAttempt
+    from apps.orders.models import Order
+
+    logger.info(
+        "send_out_for_delivery_notification: started | order_id=%s",
+        order_id,
+    )
+
+    try:
+        order = Order.objects.select_related("user").get(pk=order_id)
+    except Order.DoesNotExist:
+        logger.error(
+            "send_out_for_delivery_notification: Order not found | "
+            "order_id=%s",
+            order_id,
+        )
+        return
+
+    user            = order.user
+    recipient_email = user.email if user else None
+    if not recipient_email:
+        return
+
+    title = f"Your Order is Out for Delivery — {order.order_number}"
+    body  = (
+        f"Assalam-o-Alaikum {user.get_full_name() or user.email},\n\n"
+        f"Your order {order.order_number} is out for delivery today!\n\n"
+        f"Tracking Number : {tracking_number}\n\n"
+        f"Please ensure someone is available to receive the parcel.\n"
+        f"For COD orders, please keep exact change ready.\n\n"
+        f"Thank you for shopping with us."
+    )
+
+    notification = Notification.objects.create(
+        user=user,
+        order=order,
+        recipient_email=recipient_email,
+        channel=Notification.Channel.EMAIL,
+        notification_type=Notification.Type.OUT_FOR_DELIVERY,
+        title=title,
+        body=body,
+        context_data={
+            "order_number":    order.order_number,
+            "tracking_number": tracking_number,
+        },
+    )
+
+    try:
+        send_mail(
+            subject=title,
+            message=body,
+            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@store.pk"),
+            recipient_list=[recipient_email],
+            fail_silently=False,
+        )
+        notification.is_sent = True
+        notification.sent_at  = timezone.now()
+        notification.save(update_fields=["is_sent", "sent_at"])
+        NotificationDeliveryAttempt.objects.create(
+            notification=notification,
+            outcome=NotificationDeliveryAttempt.Outcome.SUCCESS,
+        )
+        logger.info(
+            "send_out_for_delivery_notification: delivered | order_id=%s",
+            order_id,
+        )
+    except Exception as exc:
+        notification.failure_reason = str(exc)
+        notification.save(update_fields=["failure_reason"])
+        NotificationDeliveryAttempt.objects.create(
+            notification=notification,
+            outcome=NotificationDeliveryAttempt.Outcome.FAILED,
+            failure_reason=str(exc),
+        )
+        raise self.retry(exc=exc)
+
+
+@shared_task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+    name="notifications.send_delivery_confirmation_notification",
+)
+def send_delivery_confirmation_notification(self, *, order_id: int) -> None:
+    """
+    Notify customer that their order has been delivered successfully.
+
+    Args:
+        order_id: Primary key of the delivered Order.
+    """
+    from apps.notifications.models import Notification, NotificationDeliveryAttempt
+    from apps.orders.models import Order
+
+    logger.info(
+        "send_delivery_confirmation_notification: started | order_id=%s",
+        order_id,
+    )
+
+    try:
+        order = Order.objects.select_related("user").get(pk=order_id)
+    except Order.DoesNotExist:
+        logger.error(
+            "send_delivery_confirmation_notification: "
+            "Order not found | order_id=%s",
+            order_id,
+        )
+        return
+
+    user            = order.user
+    recipient_email = user.email if user else None
+    if not recipient_email:
+        return
+
+    title = f"Order Delivered — {order.order_number}"
+    body  = (
+        f"Assalam-o-Alaikum {user.get_full_name() or user.email},\n\n"
+        f"Your order {order.order_number} has been delivered successfully.\n\n"
+        f"We hope you enjoy your purchase!\n\n"
+        f"If you have any issues with the product, please contact our support team.\n\n"
+        f"Thank you for shopping with us."
+    )
+
+    notification = Notification.objects.create(
+        user=user,
+        order=order,
+        recipient_email=recipient_email,
+        channel=Notification.Channel.EMAIL,
+        notification_type=Notification.Type.ORDER_SHIPPED,
+        title=title,
+        body=body,
+        context_data={"order_number": order.order_number},
+    )
+
+    try:
+        send_mail(
+            subject=title,
+            message=body,
+            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@store.pk"),
+            recipient_list=[recipient_email],
+            fail_silently=False,
+        )
+        notification.is_sent = True
+        notification.sent_at  = timezone.now()
+        notification.save(update_fields=["is_sent", "sent_at"])
+        NotificationDeliveryAttempt.objects.create(
+            notification=notification,
+            outcome=NotificationDeliveryAttempt.Outcome.SUCCESS,
+        )
+        logger.info(
+            "send_delivery_confirmation_notification: delivered | order_id=%s",
+            order_id,
+        )
+    except Exception as exc:
+        notification.failure_reason = str(exc)
+        notification.save(update_fields=["failure_reason"])
+        NotificationDeliveryAttempt.objects.create(
+            notification=notification,
+            outcome=NotificationDeliveryAttempt.Outcome.FAILED,
+            failure_reason=str(exc),
+        )
+        raise self.retry(exc=exc)
+
+
+@shared_task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+    name="notifications.send_rto_admin_alert",
+)
+def send_rto_admin_alert(self, *, order_id: int) -> None:
+    """
+    Alert admin staff that an RTO parcel has been returned to warehouse.
+
+    Sends to DEFAULT_ADMIN_EMAIL from settings.
+    Stock has already been restored by ShipmentService at this point.
+
+    Args:
+        order_id: Primary key of the RTO Order.
+    """
+    from apps.notifications.models import Notification, NotificationDeliveryAttempt
+    from apps.orders.models import Order
+
+    logger.info(
+        "send_rto_admin_alert: started | order_id=%s",
+        order_id,
+    )
+
+    try:
+        order = Order.objects.select_related(
+            "user", "shipping_address"
+        ).get(pk=order_id)
+    except Order.DoesNotExist:
+        logger.error(
+            "send_rto_admin_alert: Order not found | order_id=%s",
+            order_id,
+        )
+        return
+
+    admin_email = getattr(settings, "DEFAULT_ADMIN_EMAIL", None)
+    if not admin_email:
+        logger.warning(
+            "send_rto_admin_alert: DEFAULT_ADMIN_EMAIL not configured | "
+            "order_id=%s",
+            order_id,
+        )
+        return
+
+    title = f"RTO Alert — {order.order_number} returned to warehouse"
+    body  = (
+        f"RTO ALERT\n\n"
+        f"Order       : {order.order_number}\n"
+        f"Customer    : {getattr(order.user, 'email', 'N/A')}\n"
+        f"City        : {getattr(order.shipping_address, 'city', 'N/A')}\n"
+        f"Total       : Rs. {order.total_price}\n"
+        f"Payment     : {order.get_payment_method_display()}\n\n"
+        f"The parcel has been returned to the warehouse.\n"
+        f"Stock has been automatically restored.\n"
+        f"Please arrange reshipment or process refund as appropriate."
+    )
+
+    notification = Notification.objects.create(
+        order=order,
+        recipient_email=admin_email,
+        channel=Notification.Channel.EMAIL,
+        notification_type=Notification.Type.SYSTEM_ALERT,
+        title=title,
+        body=body,
+        context_data={"order_number": order.order_number},
+    )
+
+    try:
+        send_mail(
+            subject=title,
+            message=body,
+            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@store.pk"),
+            recipient_list=[admin_email],
+            fail_silently=False,
+        )
+        notification.is_sent = True
+        notification.sent_at  = timezone.now()
+        notification.save(update_fields=["is_sent", "sent_at"])
+        NotificationDeliveryAttempt.objects.create(
+            notification=notification,
+            outcome=NotificationDeliveryAttempt.Outcome.SUCCESS,
+        )
+        logger.info(
+            "send_rto_admin_alert: delivered | order_id=%s admin=%s",
+            order_id,
+            admin_email,
+        )
+    except Exception as exc:
+        notification.failure_reason = str(exc)
+        notification.save(update_fields=["failure_reason"])
+        NotificationDeliveryAttempt.objects.create(
+            notification=notification,
+            outcome=NotificationDeliveryAttempt.Outcome.FAILED,
+            failure_reason=str(exc),
+        )
+        raise self.retry(exc=exc)
