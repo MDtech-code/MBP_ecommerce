@@ -1,5 +1,10 @@
+# apps/returns/apps.py
+from __future__ import annotations
+
 from django.apps import AppConfig
 
 
 class ReturnsConfig(AppConfig):
-    name = 'apps.returns'
+    default_auto_field = "django.db.models.BigAutoField"
+    name               = "apps.returns"
+    verbose_name       = "Returns"

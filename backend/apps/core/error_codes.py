@@ -105,6 +105,13 @@ class ErrorCode:
     REVIEW_ALREADY_EXISTS  = "review_already_exists"
     CANNOT_VOTE_OWN_REVIEW = "cannot_vote_own_review"
     REVIEW_NOT_APPROVED    = "review_not_approved"
+    # ── Returns ───────────────────────────────────────────────────────────────
+    # Owner: apps.returns
+    RETURN_WINDOW_EXPIRED          = "return_window_expired"
+    RETURN_ALREADY_EXISTS          = "return_already_exists"
+    PHOTOS_REQUIRED                = "photos_required"
+    RETURN_NOT_APPROVED            = "return_not_approved"
+    REFUND_EXCEEDS_ORIGINAL        = "refund_exceeds_original"
 
     # ── Top-level category codes (go into errors.code) ───────────────────────
     # These describe WHAT KIND of error occurred, not the specific cause.
