@@ -26,6 +26,7 @@ urlpatterns = [
     path("api/orders/", include("apps.orders.urls", namespace="orders")), 
     path("api/logistics/", include("apps.logistics.urls", namespace="logistics")),
     path("api/reviews/",include('apps.products.urls',namespace='reviews')),
+    path("api/returns/", include("apps.returns.urls", namespace="returns")),
 
      # Schema + Docs (global)
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
