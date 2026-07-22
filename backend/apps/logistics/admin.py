@@ -4,10 +4,17 @@ from django.contrib import admin, messages
 from django.http import HttpRequest
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
-
+from decimal import Decimal
 from apps.logistics.models import Shipment, ShipmentStatusLog
 from apps.logistics.services.shipment_service import ShipmentService
 from apps.core.exceptions import DomainError
+# ─────────────────────────────────────────────────────────────────────────────
+# ADD THESE IMPORTS to the existing import block at the top of admin.py
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Add to existing imports:
+from apps.logistics.models import Shipment, ShipmentStatusLog, CourierSettlement
+from apps.logistics.services.settlement_service import SettlementService
 logger = logging.getLogger("apps.logistics")
 
 
@@ -262,6 +269,400 @@ class ShipmentStatusLogAdmin(admin.ModelAdmin):
     def has_add_permission(self, request):    return False
     def has_change_permission(self, request, obj=None): return False
     def has_delete_permission(self, request, obj=None): return False
+
+
+
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# COURIER SETTLEMENT ADMIN
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class DeliveredShipmentsFilter(admin.SimpleListFilter):
+    """
+    Custom filter for the shipments_included M2M widget.
+
+    Limits the M2M selection widget to only show DELIVERED shipments.
+    Finance team cannot accidentally select an in-transit shipment.
+
+    This filter is applied to the formfield_for_manytomany override
+    on CourierSettlementAdmin — not used as a list_filter.
+    """
+
+    title = _("shipment status")
+    parameter_name = "shipment_status"
+
+    def lookups(self, request, model_admin):
+        return [
+            ("delivered", _("Delivered only")),
+        ]
+
+    def queryset(self, request, queryset):
+        if self.value() == "delivered":
+            return queryset.filter(status=Shipment.Status.DELIVERED)
+        return queryset
+
+
+@admin.register(CourierSettlement)
+class CourierSettlementAdmin(admin.ModelAdmin):
+    """
+    Admin interface for CourierSettlement management.
+
+    Finance team workflow:
+        1. Receive bank transfer from courier
+        2. Open Add Settlement form
+        3. Fill in bank transfer details and select covered shipments
+        4. Save — SettlementService.create_settlement() validates everything
+        5. After verifying bank statement: select settlement + reconcile action
+
+    Design decisions:
+        - save_model() calls SettlementService.create_settlement()
+          for full validation — not bypassed by admin form
+        - M2M widget filtered to DELIVERED shipments only
+        - is_reconciled is readonly on change form — set via action only
+        - mark_as_reconciled action calls SettlementService.reconcile()
+        - has_delete_permission=False — financial records are permanent
+        - has_change_permission returns False for reconciled settlements
+    """
+
+    # ── List view ──────────────────────────────────────────────────────────
+
+    list_display = [
+        "settlement_reference",
+        "courier",
+        "payout_date",
+        "total_cod_collected",
+        "total_shipping_deducted",
+        "net_payout_received",
+        "shipment_count",
+        "reconciled_badge",
+        "created_at",
+    ]
+    list_filter = [
+        "courier",
+        "is_reconciled",
+        "payout_date",
+    ]
+    search_fields = [
+        "settlement_reference",
+    ]
+    ordering = ["-payout_date"]
+    list_per_page = 20
+
+    # ── Change form ────────────────────────────────────────────────────────
+
+    readonly_fields = [
+        "courier",
+        "settlement_reference",
+        "total_cod_collected",
+        "total_shipping_deducted",
+        "net_payout_received",
+        "payout_date",
+        "is_reconciled",
+        "created_at",
+        "updated_at",
+        "arithmetic_check",
+    ]
+    fieldsets = (
+        (_("Bank Transfer Details"), {
+            "fields": (
+                "courier",
+                "settlement_reference",
+                "payout_date",
+            ),
+        }),
+        (_("Financial Summary"), {
+            "fields": (
+                "total_cod_collected",
+                "total_shipping_deducted",
+                "net_payout_received",
+                "arithmetic_check",
+            ),
+        }),
+        (_("Status"), {
+            "fields": (
+                "is_reconciled",
+                "created_at",
+                "updated_at",
+            ),
+        }),
+    )
+
+    # ── Add form ───────────────────────────────────────────────────────────
+
+    add_fieldsets = (
+        (_("Bank Transfer Details"), {
+            "fields": (
+                "courier",
+                "settlement_reference",
+                "payout_date",
+            ),
+        }),
+        (_("Financial Amounts"), {
+            "fields": (
+                "total_cod_collected",
+                "total_shipping_deducted",
+                "net_payout_received",
+            ),
+        }),
+        (_("Shipments Covered"), {
+            "fields": ("shipments_included",),
+            "description": _(
+                "Select all shipments covered by this bank transfer. "
+                "Only DELIVERED shipments are shown. "
+                "Match tracking numbers against the courier settlement report."
+            ),
+        }),
+    )
+
+    filter_horizontal = ["shipments_included"]
+
+    def get_fieldsets(self, request, obj=None):
+        if obj is None:
+            return self.add_fieldsets
+        return super().get_fieldsets(request, obj)
+
+    def get_readonly_fields(self, request, obj=None):
+        if obj is None:
+            # Add form — nothing locked except is_reconciled
+            return ["is_reconciled"]
+        return self.readonly_fields
+
+    # ── M2M widget — restrict to DELIVERED shipments only ─────────────────
+
+    def formfield_for_manytomany(self, db_field, request, **kwargs):
+        """
+        Limit shipments_included M2M widget to DELIVERED shipments
+        that are not already in another settlement.
+
+        This prevents finance team from accidentally selecting:
+            - In-transit shipments (COD not yet collected)
+            - Already-settled shipments (would duplicate the record)
+        """
+        if db_field.name == "shipments_included":
+            kwargs["queryset"] = (
+                Shipment.objects
+                .filter(status=Shipment.Status.DELIVERED)
+                .exclude(settlements__isnull=False)
+                .select_related("order")
+                .order_by("-created_at")
+            )
+        return super().formfield_for_manytomany(db_field, request, **kwargs)
+
+    # ── save_model — delegates to SettlementService ───────────────────────
+
+    def save_model(self, request, obj, form, change):
+        """
+        Route through SettlementService.create_settlement() on add.
+
+        On change: settlement fields are all readonly — only M2M
+        changes could come through here, which we do not allow
+        after creation. has_change_permission blocks edits on
+        reconciled settlements entirely.
+        """
+        if change:
+            # Existing settlement — fields are readonly
+            # This path should not be reachable for reconciled settlements
+            # because has_change_permission returns False for them.
+            # For non-reconciled settlements, admin form only shows
+            # readonly fields so nothing can actually be changed.
+            self.message_user(
+                request,
+                _(
+                    "Settlement fields cannot be edited after creation. "
+                    "Use the 'Mark as reconciled' action to reconcile."
+                ),
+                level=messages.WARNING,
+            )
+            return
+
+        # ── New settlement ─────────────────────────────────────────────────
+
+        # Extract M2M shipment IDs from the form
+        # form.cleaned_data["shipments_included"] is a QuerySet
+        shipment_ids = list(
+            form.cleaned_data.get("shipments_included", [])
+            .values_list("pk", flat=True)
+        )
+
+        try:
+            settlement = SettlementService.create_settlement(
+                courier=form.cleaned_data["courier"],
+                settlement_reference=form.cleaned_data["settlement_reference"],
+                total_cod_collected=form.cleaned_data["total_cod_collected"],
+                total_shipping_deducted=form.cleaned_data["total_shipping_deducted"],
+                net_payout_received=form.cleaned_data["net_payout_received"],
+                payout_date=form.cleaned_data["payout_date"],
+                shipment_ids=shipment_ids,
+                created_by=request.user,
+            )
+
+            # Assign PK so Django admin redirects correctly
+            obj.pk = settlement.pk
+
+            self.message_user(
+                request,
+                _(
+                    f"Settlement '{settlement.settlement_reference}' "
+                    f"created successfully. "
+                    f"{settlement.shipments_included.count()} shipment(s) "
+                    f"linked. Net payout: Rs. {settlement.net_payout_received}."
+                ),
+                level=messages.SUCCESS,
+            )
+
+        except DomainError as exc:
+            self.message_user(request, str(exc), level=messages.ERROR)
+            logger.warning(
+                "CourierSettlementAdmin.save_model: DomainError | "
+                "reference=%s admin=%s error=%s",
+                form.cleaned_data.get("settlement_reference", "?"),
+                request.user.pk,
+                str(exc),
+            )
+
+        except Exception as exc:
+            logger.exception(
+                "CourierSettlementAdmin.save_model: unexpected error | "
+                "reference=%s admin=%s",
+                form.cleaned_data.get("settlement_reference", "?"),
+                request.user.pk,
+            )
+            self.message_user(
+                request,
+                _(f"Unexpected error creating settlement: {exc}"),
+                level=messages.ERROR,
+            )
+
+    # ── Permissions ────────────────────────────────────────────────────────
+
+    def has_delete_permission(self, request, obj=None) -> bool:
+        """
+        Financial records are permanent — no deletion via admin.
+        """
+        return False
+
+    def has_change_permission(self, request, obj=None) -> bool:
+        """
+        Reconciled settlements are fully locked.
+        Non-reconciled settlements show readonly fields only —
+        change form exists solely to display details and run actions.
+        """
+        if obj is not None and obj.is_reconciled:
+            return False
+        return super().has_change_permission(request, obj)
+
+    # ── Actions ────────────────────────────────────────────────────────────
+
+    actions = ["mark_as_reconciled"]
+
+    @admin.action(description=_("Mark selected settlements as reconciled ✓"))
+    def mark_as_reconciled(self, request, queryset):
+        """
+        Mark selected settlements as reconciled.
+
+        Called after finance team verifies net_payout_received
+        against the actual bank statement credit.
+
+        Calls SettlementService.reconcile() per settlement —
+        enforces one-way rule and raises DomainError if already done.
+        """
+        reconciled = 0
+        skipped = 0
+
+        for settlement in queryset:
+            try:
+                SettlementService.reconcile(
+                    settlement=settlement,
+                    reconciled_by=request.user,
+                )
+                reconciled += 1
+            except DomainError as exc:
+                skipped += 1
+                self.message_user(
+                    request,
+                    f"{settlement.settlement_reference}: {exc}",
+                    level=messages.WARNING,
+                )
+            except Exception as exc:
+                skipped += 1
+                logger.exception(
+                    "CourierSettlementAdmin.mark_as_reconciled: "
+                    "unexpected error | reference=%s admin=%s",
+                    settlement.settlement_reference,
+                    request.user.pk,
+                )
+                self.message_user(
+                    request,
+                    _(
+                        f"Unexpected error reconciling "
+                        f"'{settlement.settlement_reference}': {exc}"
+                    ),
+                    level=messages.ERROR,
+                )
+
+        if reconciled:
+            self.message_user(
+                request,
+                _(f"{reconciled} settlement(s) marked as reconciled."),
+                level=messages.SUCCESS,
+            )
+        if skipped:
+            self.message_user(
+                request,
+                _(f"{skipped} settlement(s) skipped — see warnings above."),
+                level=messages.WARNING,
+            )
+
+    # ── Display helpers ────────────────────────────────────────────────────
+
+    @admin.display(description=_("Shipments"), ordering=None)
+    def shipment_count(self, obj: CourierSettlement) -> int:
+        """Number of shipments linked to this settlement."""
+        return obj.shipments_included.count()
+
+    @admin.display(description=_("Reconciled"), ordering="is_reconciled")
+    def reconciled_badge(self, obj: CourierSettlement) -> str:
+        """Coloured badge for reconciliation status."""
+        if obj.is_reconciled:
+            return format_html(
+                '<span style="background:#198754;color:#fff;'
+                'padding:2px 8px;border-radius:4px;font-size:0.8em">'
+                "✓ Reconciled</span>"
+            )
+        return format_html(
+            '<span style="background:#ffc107;color:#000;'
+            'padding:2px 8px;border-radius:4px;font-size:0.8em">'
+            "Pending</span>"
+        )
+
+    @admin.display(description=_("Arithmetic Check"))
+    def arithmetic_check(self, obj: CourierSettlement) -> str:
+        """
+        Shows expected net vs actual net_payout_received.
+        Helps finance team spot discrepancies at a glance.
+        """
+        expected = obj.total_cod_collected - obj.total_shipping_deducted
+        diff = obj.net_payout_received - expected
+
+        if abs(diff) <= Decimal("1.00"):
+            return format_html(
+                '<span style="color:#198754">'
+                "✓ Matches — Expected: Rs. {} | Received: Rs. {}"
+                "</span>",
+                expected,
+                obj.net_payout_received,
+            )
+        return format_html(
+            '<span style="color:#dc3545">'
+            "⚠ Mismatch — Expected: Rs. {} | Received: Rs. {} | "
+            "Difference: Rs. {}"
+            "</span>",
+            expected,
+            obj.net_payout_received,
+            diff,
+        )
 # # apps/logistics/admin.py
 # from __future__ import annotations
 

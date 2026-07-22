@@ -90,6 +90,12 @@ class ErrorCode:
     SETTLEMENT_ALREADY_EXISTS    = "settlement_already_exists"
     ORDER_HAS_NO_SHIPMENT        = "order_has_no_shipment"
 
+    # ── Logistics / Settlement ──────────────────────────────────────────────────
+    SETTLEMENT_ALREADY_EXISTS     = "settlement_exists"
+    SETTLEMENT_ALREADY_RECONCILED = "settlement_already_reconciled"
+    SHIPMENT_NOT_DELIVERED        = "shipment_not_delivered"
+    SHIPMENT_ALREADY_SETTLED      = "shipment_already_settled"
+
     # ── Top-level category codes (go into errors.code) ───────────────────────
     # These describe WHAT KIND of error occurred, not the specific cause.
     # Used by exceptions.py to populate the top-level errors.code field.
