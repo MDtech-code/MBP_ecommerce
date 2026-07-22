@@ -7,7 +7,7 @@ from django.utils.translation import gettext_lazy as _
 
 from apps.logistics.models import Shipment, ShipmentStatusLog
 from apps.logistics.services.shipment_service import ShipmentService
-
+from apps.core.exceptions import DomainError
 logger = logging.getLogger("apps.logistics")
 
 
@@ -122,15 +122,31 @@ class ShipmentAdmin(admin.ModelAdmin):
                 estimated_delivery_date=obj.estimated_delivery_date,
                 created_by=request.user,
             )
+            # Success message — Django admin does not auto-add one on save_model override
+            self.message_user(
+                request,
+                _(
+                    f"Shipment '{obj.tracking_number}' created successfully. "
+                    f"Order is now PROCESSING."
+                ),
+                level=messages.SUCCESS,
+            )
+        except DomainError as exc:
+            self.message_user(request, str(exc), level=messages.ERROR)
         except Exception as exc:
             self.message_user(request, str(exc), level=messages.ERROR)
             logger.exception(
-                "ShipmentAdmin.save_model: FAILED | order=%s tracking=%s admin=%s",
-                getattr(obj.order, "order_number", "?"),
-                obj.tracking_number,
-                request.user.pk,
+            "ShipmentAdmin.save_model: unexpected error | "
+            "order=%s tracking=%s admin=%s",
+            getattr(obj.order, "order_number", "?"),
+            obj.tracking_number,
+            request.user.pk,
             )
-
+            self.message_user(
+                request,
+                _(f"Unexpected error creating shipment: {exc}"),
+                level=messages.ERROR,
+            )
     # ── Status actions → ShipmentService.update_status() ──────────────────
 
     actions = [

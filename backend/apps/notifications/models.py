@@ -40,6 +40,8 @@ class Notification(TimeStampedModel):
         OUT_FOR_DELIVERY = 'out_for_delivery', _('Rider Out For Delivery')
         PROMOTIONAL      = 'promotional',      _('Marketing / Discount Alert')
         SYSTEM_ALERT     = 'system_alert',     _('System / Security Alert')
+        ORDER_DELIVERED  = 'order_delivered',  _('Order Delivered Successfully')   # NEW
+        RTO_ALERT        = 'rto_alert',        _('RTO — Parcel Returned to Warehouse')  # NEW
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
