@@ -99,6 +99,12 @@ class ErrorCode:
     COURIER_API_NOT_CONFIGURED = "courier_api_not_configured"
     COURIER_API_TIMEOUT        = "courier_api_timeout"
     COURIER_API_ERROR          = "courier_api_error"
+    # ── Reviews ─────────────────────────────────────────────────────────────────
+# Owner: apps.reviews
+    ORDER_NOT_DELIVERED    = "order_not_delivered"
+    REVIEW_ALREADY_EXISTS  = "review_already_exists"
+    CANNOT_VOTE_OWN_REVIEW = "cannot_vote_own_review"
+    REVIEW_NOT_APPROVED    = "review_not_approved"
 
     # ── Top-level category codes (go into errors.code) ───────────────────────
     # These describe WHAT KIND of error occurred, not the specific cause.
