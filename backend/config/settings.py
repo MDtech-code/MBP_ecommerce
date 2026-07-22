@@ -242,6 +242,22 @@ TCS_API_BASE_URL    = env("TCS_API_BASE_URL",      default="")
 
 LEOPARDS_API_KEY    = env("LEOPARDS_API_KEY",     default="")
 LEOPARDS_API_BASE_URL = env("LEOPARDS_API_BASE_URL", default="")
+
+
+# Payment gateway settings — loaded from environment
+JAZZCASH_MERCHANT_ID    = env("JAZZCASH_MERCHANT_ID",    default="")
+JAZZCASH_PASSWORD       = env("JAZZCASH_PASSWORD",       default="")
+JAZZCASH_INTEGRITY_SALT = env("JAZZCASH_INTEGRITY_SALT", default="")
+
+EASYPAISA_STORE_ID      = env("EASYPAISA_STORE_ID",      default="")
+EASYPAISA_HASH_KEY      = env("EASYPAISA_HASH_KEY",      default="")
+
+SAFEPAY_API_KEY         = env("SAFEPAY_API_KEY",         default="")
+SAFEPAY_WEBHOOK_SECRET  = env("SAFEPAY_WEBHOOK_SECRET",  default="")
+
+# Payment redirect/webhook base URLs
+PAYMENT_RETURN_URL       = env("PAYMENT_RETURN_URL",      default="")
+PAYMENT_WEBHOOK_BASE_URL = env("PAYMENT_WEBHOOK_BASE_URL", default="")
 # ─── Internationalisation ─────────────────────────────
 
 LANGUAGE_CODE = 'en-us'
