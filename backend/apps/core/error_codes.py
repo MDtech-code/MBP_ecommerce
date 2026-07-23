@@ -112,6 +112,17 @@ class ErrorCode:
     PHOTOS_REQUIRED                = "photos_required"
     RETURN_NOT_APPROVED            = "return_not_approved"
     REFUND_EXCEEDS_ORIGINAL        = "refund_exceeds_original"
+    # ── Payments ──────────────────────────────────────────────────────────────────
+    # Owner: apps.payments
+    ORDER_NOT_PAYABLE              = "order_not_payable"
+    INVALID_GATEWAY                = "invalid_gateway"
+    PAYMENT_ALREADY_SUCCESS        = "payment_already_success"
+    PAYMENT_GATEWAY_TIMEOUT        = "payment_gateway_timeout"
+    PAYMENT_GATEWAY_ERROR          = "payment_gateway_error"
+    PAYMENT_GATEWAY_NOT_CONFIGURED = "payment_gateway_not_configured"
+    
+
+    
 
     # ── Top-level category codes (go into errors.code) ───────────────────────
     # These describe WHAT KIND of error occurred, not the specific cause.
