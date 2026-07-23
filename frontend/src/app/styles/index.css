@@ -1,29 +1,28 @@
 @import "tailwindcss";
 
-
-
-.link {
-  @apply text-dark hover:text-primary active:text-primary;
+@plugin "daisyui" {
+  themes: mbp --default;
 }
-
 @theme {
-
+    /* Colors  */
     --color-primary: #DC2626;
     --color-dark: #020202;
     --color-surface: #F8FAFC;
     --color-muted: #64748B;
 
-
+    /* Typography  */
     --font-sans: Inter, Arial, sans-serif;
 
 }
-
-
-:root {
-
-    font-family: Inter, Arial, sans-serif;
-
+/* Utility classes */
+.link {
+  @apply text-dark hover:text-primary active:text-primary;
 }
+
+
+
+
+
 
 
 html {
@@ -32,13 +31,9 @@ html {
 
 
 body {
-
     margin: 0;
-
     min-width: 320px;
-
     background: white;
-
 }
 
 .no-scrollbar::-webkit-scrollbar {
