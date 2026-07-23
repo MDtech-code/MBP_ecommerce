@@ -39,4 +39,4 @@ class WishlistItem(TimeStampedModel):
         ordering = ["-created_at"]
 
     def __str__(self) -> str:
-        return f"{self.product.name} in {self.wishlist.user.email} wishlist"
+        return f"{self.product.name} in {self.user.email}'s wishlist"

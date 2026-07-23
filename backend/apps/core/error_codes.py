@@ -120,6 +120,10 @@ class ErrorCode:
     PAYMENT_GATEWAY_TIMEOUT        = "payment_gateway_timeout"
     PAYMENT_GATEWAY_ERROR          = "payment_gateway_error"
     PAYMENT_GATEWAY_NOT_CONFIGURED = "payment_gateway_not_configured"
+    # ── Wishlist ──────────────────────────────────────────────────────────────
+    # Owner: apps.wishlist
+    WISHLIST_ITEM_ALREADY_EXISTS = "wishlist_item_already_exists"
+    WISHLIST_ITEM_NOT_FOUND      = "wishlist_item_not_found"
     
 
     
