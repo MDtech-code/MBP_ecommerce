@@ -1,5 +1,10 @@
+# apps/contact/apps.py
+from __future__ import annotations
+
 from django.apps import AppConfig
 
 
 class ContactConfig(AppConfig):
-    name = 'apps.contact'
+    default_auto_field = "django.db.models.BigAutoField"
+    name               = "apps.contact"
+    verbose_name       = "Contact"
