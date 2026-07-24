@@ -9,6 +9,10 @@ import {
 import { getCookie } from "@shared/lib";
 import { useAuthStore } from "@entities/user";
 
+
+
+
+
 let isRefreshing = false
 let failedQueue = []
 
@@ -38,7 +42,9 @@ export const setupInterceptors = () => {
       const originalRequest = error.config
       const status = error.response?.status
       const errorCode = error.response?.data?.errors?.code
-
+      if (sessionStorage.getItem("logged_out") === "true") {
+        return Promise.reject(error);
+      }
       // ─── 401 handling ─────────────────────────────────────
       // Only refresh if it's a token expiry, not invalid credentials
       // Invalid credentials return 401 with specific error code
@@ -46,8 +52,7 @@ export const setupInterceptors = () => {
         status === 401 &&
         !originalRequest._retry &&
         !originalRequest.url?.includes("/api/accounts/token/refresh/") &&
-        errorCode !== "invalid_credentials" &&
-        sessionStorage.getItem("logged_out") !== "true"  
+        errorCode !== "invalid_credentials"  
       ) {
         if (isRefreshing) {
           return new Promise((resolve, reject) => {
@@ -62,6 +67,7 @@ export const setupInterceptors = () => {
 
         originalRequest._retry = true;
         isRefreshing = true;
+        
 
         try {
           console.log(" interceptor called ... ");

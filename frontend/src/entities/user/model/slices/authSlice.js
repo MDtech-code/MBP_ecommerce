@@ -71,19 +71,17 @@ export const createAuthSlice = (set) => ({
    */
   logout: () => {
     sessionStorage.setItem("logged_out", "true");
-    set(
-        {
-            user: null,
-            isAuthenticated: false,
-        },
-        false,
-        "auth/logout",
-    );
+    queryClient.cancelQueries();
+    queryClient.clear();
     clearAuth();
     broadcastLogout();
-    queryClient.cancelQueries();
-    setTimeout(() => {
-      queryClient.clear();
-    }, 0);
+    set(
+      {
+        user: null,
+        isAuthenticated: false,
+      },
+      false,
+      "auth/logout",
+    );
   },
 });

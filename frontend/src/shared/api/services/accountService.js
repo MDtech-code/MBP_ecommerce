@@ -5,6 +5,8 @@ import { extractResponse } from "../transformers";
 import { getCookie } from "@shared/lib";
 import axios from "axios";
 
+
+
 export const accountService = {
   /**
    * POST /api/accounts/register/
@@ -312,8 +314,10 @@ export const accountService = {
    * Direct axios call — bypasses our api instance so interceptors
    * do not accidentally catch and loop this call.
    */
+  
   bootstrap: async () => {
     console.log("i am from the bootstrap");
+   
     
     const response = await axios.post(
       // <-- CHANGED TO AXIOS

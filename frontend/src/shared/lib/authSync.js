@@ -5,6 +5,7 @@ export const initAuthSync = () => {
     try {
       const data = JSON.parse(event.newValue);
       if (data.type === "LOGOUT") {
+        sessionStorage.setItem("logged_out", "true");
         clearAuth();
         window.location.href = "/login";
       }

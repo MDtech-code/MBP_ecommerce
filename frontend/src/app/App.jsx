@@ -1,14 +1,8 @@
 // src/app/App.jsx
 
-console.log("AppContent render");
-import axios from "axios"
 
-axios.interceptors.request.use((config) => {
-  if (config.url?.includes("token/refresh")) {
-    console.trace("🟡 REFRESH CALLED FROM:", config.url)
-  }
-  return config
-})
+
+
 import { RouterProvider } from "react-router-dom"
 import { router  } from "./providers/router"
 import { useBootstrapAuth } from "./providers/useBootstrapAuth"
