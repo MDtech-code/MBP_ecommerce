@@ -1,6 +1,5 @@
 // src/entities/user/model/authStore.js
 
-
 import {
   setAuthToken,
   clearAuth,
@@ -8,9 +7,6 @@ import {
   broadcastLogout,
 } from "@shared/lib";
 import { queryClient } from "@shared/lib";
-
-
-
 
 /**
  * authStore — single source of truth for client auth state
@@ -28,64 +24,66 @@ import { queryClient } from "@shared/lib";
  */
 
 export const createAuthSlice = (set) => ({
-    user: null,
-    isAuthenticated: false,
-    isBootstrapping: true,
+  user: null,
+  isAuthenticated: false,
+  isBootstrapping: true,
 
-    /**
-     * Called after successful login
-     * Receives the full data object from login response
-     * data.access → token
-     * data.user   → user object
-     */
-    login: (data) => {
-      sessionStorage.removeItem("logged_out");
+  /**
+   * Called after successful login
+   * Receives the full data object from login response
+   * data.access → token
+   * data.user   → user object
+   */
+  login: (data) => {
+    sessionStorage.removeItem("logged_out");
 
-      setAuthToken(data.access);
-      broadcastLogin();
-      set(
-        {
-          user: data.user,
-          isAuthenticated: true,
-        },
-        false,
-        "auth/login",
-      );
-    },
-
-    /**
-     * Called after profile fetch on page refresh
-     * Updates user object without touching token
-     * (token already restored by interceptor via refresh cookie)
-     */
-    setUser: (user) => {
-      set({
-        user,
+    setAuthToken(data.access);
+    broadcastLogin();
+    set(
+      {
+        user: data.user,
         isAuthenticated: true,
-      });
-    },
+      },
+      false,
+      "auth/login",
+    );
+  },
 
-    setBootstrapping: (value) => {
-      // ← new action
-      set({ isBootstrapping: value });
-    },
+  /**
+   * Called after profile fetch on page refresh
+   * Updates user object without touching token
+   * (token already restored by interceptor via refresh cookie)
+   */
+  setUser: (user) => {
+    set({
+      user,
+      isAuthenticated: true,
+    });
+  },
 
-    /**
-     * Called on logout — clears everything
-     */
-    logout: () => {
-      clearAuth();
-      broadcastLogout();
-      queryClient.clear();
-      sessionStorage.setItem("logged_out", "true");
-      set(
+  setBootstrapping: (value) => {
+    // ← new action
+    set({ isBootstrapping: value });
+  },
+
+  /**
+   * Called on logout — clears everything
+   */
+  logout: () => {
+    sessionStorage.setItem("logged_out", "true");
+    set(
         {
-          user: null,
-          isAuthenticated: false,
+            user: null,
+            isAuthenticated: false,
         },
         false,
         "auth/logout",
-      );
-    },
-  })
-
+    );
+    clearAuth();
+    broadcastLogout();
+    queryClient.cancelQueries();
+    setTimeout(() => {
+      queryClient.clear();
+    }, 0);
+  },
+});

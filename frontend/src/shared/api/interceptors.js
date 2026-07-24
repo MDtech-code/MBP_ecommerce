@@ -4,11 +4,10 @@ import axios from "axios"
 import { api } from "./client"
 import {
   setAuthToken,
-  clearAuth,
-  broadcastLogout,
   getAuthToken,
 } from "@shared/lib";
 import { getCookie } from "@shared/lib";
+import { useAuthStore } from "@entities/user";
 
 let isRefreshing = false
 let failedQueue = []
@@ -47,7 +46,8 @@ export const setupInterceptors = () => {
         status === 401 &&
         !originalRequest._retry &&
         !originalRequest.url?.includes("/api/accounts/token/refresh/") &&
-        errorCode !== "invalid_credentials" 
+        errorCode !== "invalid_credentials" &&
+        sessionStorage.getItem("logged_out") !== "true"  
       ) {
         if (isRefreshing) {
           return new Promise((resolve, reject) => {
@@ -82,8 +82,7 @@ export const setupInterceptors = () => {
           return api(originalRequest);
         } catch (err) {
           processQueue(err, null);
-          clearAuth();
-          broadcastLogout();
+          useAuthStore.getState().logout();
           return Promise.reject(err);
         } finally {
           isRefreshing = false;

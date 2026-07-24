@@ -15,7 +15,7 @@ export default function GuestRoute() {
   // Without this, GuestRoute makes redirect decisions before
   // bootstrap has restored the session, causing race conditions
   if (isBootstrapping) return null
-  console.log("gestPage sa hu yar ",isAuthenticated)
+  
   if (isAuthenticated) {
     
     return <Navigate to="/" replace />

@@ -1,130 +1,109 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { accountService } from "@shared/api";
-import { setAuthToken } from "@shared/lib";
+import { setAuthToken} from "@shared/lib";
 import { useAuthStore } from "@entities/user";
-
-// Store the promise instead of a boolean
-let bootstrapPromise = null;
 
 export function useBootstrapAuth() {
   const setBootstrapping = useAuthStore((state) => state.setBootstrapping);
   const setUser = useAuthStore((state) => state.setUser);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
 
+  // Ref prevents the hook from firing twice on initial load in React 18
+  const hasAttempted = useRef(false);
+
   useEffect(() => {
-    if (isAuthenticated) {
+    // Skip if already auth'd or explicitly logged out
+    if (isAuthenticated || sessionStorage.getItem("logged_out") === "true") {
       setBootstrapping(false);
       return;
     }
 
-    // if (sessionStorage.getItem("logged_out") === "true") {
-    //   setBootstrapping(false);
-    //   return;
-    // }
-    if (sessionStorage.getItem("logged_out") === "true") {
-      setBootstrapping(false);
-      return;
-    }
+    if (hasAttempted.current) return;
+    hasAttempted.current = true;
 
-    // HMR / Strict Mode Guard:
-    // If a request is already in flight (or finished), just attach to it
-    if (bootstrapPromise) {
-      bootstrapPromise.finally(() => setBootstrapping(false));
-      return;
-    }
-
-    const restore = async () => {
+    const performBootstrap = async () => {
       try {
+        // 1. Proactively hit the refresh endpoint
         const refreshResult = await accountService.bootstrap();
-        const newAccessToken = refreshResult?.data?.access;
 
-        if (!newAccessToken) return;
+        // IMPORTANT: Ensure this path matches what your backend actually sends!
+        // In your interceptor you used response.data.data.access
+        // In your previous hook you used refreshResult.data.access
+        const newAccessToken = refreshResult.data.access;
 
+        if (!newAccessToken) throw new Error("No token returned");
+
+        // 2. Put token in memory
         setAuthToken(newAccessToken);
+
+        // 3. Fetch profile securely
         const profileResult = await accountService.getProfile();
         setUser(profileResult.data);
-      } catch {
-        // Silent failure — user stays unauthenticated
+      } catch (error) {
+        console.warn("Bootstrap phase: No valid session found.", error);
+        useAuthStore.getState().logout(); // Ensure Zustand state is fully clean
+      } finally {
+        setBootstrapping(false);
       }
     };
 
-    // Assign the promise to the module variable
-    bootstrapPromise = restore();
-
-    // Ensure the loading state clears when the promise resolves
-    bootstrapPromise.finally(() => {
-      setBootstrapping(false);
-    });
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    performBootstrap();
+  }, [isAuthenticated, setBootstrapping, setUser]);
 }
-// console.log("Bootstrap hook mounted");
-// import {  useEffect } from "react";
+// import { useEffect } from "react";
 // import { accountService } from "@shared/api";
 // import { setAuthToken } from "@shared/lib";
 // import { useAuthStore } from "@entities/user";
+// import { clearAuth } from "@shared/lib";
 
-// // Module-level — survives StrictMode remounts, resets on true page reload
-// let bootstrapAttempted = false
+// let bootstrapPromise = null;
 
 // export function useBootstrapAuth() {
-//   console.log('use bootsrat ma hu ab restore method ki targ ja ra hu ')
-//   // const [isBootstrapping, setIsBootstrapping] = useState(true);
 //   const setBootstrapping = useAuthStore((state) => state.setBootstrapping);
 //   const setUser = useAuthStore((state) => state.setUser);
 //   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
 
-//   console.log("isAuthenticated =", isAuthenticated);
-
 //   useEffect(() => {
-//     console.log("Effect running");
-
-//     // Already authenticated in this session — skip immediately
 //     if (isAuthenticated) {
 //       setBootstrapping(false);
 //       return;
 //     }
 
-//     // User explicitly logged out — do not restore session
 //     if (sessionStorage.getItem("logged_out") === "true") {
 //       setBootstrapping(false);
 //       return;
 //     }
 
-//     // Strict Mode double mount guard
-//     if (bootstrapAttempted) return;
-//     bootstrapAttempted = true;
+//     if (bootstrapPromise) {
+//       bootstrapPromise.finally(() => setBootstrapping(false));
+//       return;
+//     }
 
 //     const restore = async () => {
-//       console.log("ma restore ma agya hu")
 //       try {
-//         console.log('try kar ra hu')
 //         const refreshResult = await accountService.bootstrap();
 //         const newAccessToken = refreshResult?.data?.access;
 
-//         if (!newAccessToken) {
-//           // Bootstrap responded but no token — cookie was invalid
-//           setBootstrapping(false);
-//           return;
-//         }
+//         if (!newAccessToken) return;
 
 //         setAuthToken(newAccessToken);
-
-//         // Fetch full profile to populate Zustand store
-//         const profileResult = await accountService.getProfile();
-//         setUser(profileResult.data);
+//         try {
+//           const profileResult = await accountService.getProfile();
+//           setUser(profileResult.data);
+//         } catch {
+//           clearAuth();
+//         }
 //       } catch {
-//         console.log('try to huva ni catch ma agay hu')
-//         // No cookie, expired cookie, or network error
-//         // All are silent — user will see login page via ProtectedRoute
-//       } finally {
-//         setBootstrapping(false);
+//         // Silent failure — user stays unauthenticated
 //       }
 //     };
 
-//     restore();
-//   // eslint-disable-next-line react-hooks/exhaustive-deps
-//   }, []);
+//     bootstrapPromise = restore();
 
+//     bootstrapPromise.finally(() => {
+//       setBootstrapping(false);
+//     });
+
+//     // eslint-disable-next-line react-hooks/exhaustive-deps
+//   }, []);
 // }
