@@ -49,7 +49,6 @@ export const setupInterceptors = () => {
         !originalRequest.url?.includes("/api/accounts/token/refresh/") &&
         errorCode !== "invalid_credentials" 
       ) {
-        console.log("ha ya conditon kam kar ri ha ")
         if (isRefreshing) {
           return new Promise((resolve, reject) => {
             failedQueue.push({ resolve, reject });
@@ -65,14 +64,14 @@ export const setupInterceptors = () => {
         isRefreshing = true;
 
         try {
-          console.log("i am from intercepter file ");
+          console.log(" interceptor called ... ");
           const response = await axios.post(
             `${import.meta.env.VITE_API_ORIGIN}/api/accounts/token/refresh/`,
             {},
             {
               withCredentials: true,
               headers: {
-                "X-CSRFToken": getCookie("csrftoken"), // attach CSRF token
+                "X-CSRFToken": getCookie("csrftoken"), 
               },
             },
           );
@@ -85,7 +84,6 @@ export const setupInterceptors = () => {
           processQueue(err, null);
           clearAuth();
           broadcastLogout();
-          // window.location.href = "/login";
           return Promise.reject(err);
         } finally {
           isRefreshing = false;
