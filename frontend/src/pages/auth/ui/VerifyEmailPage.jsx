@@ -1,14 +1,10 @@
 // src/pages/account/VerifyEmail.jsx
 import { Link } from "react-router-dom";
 import { MailCheck } from "lucide-react";
-import {AuthLayout} from "@widgets/auth-layout";
+
 import { useVerifyEmailPage } from "@features/auth";
 
-const BRAND_PROPS = {
-  title: "CHECK YOUR",
-  highlight: "INBOX!",
-  description: "One step away from joining the BikeExpress family.",
-};
+
 
 export default function VerifyEmail() {
   const {
@@ -27,7 +23,7 @@ export default function VerifyEmail() {
   const showVerifyingState = tokenFromUrl && !verifyErrorMsg;
 
   return (
-    <AuthLayout brandProps={BRAND_PROPS}>
+    <>
       <div className="text-center">
         <h2 className="mt-8 text-2xl font-black text-black-400">
           Verify Your Email
@@ -97,6 +93,6 @@ export default function VerifyEmail() {
           </>
         )}
       </div>
-    </AuthLayout>
+    </>
   );
 }

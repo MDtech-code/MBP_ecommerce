@@ -1,7 +1,8 @@
 // src/app/providers/router.jsx
-import { createBrowserRouter, Outlet } from "react-router-dom"
+import { createBrowserRouter } from "react-router-dom"
 import { MainLayout }      from "../layouts"
 import { DashboardLayout } from "../layouts"
+import {AuthLayout}  from "../layouts"
 
 import { HomePage }                  from "@pages/home"
 import { RegisterPage }              from "@pages/register"
@@ -45,6 +46,9 @@ export const router = createBrowserRouter([
   {
     element: <GuestRoute />,
     children: [
+    {
+      element: <AuthLayout />, 
+      children: [
       { path: "/register",             element: <RegisterPage /> },
       { path: "/login",                element: <LoginPage /> },
       { path: "/verify-email",         element: <VerifyEmailPage /> },
@@ -52,8 +56,12 @@ export const router = createBrowserRouter([
       { path: "/forgot-password/sent", element: <ForgotPasswordSentPage /> },
       { path: "/reset-password",       element: <ResetPasswordPage /> },
     ],
+      
+    },
+  ],
+    
   },
-   {
+  {
   element: <ProtectedRoute />,
   children: [
     {
@@ -89,11 +97,7 @@ export const router = createBrowserRouter([
     element: <ProtectedRoute />,        // Level 1 — auth check
     children: [
       {
-        element: (                      // Level 2 — layout
-          <DashboardLayout>
-            <Outlet />
-          </DashboardLayout>
-        ),
+        element: <DashboardLayout />,
         children: [                     // Level 3 — pages
           { path: "/profile",                  element: <ProfilePage /> },
            // ── Security section ─────────────────────────────────────────────
