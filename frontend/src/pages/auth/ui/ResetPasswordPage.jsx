@@ -2,16 +2,11 @@
 
 import { Link } from "react-router-dom";
 import { Lock } from "lucide-react";
-import {AuthLayout} from "@widgets/auth-layout";
+
 import { FormInput } from "@shared/ui"
 import { useResetPasswordForm } from "@features/auth";
 
-const BRAND_PROPS = {
-  title: "RESET YOUR",
-  highlight: "PASSWORD!",
-  description:
-    "Create a strong new password to keep your BikeExpress account secure.",
-};
+
 
 export default function ResetPassword() {
   const {
@@ -28,7 +23,7 @@ export default function ResetPassword() {
   // Token was not in the URL — link is invalid or already used
   if (tokenMissing) {
     return (
-      <AuthLayout brandProps={BRAND_PROPS}>
+      <>
         <div>
           <h2 className="mt-8 text-center text-2xl font-black">
             Reset Password
@@ -55,12 +50,12 @@ export default function ResetPassword() {
             </Link>
           </div>
         </div>
-      </AuthLayout>
+      </>
     );
   }
 
   return (
-    <AuthLayout brandProps={BRAND_PROPS}>
+    <>
       <div>
         <h2 className="mt-8 text-center text-2xl font-black">
           Reset Password
@@ -113,6 +108,6 @@ export default function ResetPassword() {
           </button>
         </form>
       </div>
-    </AuthLayout>
+    </>
   );
 }

@@ -2,16 +2,11 @@
 
 import { Link } from "react-router-dom";
 import { Lock, Mail } from "lucide-react";
-import { AuthLayout } from "@widgets/auth-layout"
+
 import { FormInput } from "@shared/ui"
 import { useForgotPasswordForm } from "@features/auth"
 
-const BRAND_PROPS = {
-  title: "FORGOT YOUR",
-  highlight: "PASSWORD?",
-  description:
-    "No worries. Enter your email and we will send you a reset link to get back on the road.",
-};
+
 
 export default function ForgotPassword() {
   const {
@@ -24,7 +19,7 @@ export default function ForgotPassword() {
   } = useForgotPasswordForm();
 
   return (
-    <AuthLayout brandProps={BRAND_PROPS}>
+    <>
       <div>
         <h2 className="mt-8 text-2xl text-center font-black">
           Forgot Password?
@@ -74,6 +69,6 @@ export default function ForgotPassword() {
           </Link>
         </p>
       </div>
-    </AuthLayout>
+    </>
   );
 }

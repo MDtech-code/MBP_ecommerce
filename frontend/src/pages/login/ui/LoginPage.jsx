@@ -3,7 +3,7 @@ import { Mail, Lock } from "lucide-react"
 import { Link } from "react-router-dom"
 
 
-import { AuthLayout } from "@widgets/auth-layout"
+
 import { FormInput } from "@shared/ui"
 import  {SocialLogin}  from "@features/auth"
 import { useLoginForm } from "@features/auth"
@@ -25,14 +25,7 @@ export default function Login() {
   } = useLoginForm()
 
   return (
-    <AuthLayout
-      brandProps={{
-        title: "WELCOME BACK",
-        highlight: "RIDER!",
-        description:
-          "Login to your account and continue your journey with BikeExpress.",
-      }}
-    >
+    <>
       <div>
         <h2 className="text-3xl font-black text-gray-900">Welcome Back</h2>
 
@@ -135,6 +128,6 @@ export default function Login() {
         </p>
 
       </div>
-    </AuthLayout>
+    </>
   )
 }
