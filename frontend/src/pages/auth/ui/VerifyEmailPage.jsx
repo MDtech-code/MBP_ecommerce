@@ -25,9 +25,9 @@ export default function VerifyEmail() {
   return (
     <>
       <div className="text-center">
-        <h2 className="mt-8 text-2xl font-black text-black-400">
+        {/* <h2 className="mt-8 text-2xl font-black text-black-400">
           Verify Your Email
-        </h2>
+        </h2> */}
 
         <div className="mx-auto w-24 h-24 rounded-full bg-gray-100 flex items-center justify-center relative">
           <MailCheck size={45} className="text-gray-700" />
@@ -51,15 +51,15 @@ export default function VerifyEmail() {
               </div>
             )}
 
-            <p className="mt-5 text-gray-600 text-sm">
+            <p className="mt-5 text-gray-600 dark:text-gray-200 text-sm">
               We have sent a verification link to
               <br />
-              <span className="font-bold text-gray-900">
+              <span className="font-bold text-gray-900 dark:text-gray-300">
                 {email || "your email address"}
               </span>
             </p>
 
-            <p className="mt-5 text-sm text-gray-500">
+            <p className="mt-5 text-sm text-gray-500 dark:text-gray-300">
               Please check your inbox and click on the verification link to
               activate your account.
             </p>
