@@ -25,7 +25,7 @@ export default function AuthBrand({
         className="
           mt-3 sm:mt-5
           text-sm sm:text-base lg:text-lg
-          max-w-[280px] sm:max-w-sm lg:max-w-md
+          max-w-70 sm:max-w-sm lg:max-w-md
           text-gray-600 dark:text-gray-400 lg:text-gray-200 lg:dark:text-gray-200
         "
       >

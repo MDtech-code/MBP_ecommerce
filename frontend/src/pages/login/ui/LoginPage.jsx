@@ -24,14 +24,14 @@ export default function Login() {
     <>
       <div>
         {/* HIDE on mobile/tablet to prevent repeating AuthBrand. Shows only on desktop. */}
-        {/* <div className="hidden lg:block">
-          <h2 className="text-3xl font-black text-gray-900 dark:text-white">
-            Welcome Back
+        <div className="hidden lg:block">
+          <h2 className="text-3xl font-black text-gray-900 dark:text-gray-200">
+            Hello Again!
           </h2>
           <p className="mt-2 text-gray-500 dark:text-gray-400">
             Login to manage your account
           </p>
-        </div> */}
+        </div>
 
         {isResendSuccess && formErrorCode === ErrorCode.EMAIL_NOT_VERIFIED ? (
           <div
@@ -52,7 +52,7 @@ export default function Login() {
                 type="button"
                 onClick={handleResend}
                 disabled={isResending}
-                className="mt-2 min-h-[44px] py-1 text-xs font-bold underline text-red-700 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
+                className="mt-2 min-h-11 py-1 text-xs font-bold underline text-red-700 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
               >
                 {isResending
                   ? "Sending verification email..."
@@ -84,7 +84,7 @@ export default function Login() {
           />
 
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <label className="flex items-center space-x-2 text-sm text-gray-700 dark:text-gray-300 min-h-[44px] cursor-pointer group select-none">
+            <label className="flex items-center space-x-2 text-sm text-gray-700 dark:text-gray-300 min-h-11 cursor-pointer group select-none">
               <input 
                 type="checkbox" 
                 className="form-checkbox text-primary rounded border-gray-300 dark:border-gray-600 dark:bg-[#121212] focus:ring-primary/50 cursor-pointer" 
@@ -94,7 +94,7 @@ export default function Login() {
 
             <Link
               to="/forgot-password"
-              className="text-sm text-primary font-semibold hover:underline min-h-[44px] flex items-center px-1"
+              className="text-sm text-primary font-semibold hover:underline min-h-11 flex items-center px-1"
             >
               Forgot Password?
             </Link>
@@ -115,7 +115,7 @@ export default function Login() {
           Don't have an account?{" "}
           <Link
             to="/register"
-            className="text-primary font-bold sm:ml-1 hover:underline min-h-[44px]  items-center justify-center py-2 sm:py-0"
+            className="text-primary font-bold sm:ml-1 hover:underline min-h-11  items-center justify-center py-2 sm:py-0"
           >
             Create Account
           </Link>
@@ -178,7 +178,7 @@ export default function Login() {
 //                 type="button"
 //                 onClick={handleResend}
 //                 disabled={isResending}
-//                 className="mt-2 min-h-[44px] py-1 text-xs font-bold underline text-red-700 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
+//                 className="mt-2 min-h-11 py-1 text-xs font-bold underline text-red-700 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
 //               >
 //                 {isResending
 //                   ? "Sending verification email..."
@@ -210,7 +210,7 @@ export default function Login() {
 //           />
 
 //           <div className="flex flex-wrap items-center justify-between gap-2">
-//             <label className="flex items-center space-x-2 text-sm text-gray-700 dark:text-gray-300 min-h-[44px] cursor-pointer group select-none">
+//             <label className="flex items-center space-x-2 text-sm text-gray-700 dark:text-gray-300 min-h-11 cursor-pointer group select-none">
 //               <input 
 //                 type="checkbox" 
 //                 className="form-checkbox text-primary rounded border-gray-300 dark:border-gray-600 dark:bg-[#121212] focus:ring-primary/50 cursor-pointer" 
@@ -220,7 +220,7 @@ export default function Login() {
 
 //             <Link
 //               to="/forgot-password"
-//               className="text-sm text-primary font-semibold hover:underline min-h-[44px] flex items-center px-1"
+//               className="text-sm text-primary font-semibold hover:underline min-h-11 flex items-center px-1"
 //             >
 //               Forgot Password?
 //             </Link>

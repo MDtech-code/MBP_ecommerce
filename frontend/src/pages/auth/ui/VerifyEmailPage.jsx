@@ -25,9 +25,9 @@ export default function VerifyEmail() {
   return (
     <>
       <div className="text-center">
-        {/* <h2 className="mt-8 text-2xl font-black text-black-400">
+        <h2 className="hidden lg:block mt-8 text-2xl font-black text-black-400 dark:text-grey-300">
           Verify Your Email
-        </h2> */}
+        </h2>
 
         <div className="mx-auto w-24 h-24 rounded-full bg-gray-100 flex items-center justify-center relative">
           <MailCheck size={45} className="text-gray-700" />

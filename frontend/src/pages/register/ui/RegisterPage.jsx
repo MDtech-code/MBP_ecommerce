@@ -20,13 +20,13 @@ export default function Register() {
   return (
     <>
       <div>
-        {/* <h2 className="text-2xl lg:text-3xl font-black text-gray-900 tracking-tight">
+        <h2 className="hidden lg:block text-2xl lg:text-3xl font-black text-gray-900 dark:text-gray-100 tracking-tight">
           Create Account
         </h2>
 
-        <p className="mt-1 text-sm text-gray-500">
+        <p className="hidden lg:block mt-1 text-sm text-gray-500 dark:text-gray-300">
           Join BikeExpress today
-        </p> */}
+        </p>
 
         {/* DIET CHANGE 1: Reduced top margin from mt-8 (32px) to mt-5 (20px) */}
         {/* DIET CHANGE 2: Reduced input gaps from space-y-4 (16px) to space-y-3 (12px) */}

@@ -25,9 +25,9 @@ export default function ResetPassword() {
     return (
       <>
         <div>
-          {/* <h2 className="mt-8 text-center text-2xl font-black">
+          <h2 className="hidden lg:block mt-8 text-center text-2xl font-black dark:text-gray-300">
             Reset Password
-          </h2> */}
+          </h2>
 
           <div className="mx-auto w-24 h-24 rounded-full bg-gray-100 flex items-center justify-center relative">
             <Lock size={45} className="text-gray-700" />
