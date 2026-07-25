@@ -89,7 +89,6 @@ export const router = createBrowserRouter([
             element: <DashboardLayout />,
             children: [
               { path: "/profile", element: <ProfilePage /> },
-
               // ── Security hub ────────────────────────────────
               { path: "/security",                        element: <SecurityPage /> },
               { path: "/security/verify",                 element: <SecurityVerificationGatePage /> },
