@@ -111,11 +111,11 @@ export default function Login() {
           </button>
         </form>
 
-        <p className="mt-8 text-center text-sm text-gray-600 dark:text-gray-400 flex flex-col sm:block">
+        <p className="mt-8 text-center text-sm text-gray-600 dark:text-gray-400 ">
           Don't have an account?{" "}
           <Link
             to="/register"
-            className="text-primary font-bold sm:ml-1 hover:underline min-h-[44px] inline-flex items-center justify-center py-2 sm:py-0"
+            className="text-primary font-bold sm:ml-1 hover:underline min-h-[44px]  items-center justify-center py-2 sm:py-0"
           >
             Create Account
           </Link>
