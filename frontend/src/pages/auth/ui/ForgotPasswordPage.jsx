@@ -21,7 +21,7 @@ export default function ForgotPassword() {
   return (
     <>
       <div>
-        <h2 className="mt-8 text-2xl text-center font-black">
+        <h2 className=" hidden lg:block mt-8 text-2xl text-center font-black dark:text-gray-300">
           Forgot Password?
         </h2>
 
@@ -32,7 +32,7 @@ export default function ForgotPassword() {
           </span>
         </div>
 
-        <p className="mt-4 text-center text-sm text-gray-600">
+        <p className="mt-4 text-center text-sm text-gray-600 dark:text-gray-200">
           Enter your email address and we will send you a link to reset
           your password.
         </p>

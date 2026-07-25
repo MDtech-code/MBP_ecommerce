@@ -15,7 +15,7 @@ export default function FormInput({
 
   return (
     <div className="flex flex-col gap-1">
-    <div className="flex items-center gap-3 border border-gray-200 rounded-lg px-4 py-3 focus-within:border-primary">
+    <div className="flex items-center gap-3 border border-gray-200 rounded-lg px-4 py-3 focus-within:border-primary  dark:border-gray-700"> 
       {Icon && <Icon size={20} className="text-gray-400 shrink-0" />}
 
       <input
@@ -24,7 +24,8 @@ export default function FormInput({
         name={name}
         value={value}
         onChange={onChange}
-        className="w-full outline-none text-gray-900"
+        className="w-full outline-none text-gray-900 placeholder-gray-400
+    dark:text-white dark:placeholder-gray-300"
       />
 
       {isPassword && (

@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+
+@custom-variant dark (&:is(.dark *));
+
 @plugin "daisyui" {
   themes: mbp --default;
 }
@@ -9,6 +12,18 @@
     --color-dark: #020202;
     --color-surface: #F8FAFC;
     --color-muted: #64748B;
+
+    /* Ensure Tailwind v4 knows your neutral palette scales */
+    --color-gray-50: #f9fafb;
+    --color-gray-100: #f3f4f6;
+    --color-gray-200: #e5e7eb;
+    --color-gray-300: #d1d5db;
+    --color-gray-400: #9ca3af;
+    --color-gray-500: #6b7280;
+    --color-gray-600: #4b5563;
+    --color-gray-700: #374151;
+    --color-gray-800: #1f2937;
+    --color-gray-900: #111827;
 
     /* Typography  */
     --font-sans: Inter, Arial, sans-serif;
@@ -36,10 +51,39 @@ body {
     background: white;
 }
 
+
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+
+/* Chrome, Edge, Safari */
+::-webkit-scrollbar {
+  width: 8px;              /* scrollbar width */
+  height: 8px;             /* horizontal scrollbar height */
+}
+
+::-webkit-scrollbar-track {
+  background: transparent; /* track background */
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #64748B; /* thumb color (gray-500) */
+  border-radius: 9999px;     /* rounded pill */
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: #DC2626; /* hover color (your primary red) */
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;          /* makes scrollbar thinner */
+  scrollbar-color: #64748B transparent; /* thumb + track colors */
 }

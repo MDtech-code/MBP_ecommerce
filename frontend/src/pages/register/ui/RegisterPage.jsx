@@ -20,11 +20,11 @@ export default function Register() {
   return (
     <>
       <div>
-        <h2 className="text-2xl lg:text-3xl font-black text-gray-900 tracking-tight">
+        <h2 className="hidden lg:block text-2xl lg:text-3xl font-black text-gray-900 dark:text-gray-100 tracking-tight">
           Create Account
         </h2>
 
-        <p className="mt-1 text-sm text-gray-500">
+        <p className="hidden lg:block mt-1 text-sm text-gray-500 dark:text-gray-300">
           Join BikeExpress today
         </p>
 
@@ -95,7 +95,7 @@ export default function Register() {
           </button>
         </form>
 
-        <p className="mt-4 text-center text-sm text-gray-600">
+        <p className="mt-4 text-center text-sm text-gray-600 dark:text-gray-400">
           Already have an account?{" "}
            <Link
             to="/login"

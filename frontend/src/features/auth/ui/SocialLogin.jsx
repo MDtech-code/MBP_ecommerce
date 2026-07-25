@@ -76,26 +76,41 @@ export default function SocialLogin() {
       <div className="grid grid-cols-2 gap-3 mt-5">
 
         {/* Google */}
-        <button
-          type="button"
-          disabled={isPending}
-          onClick={() => googleLogin()}
-          className="flex items-center justify-center gap-2 border rounded-lg py-3 font-semibold hover:bg-gray-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-        >
-          <FcGoogle size={20} />
-          Google
-        </button>
+<button
+  type="button"
+  disabled={isPending}
+  onClick={() => googleLogin()}
+  className="
+    flex items-center justify-center gap-2
+    border rounded-lg py-3 font-semibold
+    hover:bg-gray-50 transition-colors
+    disabled:opacity-60 disabled:cursor-not-allowed
+    text-gray-900 dark:text-white
+    dark:hover:bg-gray-800
+  "
+>
+  <FcGoogle size={20} />
+  Google
+</button>
 
-        {/* Facebook */}
-        <button
-          type="button"
-          disabled={isPending}
-          onClick={handleFacebookClick}
-          className="flex items-center justify-center gap-2 border rounded-lg py-3 font-semibold hover:bg-gray-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-        >
-          <FaFacebookF size={20} className="text-blue-600" />
-          Facebook
-        </button>
+{/* Facebook */}
+<button
+  type="button"
+  disabled={isPending}
+  onClick={handleFacebookClick}
+  className="
+    flex items-center justify-center gap-2
+    border rounded-lg py-3 font-semibold
+    hover:bg-gray-50 transition-colors
+    disabled:opacity-60 disabled:cursor-not-allowed
+    text-gray-900 dark:text-white
+    dark:hover:bg-gray-800
+  "
+>
+  <FaFacebookF size={20} className="text-blue-600" />
+  Facebook
+</button>
+
 
       </div>
 
