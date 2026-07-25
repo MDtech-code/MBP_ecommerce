@@ -1,4 +1,4 @@
-// src/api/authToken.js
+// src/shared/lib/authToken.js
 
 import { api } from "@shared/api";
 

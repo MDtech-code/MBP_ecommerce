@@ -1,7 +1,7 @@
 
-import {  Link } from "react-router-dom"
+import {  Link} from "react-router-dom"
 import { User, Mail,  Lock } from "lucide-react";
-import { AuthLayout } from "@widgets/auth-layout"
+
 import { FormInput } from "@shared/ui"
 import { useRegisterForm } from "@features/auth"
 
@@ -18,20 +18,13 @@ export default function Register() {
     handleSubmit,
   } = useRegisterForm()
   return (
-    <AuthLayout
-      brandProps={{
-        title: "JOIN THE",
-        highlight: "BIKEXPRESS FAMILY!",
-        description:
-          "Create your account and get access to exclusive offers, fast checkout and more.",
-      }}
-    >
+    <>
       <div>
-        <h2 className="text-2xl lg:text-3xl font-black text-gray-900 tracking-tight">
+        <h2 className="hidden lg:block text-2xl lg:text-3xl font-black text-gray-900 dark:text-gray-100 tracking-tight">
           Create Account
         </h2>
 
-        <p className="mt-1 text-sm text-gray-500">
+        <p className="hidden lg:block mt-1 text-sm text-gray-500 dark:text-gray-300">
           Join BikeExpress today
         </p>
 
@@ -102,7 +95,7 @@ export default function Register() {
           </button>
         </form>
 
-        <p className="mt-4 text-center text-sm text-gray-600">
+        <p className="mt-4 text-center text-sm text-gray-600 dark:text-gray-400">
           Already have an account?{" "}
            <Link
             to="/login"
@@ -116,6 +109,6 @@ export default function Register() {
 
         </p>
       </div>
-    </AuthLayout>
+    </>
   );
 }

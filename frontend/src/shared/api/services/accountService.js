@@ -3,7 +3,9 @@
 import { api } from "../client";
 import { extractResponse } from "../transformers";
 import { getCookie } from "@shared/lib";
-// import axios from "axios";
+import axios from "axios";
+
+
 
 export const accountService = {
   /**
@@ -312,10 +314,14 @@ export const accountService = {
    * Direct axios call — bypasses our api instance so interceptors
    * do not accidentally catch and loop this call.
    */
+  
   bootstrap: async () => {
     console.log("i am from the bootstrap");
-    const response = await api.post(
-      "/api/accounts/token/refresh/",
+   
+    
+    const response = await axios.post(
+      // <-- CHANGED TO AXIOS
+      `${import.meta.env.VITE_API_ORIGIN}/api/accounts/token/refresh/`, // Ensure full URL if using raw axios
       {},
       {
         withCredentials: true,
@@ -327,3 +333,5 @@ export const accountService = {
     return extractResponse(response);
   },
 };
+// const response = await api.post(
+    //   "/api/accounts/token/refresh/",

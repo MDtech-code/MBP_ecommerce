@@ -4,11 +4,14 @@ import axios from "axios"
 import { api } from "./client"
 import {
   setAuthToken,
-  clearAuth,
-  broadcastLogout,
   getAuthToken,
 } from "@shared/lib";
 import { getCookie } from "@shared/lib";
+import { useAuthStore } from "@entities/user";
+
+
+
+
 
 let isRefreshing = false
 let failedQueue = []
@@ -39,7 +42,9 @@ export const setupInterceptors = () => {
       const originalRequest = error.config
       const status = error.response?.status
       const errorCode = error.response?.data?.errors?.code
-
+      if (sessionStorage.getItem("logged_out") === "true") {
+        return Promise.reject(error);
+      }
       // ─── 401 handling ─────────────────────────────────────
       // Only refresh if it's a token expiry, not invalid credentials
       // Invalid credentials return 401 with specific error code
@@ -47,9 +52,8 @@ export const setupInterceptors = () => {
         status === 401 &&
         !originalRequest._retry &&
         !originalRequest.url?.includes("/api/accounts/token/refresh/") &&
-        errorCode !== "invalid_credentials" 
+        errorCode !== "invalid_credentials"  
       ) {
-        console.log("ha ya conditon kam kar ri ha ")
         if (isRefreshing) {
           return new Promise((resolve, reject) => {
             failedQueue.push({ resolve, reject });
@@ -63,16 +67,17 @@ export const setupInterceptors = () => {
 
         originalRequest._retry = true;
         isRefreshing = true;
+        
 
         try {
-          console.log("i am from intercepter file ");
+          console.log(" interceptor called ... ");
           const response = await axios.post(
             `${import.meta.env.VITE_API_ORIGIN}/api/accounts/token/refresh/`,
             {},
             {
               withCredentials: true,
               headers: {
-                "X-CSRFToken": getCookie("csrftoken"), // attach CSRF token
+                "X-CSRFToken": getCookie("csrftoken"), 
               },
             },
           );
@@ -83,9 +88,7 @@ export const setupInterceptors = () => {
           return api(originalRequest);
         } catch (err) {
           processQueue(err, null);
-          clearAuth();
-          broadcastLogout();
-          // window.location.href = "/login";
+          useAuthStore.getState().logout();
           return Promise.reject(err);
         } finally {
           isRefreshing = false;

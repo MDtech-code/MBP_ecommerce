@@ -2,16 +2,11 @@
 
 import { Link } from "react-router-dom";
 import { Lock } from "lucide-react";
-import {AuthLayout} from "@widgets/auth-layout";
+
 import { FormInput } from "@shared/ui"
 import { useResetPasswordForm } from "@features/auth";
 
-const BRAND_PROPS = {
-  title: "RESET YOUR",
-  highlight: "PASSWORD!",
-  description:
-    "Create a strong new password to keep your BikeExpress account secure.",
-};
+
 
 export default function ResetPassword() {
   const {
@@ -28,9 +23,9 @@ export default function ResetPassword() {
   // Token was not in the URL — link is invalid or already used
   if (tokenMissing) {
     return (
-      <AuthLayout brandProps={BRAND_PROPS}>
+      <>
         <div>
-          <h2 className="mt-8 text-center text-2xl font-black">
+          <h2 className="hidden lg:block mt-8 text-center text-2xl font-black dark:text-gray-300">
             Reset Password
           </h2>
 
@@ -55,16 +50,16 @@ export default function ResetPassword() {
             </Link>
           </div>
         </div>
-      </AuthLayout>
+      </>
     );
   }
 
   return (
-    <AuthLayout brandProps={BRAND_PROPS}>
+    <>
       <div>
-        <h2 className="mt-8 text-center text-2xl font-black">
+        {/* <h2 className="mt-8 text-center text-2xl font-black">
           Reset Password
-        </h2>
+        </h2> */}
 
         <div className="mx-auto w-24 h-24 rounded-full bg-gray-100 flex items-center justify-center relative">
           <Lock size={45} className="text-gray-700" />
@@ -73,7 +68,7 @@ export default function ResetPassword() {
           </span>
         </div>
 
-        <p className="mt-4 text-center text-sm text-gray-600">
+        <p className="mt-4 text-center text-sm text-gray-600 dark:text-gray-300">
           Create a new password for your account.
         </p>
 
@@ -113,6 +108,6 @@ export default function ResetPassword() {
           </button>
         </form>
       </div>
-    </AuthLayout>
+    </>
   );
 }

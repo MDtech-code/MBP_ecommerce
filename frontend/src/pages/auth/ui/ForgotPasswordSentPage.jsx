@@ -2,14 +2,8 @@
 
 import { Link, useLocation } from "react-router-dom";
 import { Mail } from "lucide-react";
-import {AuthLayout} from "@widgets/auth-layout";
 
-const BRAND_PROPS = {
-  title: "CHECK YOUR",
-  highlight: "EMAIL!",
-  description:
-    "We have sent a password reset link. Check your inbox and follow the instructions.",
-};
+
 
 export default function ForgotPasswordSent() {
   const location = useLocation();
@@ -17,9 +11,9 @@ export default function ForgotPasswordSent() {
   const email = location.state?.email ?? "your email address";
 
   return (
-    <AuthLayout brandProps={BRAND_PROPS}>
+    <>
       <div>
-        <h2 className="mt-8 text-2xl text-center font-black">
+        <h2 className="hidden lg:block mt-8 text-2xl text-center text-grey-300 font-black">
           Check Your Email
         </h2>
 
@@ -27,13 +21,13 @@ export default function ForgotPasswordSent() {
           <Mail size={45} className="text-gray-700" />
         </div>
 
-        <p className="mt-4 text-center text-sm text-gray-600">
+        <p className="mt-4 text-center text-sm text-gray-600 dark:text-gray-200">
           We sent a password reset link to
           <br />
-          <span className="font-bold text-gray-900">{email}</span>
+          <span className="font-bold text-gray-900 dark:text-gray-300">{email}</span>
         </p>
 
-        <p className="mt-4 text-center text-sm text-gray-500">
+        <p className="mt-4 text-center text-sm text-gray-500 dark:text-gray-200">
           Did not receive it? Check your spam folder or try again.
         </p>
 
@@ -53,6 +47,6 @@ export default function ForgotPasswordSent() {
           </Link>
         </div>
       </div>
-    </AuthLayout>
+    </>
   );
 }
