@@ -79,14 +79,12 @@ export default function AddressForm({ existingAddress = null, onCancel }) {
 
       {/* Header */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-4">
           <div>
-            <h2 className="text-xl font-black text-gray-900">
+            <h2 className="text-xl  font-black text-gray-900 ">
               {isEditing ? "Edit Address" : "Add New Address"}
             </h2>
-            <p className="text-gray-400 text-sm mt-1">
-              Province and postal code are auto-filled when you select a city
-            </p>
+            
           </div>
           <div className="flex gap-3">
             <button
