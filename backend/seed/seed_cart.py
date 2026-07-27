@@ -2,8 +2,8 @@
 Seed: Cart items for customer users.
 Run AFTER seed_products.py.
 
-Cart signal already created the Cart when User was created in seed_users().
-We just need to add CartItems here.
+Cart is created manually in seed_users() (mirroring register_user() service).
+We just add CartItems here.
 """
 
 import os
@@ -19,12 +19,12 @@ django.setup()
 from django.contrib.auth import get_user_model
 from apps.cart.models import Cart, CartItem
 from apps.products.models import Product
-from data import CART_DATA
+from seed.data import CART_DATA   # ← fixed import path (was: from data import)
 
 User = get_user_model()
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
-TARGET_DB = "default"    # change to "default" for production
+TARGET_DB = "test_db"    # ← change to "default" for production
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -42,13 +42,13 @@ def run():
             print(f"  [SKIP] User '{email}' not found.")
             continue
 
-        # Cart was already auto-created by signal when user was seeded.
-        # get_or_create here is just a safety net.
+        # Cart was created in seed_users() (service-style, no signals).
+        # get_or_create is a safety net in case seed_users() was skipped.
         cart, cart_created = Cart.objects.using(TARGET_DB).get_or_create(
             user=user
         )
         if cart_created:
-            print(f"  [NEW]  Cart created (signal missed?) for {email}")
+            print(f"  [NEW]  Cart created (seed_users missed?) for {email}")
         else:
             print(f"  [OK]   Cart found for {email}")
 
@@ -81,7 +81,7 @@ def run():
                 try:
                     existing.full_clean()
                     existing.save(using=TARGET_DB)
-                    print(f"    [UPD]  qty={quantity} x '{product.name}'")
+                    print(f"    [UPD]  qty={quantity} × '{product.name}'")
                 except Exception as e:
                     print(f"    [ERR]  '{product.name}': {e}")
             else:
@@ -93,15 +93,14 @@ def run():
                     )
                     item.full_clean()
                     item.save(using=TARGET_DB)
-                    print(f"    [ADD]  qty={quantity} x '{product.name}'")
+                    print(f"    [ADD]  qty={quantity} × '{product.name}'")
                 except Exception as e:
                     print(f"    [ERR]  '{product.name}': {e}")
 
-        # Per-user summary
         item_count = CartItem.objects.using(TARGET_DB).filter(
             cart=cart
         ).count()
-        print(f"  Summary: {item_count} line items in cart.")
+        print(f"  Summary: {item_count} line item(s) in cart.")
 
     print(f"\n  Cart seed complete ✓  (db='{TARGET_DB}')")
 
