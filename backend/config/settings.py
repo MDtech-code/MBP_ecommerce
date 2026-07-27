@@ -143,14 +143,14 @@ DATABASES = {
         "PORT": env("POSTGRES_PORT", default="5432"),
     },
     # ── TEMPORARY TEST DATABASE — DELETE AFTER TESTING ──────────────
-    "test_db": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": "motorbike_parts_test",        # the DB we just created
-        "USER": env("POSTGRES_USER"),          # same user is fine
-        "PASSWORD": env("POSTGRES_PASSWORD"),
-        "HOST": env('POSTGRES_HOST', default='localhost'),
-        "PORT": env("POSTGRES_PORT", default="5432"),
-    },
+    #"test_db": {
+    #    "ENGINE": "django.db.backends.postgresql",
+    #    "NAME": "motorbike_parts_test",        # the DB we just created
+    #    "USER": env("POSTGRES_USER"),          # same user is fine
+    #    "PASSWORD": env("POSTGRES_PASSWORD"),
+    #    "HOST": env('POSTGRES_HOST', default='localhost'),
+    #    "PORT": env("POSTGRES_PORT", default="5432"),
+    #},
 }
 
 
