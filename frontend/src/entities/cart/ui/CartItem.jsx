@@ -26,8 +26,11 @@ import { Link } from "react-router-dom";
  *   onRemove    : (itemId) => void
  *   isMutating  : boolean — disable buttons during any pending mutation
  */
+import { getMediaUrl } from "@shared/lib/media"; 
+import { IMAGES} from "@shared/assets";
+const FALLBACK_IMG  = IMAGES.PLACEHOLDER;
 
-const FALLBACK_IMG = "/placeholder-part.png";
+
 
 export default function CartItem({
   item,
@@ -49,6 +52,7 @@ export default function CartItem({
 
   const unitPrice = parseFloat(product_price).toLocaleString();
   const itemSubtotal = parseFloat(subtotal).toLocaleString();
+  const imageUrl = getMediaUrl(product_image) || FALLBACK_IMG;
 
   return (
     <div className="flex flex-col md:grid md:grid-cols-12 gap-4 md:gap-0 items-start md:items-center py-5 border-b border-gray-100 last:border-b-0">
@@ -57,7 +61,7 @@ export default function CartItem({
       <div className="w-full md:w-auto md:col-span-5 flex items-center gap-4">
         <Link to={`/product/${product_slug}`} className="shrink-0">
           <img
-            src={product_image || FALLBACK_IMG}
+            src={imageUrl}
             alt={product_name}
             className="w-20 h-20 object-contain"
             onError={(e) => { e.currentTarget.src = FALLBACK_IMG; }}

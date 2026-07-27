@@ -1,3 +1,6 @@
+import { getMediaUrl } from "@shared/lib/media"; 
+import { IMAGES} from "@shared/assets";
+const FALLBACK_IMG  = IMAGES.PLACEHOLDER;
 export default function CategoryCard({ category }) {
   return (
     <div className="
@@ -7,7 +10,7 @@ export default function CategoryCard({ category }) {
       border-r border-gray-200
     ">
       <img
-        src={category.image}
+        src={getMediaUrl(category.image)|| FALLBACK_IMG}
         alt={category.name}
         className="h-14 sm:h-16 object-contain mb-3"
       />

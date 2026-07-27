@@ -2,9 +2,10 @@
 import { Star } from "lucide-react";
 import { Link } from "react-router-dom";
 import { getMediaUrl } from "@shared/lib/media"; 
+import { IMAGES} from "@shared/assets";
+const FALLBACK_IMG  = IMAGES.PLACEHOLDER;
 const DUMMY_RATING  = 4;
 const DUMMY_REVIEWS = 0;
-const FALLBACK_IMG  = "/placeholder-part.png";
 
 /**
  * ProductCard — pure display entity component.

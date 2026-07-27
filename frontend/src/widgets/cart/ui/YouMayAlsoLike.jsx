@@ -4,7 +4,9 @@
 // NOT: image, bike, rating, reviews, oldPrice, discount
 import { Link } from "react-router-dom";
 // Update the component to use real backend fields:
-
+import { getMediaUrl } from "@shared/lib/media"; 
+import { IMAGES} from "@shared/assets";
+const FALLBACK_IMG  = IMAGES.PLACEHOLDER;
 export default function YouMayAlsoLike({ products }) {
   return (
     <div className="mt-10">
@@ -28,7 +30,7 @@ export default function YouMayAlsoLike({ products }) {
                 </span>
               )}
               <img
-                src={product.primary_image || "/placeholder-part.png"}
+                src={getMediaUrl(product.primary_image) || FALLBACK_IMG}
                 alt={product.name}
                 className="max-h-full object-contain"
                 onError={(e) => { e.currentTarget.src = "/placeholder-part.png"; }}

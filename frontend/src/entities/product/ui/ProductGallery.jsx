@@ -14,8 +14,10 @@ import { useState } from "react";
  *   We still find primary explicitly for initial active state
  *   so even if order changes it stays correct.
  */
+import { IMAGES } from "@shared/assets";
+import { getMediaUrl } from "@shared/lib";
 
-const FALLBACK_IMG = "/placeholder-part.png";
+const FALLBACK_IMG = IMAGES.PLACEHOLDER;
 
 export default function ProductGallery({ images = [] }) {
   // Find primary image index for initial active state
@@ -48,7 +50,7 @@ export default function ProductGallery({ images = [] }) {
       {/* Main Image */}
       <div className="h-80 flex items-center justify-center mb-6">
         <img
-          src={activeImage?.image || FALLBACK_IMG}
+          src={getMediaUrl(activeImage?.image) || FALLBACK_IMG}
           alt="product"
           className="max-h-full object-contain"
           onError={(e) => { e.currentTarget.src = FALLBACK_IMG; }}
@@ -70,7 +72,7 @@ export default function ProductGallery({ images = [] }) {
                           }`}
             >
               <img
-                src={img.image || FALLBACK_IMG}
+                src={ getMediaUrl(img.image) || FALLBACK_IMG}
                 alt={`thumb-${index}`}
                 className="max-h-full object-contain"
                 onError={(e) => { e.currentTarget.src = FALLBACK_IMG; }}

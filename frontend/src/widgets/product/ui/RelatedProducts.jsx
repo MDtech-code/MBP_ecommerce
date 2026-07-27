@@ -1,6 +1,8 @@
 // src/components/product-detail/RelatedProducts.jsx
 import { Star, ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
+import { getMediaUrl } from "@shared/lib/media"; 
+import { IMAGES} from "@shared/assets";
 
 /**
  * RelatedProducts
@@ -23,7 +25,7 @@ import { Link } from "react-router-dom";
  */
 
 const DUMMY_RATING  = 4;
-const FALLBACK_IMG  = "/placeholder-part.png";
+const FALLBACK_IMG  = IMAGES.PLACEHOLDER;
 
 export default function RelatedProducts({ products = [] }) {
 
@@ -60,7 +62,7 @@ export default function RelatedProducts({ products = [] }) {
             <div className="h-28 flex items-center justify-center mb-3
                             bg-white rounded-lg">
               <img
-                src={product.primary_image || FALLBACK_IMG}
+                src={getMediaUrl(product.primary_image) || FALLBACK_IMG}
                 alt={product.name}
                 className="max-h-full object-contain
                            group-hover:scale-105 transition duration-200"
