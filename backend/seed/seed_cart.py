@@ -24,7 +24,7 @@ from seed.data import CART_DATA   # ← fixed import path (was: from data import
 User = get_user_model()
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
-TARGET_DB = "test_db"    # ← change to "default" for production
+TARGET_DB = "default"    # ← change to "default" for production
 # ─────────────────────────────────────────────────────────────────────────────
 
 

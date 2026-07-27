@@ -81,7 +81,7 @@ BIKE_MODELS_DATA = [
 
 USERS_DATA = [
     {
-        "email":        "customer1@gmail.com",
+        "email":        "user@gmail.com",
         "password":     "Customer@12345",
         "full_name":    "Virja Rock",
         "role":         "CU",
@@ -91,7 +91,7 @@ USERS_DATA = [
         "is_active":    True,
     },
     {
-        "email":        "customer2@gmail.com",
+        "email":        "user@gmail.com",
         "password":     "Customer@12345",
         "full_name":    "Rock Aslam",
         "role":         "CU",
@@ -107,7 +107,7 @@ USERS_DATA = [
 # ─────────────────────────────────────────────────────────────────────────────
 
 CART_DATA = {
-    "customer1@gmail.com": [
+    "user@gmail.com": [
         # (sku, quantity)
         ("BAT-YUA-001", 1),
         ("BRK-HND-001", 2),
@@ -115,7 +115,7 @@ CART_DATA = {
         ("TYR-DUN-001", 2),
         ("OIL-CAS-001", 3),
     ],
-    "customer2@gmail.com": [
+    "user@gmail.com": [
         ("BAT-YUA-002", 1),
         ("CHN-SUZ-003", 1),
         ("TYR-INV-003", 1),
