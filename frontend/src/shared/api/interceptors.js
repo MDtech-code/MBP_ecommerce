@@ -8,6 +8,7 @@ import {
 } from "@shared/lib";
 import { getCookie } from "@shared/lib";
 import { useAuthStore } from "@entities/user";
+import { DIRECT_API_ORIGIN } from "@shared/config/api"; 
 
 
 
@@ -72,7 +73,7 @@ export const setupInterceptors = () => {
         try {
           console.log(" interceptor called ... ");
           const response = await axios.post(
-            `${import.meta.env.VITE_API_ORIGIN}/api/accounts/token/refresh/`,
+            `${DIRECT_API_ORIGIN}/api/accounts/token/refresh/`,
             {},
             {
               withCredentials: true,
