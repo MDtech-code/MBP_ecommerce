@@ -85,6 +85,12 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           secure: true,
         },
+        // ✅ ADD THIS - proxy media files too!
+        "/media": {
+          target: apiTarget,
+          changeOrigin: true,
+          secure: true,
+        },
       },
     },
   };

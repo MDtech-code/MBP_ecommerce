@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "cross-env NODE_EXTRA_CA_CERTS=../certs/rootCA.pem vite",
-    "dev:docker": "cross-env NODE_EXTRA_CA_CERTS=/app/certs/rootCA.pem vite --mode docker",
+    
+    "dev:docker": "vite --mode docker --host 0.0.0.0",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",

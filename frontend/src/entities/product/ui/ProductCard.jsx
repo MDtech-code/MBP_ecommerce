@@ -1,7 +1,7 @@
 // src/entities/product/ui/ProductCard.jsx
 import { Star } from "lucide-react";
 import { Link } from "react-router-dom";
-
+import { getMediaUrl } from "@shared/lib/media"; 
 const DUMMY_RATING  = 4;
 const DUMMY_REVIEWS = 0;
 const FALLBACK_IMG  = "/placeholder-part.png";
@@ -28,7 +28,7 @@ export default function ProductCard({ product, action }) {
     price,
   } = product;
 
-  const imageUrl = primary_image || FALLBACK_IMG;
+   const imageUrl = getMediaUrl(primary_image) || FALLBACK_IMG;
 
   return (
     <Link
