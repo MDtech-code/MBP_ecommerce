@@ -114,6 +114,15 @@ export const accountService = {
     });
     return extractResponse(response);
   },
+  /**
+   * GET /api/accounts/addresses/
+   * Returns all saved addresses for the authenticated user.
+   * Ordered by default first, then newest.
+   */
+  getAddresses: async () => {
+    const response = await api.get("/api/accounts/addresses/");
+    return extractResponse(response);
+  },
 
   /**
    * POST /api/accounts/addresses/
@@ -314,11 +323,11 @@ export const accountService = {
    * Direct axios call — bypasses our api instance so interceptors
    * do not accidentally catch and loop this call.
    */
-  
+
   bootstrap: async () => {
     console.log("i am from the bootstrap");
-   
-    console.log(DIRECT_API_ORIGIN)
+
+    console.log(DIRECT_API_ORIGIN);
     const response = await axios.post(
       // <-- CHANGED TO AXIOS
       `${DIRECT_API_ORIGIN}/api/accounts/token/refresh/`, // Ensure full URL if using raw axios
