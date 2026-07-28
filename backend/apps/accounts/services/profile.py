@@ -7,7 +7,7 @@ from django.db import transaction
 
 from apps.core.error_codes import ErrorCode
 from apps.core.exceptions import DomainError
-
+from apps.accounts.validators import ensure_phone_uniqueness
 logger = logging.getLogger("apps.accounts")
 from typing import TYPE_CHECKING
 
@@ -65,8 +65,11 @@ def update_user_profile(*, user_id: int, data: dict) -> "User":
     from apps.accounts.serializers import ProfileUpdateSerializer
 
     log_context = {"user_id": user_id}
+    
 
     try:
+        print("try ma hu")
+        # ensure_phone_uniqueness(data['phone'])
         with transaction.atomic():
 
             # Step 1: Fetch user with profile
@@ -89,6 +92,9 @@ def update_user_profile(*, user_id: int, data: dict) -> "User":
                     code=ErrorCode.NOT_FOUND,
                     status_code=400,
                 )
+            # Step 2: Instance-aware uniqueness check — only if phone is incoming
+            if "phone" in data and data["phone"]:
+                ensure_phone_uniqueness(data["phone"], instance=profile)
 
             # Step 2: Validate and save
             serializer = ProfileUpdateSerializer(

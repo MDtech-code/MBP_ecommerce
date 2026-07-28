@@ -373,6 +373,7 @@ class ProductDetailSerializer(TimestampFieldsMixin, serializers.ModelSerializer)
             "discount_percentage",
             "stock",
             "is_in_stock",
+            "weight_grams",
             "status",
             "is_featured",
             "related_products",

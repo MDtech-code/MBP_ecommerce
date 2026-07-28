@@ -1,6 +1,11 @@
 // src/entities/cart/ui/CartItem.jsx
-import { Trash2, Minus, Plus } from "lucide-react";
-import { Link } from "react-router-dom";
+
+import { Trash2, Minus, Plus } from "lucide-react"
+import { Link } from "react-router-dom"
+import { getMediaUrl } from "@shared/lib/media"
+import { IMAGES } from "@shared/assets"
+
+const FALLBACK_IMG = IMAGES.PLACEHOLDER
 
 /**
  * CartItem — driven by real backend cart item shape.
@@ -15,28 +20,30 @@ import { Link } from "react-router-dom";
  *   quantity       → current quantity
  *   subtotal       → backend-computed subtotal string (price × qty)
  *
- * Why subtotal comes from backend not computed here:
- *   Backend uses Decimal precision.
- *   Frontend float would produce rounding errors on large prices.
+ * New props for item selection:
+ *   isSelected     → boolean — whether this item is in checkout selection
+ *   onToggleSelect → (itemId, item) => void — toggle selection
+ *
+ * Checkbox placement:
+ *   Desktop: leftmost column, before product image
+ *   Mobile:  top-left of item row, full width layout maintained
  *
  * Props:
- *   item        : CartItemSerializer output (one item from cart.items[])
- *   onIncrease  : (itemId, quantity) => void
- *   onDecrease  : (itemId, quantity) => void
- *   onRemove    : (itemId) => void
- *   isMutating  : boolean — disable buttons during any pending mutation
+ *   item           : CartItemSerializer output
+ *   onIncrease     : (itemId, quantity) => void
+ *   onDecrease     : (itemId, quantity) => void
+ *   onRemove       : (itemId) => void
+ *   onToggleSelect : (itemId, item) => void
+ *   isSelected     : boolean
+ *   isMutating     : boolean
  */
-import { getMediaUrl } from "@shared/lib/media"; 
-import { IMAGES} from "@shared/assets";
-const FALLBACK_IMG  = IMAGES.PLACEHOLDER;
-
-
-
 export default function CartItem({
   item,
   onIncrease,
   onDecrease,
   onRemove,
+  onToggleSelect,
+  isSelected = false,
   isMutating = false,
 }) {
   const {
@@ -48,25 +55,43 @@ export default function CartItem({
     is_in_stock,
     quantity,
     subtotal,
-  } = item;
+  } = item
 
-  const unitPrice = parseFloat(product_price).toLocaleString();
-  const itemSubtotal = parseFloat(subtotal).toLocaleString();
-  const imageUrl = getMediaUrl(product_image) || FALLBACK_IMG;
+  const unitPrice    = parseFloat(product_price).toLocaleString()
+  const itemSubtotal = parseFloat(subtotal).toLocaleString()
+  const imageUrl     = getMediaUrl(product_image) || FALLBACK_IMG
 
   return (
     <div className="flex flex-col md:grid md:grid-cols-12 gap-4 md:gap-0 items-start md:items-center py-5 border-b border-gray-100 last:border-b-0">
 
-      {/* Product */}
-      <div className="w-full md:w-auto md:col-span-5 flex items-center gap-4">
+      {/* Product — col-span-5 on desktop */}
+      <div className="w-full md:w-auto md:col-span-5 flex items-center gap-3">
+
+        {/* Selection checkbox */}
+        <label className="flex items-center shrink-0 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={() => onToggleSelect(id, item)}
+            disabled={isMutating}
+            className="w-4 h-4 rounded border-gray-300 text-primary
+                       focus:ring-primary focus:ring-2
+                       disabled:opacity-50 disabled:cursor-not-allowed
+                       accent-primary cursor-pointer"
+          />
+        </label>
+
+        {/* Product image */}
         <Link to={`/product/${product_slug}`} className="shrink-0">
           <img
             src={imageUrl}
             alt={product_name}
             className="w-20 h-20 object-contain"
-            onError={(e) => { e.currentTarget.src = FALLBACK_IMG; }}
+            onError={(e) => { e.currentTarget.src = FALLBACK_IMG }}
           />
         </Link>
+
+        {/* Product name + stock */}
         <div className="flex-1">
           <Link
             to={`/product/${product_slug}`}
@@ -80,23 +105,25 @@ export default function CartItem({
             </p>
           )}
         </div>
-        {/* Mobile Remove Button (Hidden on Desktop) */}
+
+        {/* Mobile remove button */}
         <button
           onClick={() => onRemove(id)}
           disabled={isMutating}
-          className="md:hidden text-gray-400 hover:text-red-500 transition disabled:opacity-50 ml-auto shrink-0"
+          className="md:hidden text-gray-400 hover:text-red-500 transition
+                     disabled:opacity-50 ml-auto shrink-0"
         >
           <Trash2 size={18} />
         </button>
       </div>
 
-      {/* Unit Price */}
+      {/* Unit Price — col-span-2 */}
       <div className="w-full md:w-auto md:col-span-2 text-primary font-bold text-sm flex justify-between md:block">
         <span className="md:hidden text-gray-500 font-normal">Price:</span>
         Rs. {unitPrice}
       </div>
 
-      {/* Quantity */}
+      {/* Quantity — col-span-2 */}
       <div className="w-full md:w-auto md:col-span-2 flex justify-between md:block items-center">
         <span className="md:hidden text-gray-500 font-normal text-sm">Quantity:</span>
         <div className="flex items-center border border-gray-300 rounded-lg w-fit">
@@ -122,13 +149,13 @@ export default function CartItem({
         </div>
       </div>
 
-      {/* Subtotal — from backend */}
+      {/* Subtotal — col-span-2 */}
       <div className="w-full md:w-auto md:col-span-2 text-primary font-bold text-sm flex justify-between md:block">
         <span className="md:hidden text-gray-500 font-normal">Subtotal:</span>
         Rs. {itemSubtotal}
       </div>
 
-      {/* Desktop Remove */}
+      {/* Desktop remove — col-span-1 */}
       <div className="hidden md:flex md:col-span-1 justify-center">
         <button
           onClick={() => onRemove(id)}
@@ -141,7 +168,7 @@ export default function CartItem({
       </div>
 
     </div>
-  );
+  )
 }
 // // src/entities/cart/ui/CartItem.jsx
 // import { Trash2, Minus, Plus } from "lucide-react";
@@ -171,8 +198,11 @@ export default function CartItem({
 //  *   onRemove    : (itemId) => void
 //  *   isMutating  : boolean — disable buttons during any pending mutation
 //  */
+// import { getMediaUrl } from "@shared/lib/media"; 
+// import { IMAGES} from "@shared/assets";
+// const FALLBACK_IMG  = IMAGES.PLACEHOLDER;
 
-// const FALLBACK_IMG = "/placeholder-part.png";
+
 
 // export default function CartItem({
 //   item,
@@ -194,24 +224,25 @@ export default function CartItem({
 
 //   const unitPrice = parseFloat(product_price).toLocaleString();
 //   const itemSubtotal = parseFloat(subtotal).toLocaleString();
+//   const imageUrl = getMediaUrl(product_image) || FALLBACK_IMG;
 
 //   return (
-//     <div className="grid grid-cols-12 items-center py-5 border-b border-gray-100 last:border-b-0">
+//     <div className="flex flex-col md:grid md:grid-cols-12 gap-4 md:gap-0 items-start md:items-center py-5 border-b border-gray-100 last:border-b-0">
 
 //       {/* Product */}
-//       <div className="col-span-5 flex items-center gap-4">
+//       <div className="w-full md:w-auto md:col-span-5 flex items-center gap-4">
 //         <Link to={`/product/${product_slug}`} className="shrink-0">
 //           <img
-//             src={product_image || FALLBACK_IMG}
+//             src={imageUrl}
 //             alt={product_name}
 //             className="w-20 h-20 object-contain"
 //             onError={(e) => { e.currentTarget.src = FALLBACK_IMG; }}
 //           />
 //         </Link>
-//         <div>
+//         <div className="flex-1">
 //           <Link
 //             to={`/product/${product_slug}`}
-//             className="font-bold text-gray-900 text-sm hover:text-primary transition-colors"
+//             className="font-bold text-gray-900 text-sm hover:text-primary transition-colors line-clamp-2"
 //           >
 //             {product_name}
 //           </Link>
@@ -221,15 +252,25 @@ export default function CartItem({
 //             </p>
 //           )}
 //         </div>
+//         {/* Mobile Remove Button (Hidden on Desktop) */}
+//         <button
+//           onClick={() => onRemove(id)}
+//           disabled={isMutating}
+//           className="md:hidden text-gray-400 hover:text-red-500 transition disabled:opacity-50 ml-auto shrink-0"
+//         >
+//           <Trash2 size={18} />
+//         </button>
 //       </div>
 
 //       {/* Unit Price */}
-//       <div className="col-span-2 text-primary font-bold text-sm">
+//       <div className="w-full md:w-auto md:col-span-2 text-primary font-bold text-sm flex justify-between md:block">
+//         <span className="md:hidden text-gray-500 font-normal">Price:</span>
 //         Rs. {unitPrice}
 //       </div>
 
 //       {/* Quantity */}
-//       <div className="col-span-2">
+//       <div className="w-full md:w-auto md:col-span-2 flex justify-between md:block items-center">
+//         <span className="md:hidden text-gray-500 font-normal text-sm">Quantity:</span>
 //         <div className="flex items-center border border-gray-300 rounded-lg w-fit">
 //           <button
 //             onClick={() => onDecrease(id, quantity)}
@@ -254,12 +295,13 @@ export default function CartItem({
 //       </div>
 
 //       {/* Subtotal — from backend */}
-//       <div className="col-span-2 text-primary font-bold text-sm">
+//       <div className="w-full md:w-auto md:col-span-2 text-primary font-bold text-sm flex justify-between md:block">
+//         <span className="md:hidden text-gray-500 font-normal">Subtotal:</span>
 //         Rs. {itemSubtotal}
 //       </div>
 
-//       {/* Remove */}
-//       <div className="col-span-1 flex justify-center">
+//       {/* Desktop Remove */}
+//       <div className="hidden md:flex md:col-span-1 justify-center">
 //         <button
 //           onClick={() => onRemove(id)}
 //           disabled={isMutating}

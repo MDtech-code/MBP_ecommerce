@@ -29,6 +29,12 @@ class UserProfileSerializer(TimestampFieldsMixin,serializers.ModelSerializer):
         source="get_gender_display",
         read_only=True,
     )
+    phone = serializers.CharField(
+        required=False,
+        allow_null=True,
+        allow_blank=True,
+        validators=[validate_pakistani_phone],
+    )
     
 
     class Meta:
@@ -77,6 +83,28 @@ class UserProfileSerializer(TimestampFieldsMixin,serializers.ModelSerializer):
             )
         return value
 
+# ─── Profile Update Serializer ───────────────────────────────────────────────
+class ProfileUpdateSerializer(UserProfileSerializer):
+    """
+    Explicit partial-update serializer for ``UserProfile``.
+
+    Inherits all fields and validators from ``UserProfileSerializer``.
+    Exists as a named class for clarity in the view and for
+    drf-spectacular schema generation (shows as distinct schema type).
+
+    All fields are optional — clients send only what they want to change.
+    """
+
+    class Meta(UserProfileSerializer.Meta):
+        # Explicitly mark all writable fields as not required
+        # Redundant when used with partial=True but makes intent clear
+        extra_kwargs = {
+            **UserProfileSerializer.Meta.extra_kwargs,
+            "phone": {"required": False},
+            "date_of_birth": {"required": False},
+            "gender": {"required": False},
+            
+        }
 
 class UserAddressSerializer(TimestampFieldsMixin,serializers.ModelSerializer):
     """
@@ -507,34 +535,13 @@ class EmailChangeConfirmSerializer(serializers.Serializer):
 '''
 
 
-# ─── Profile Update Serializer ───────────────────────────────────────────────
-class ProfileUpdateSerializer(UserProfileSerializer):
-    """
-    Explicit partial-update serializer for ``UserProfile``.
 
-    Inherits all fields and validators from ``UserProfileSerializer``.
-    Exists as a named class for clarity in the view and for
-    drf-spectacular schema generation (shows as distinct schema type).
-
-    All fields are optional — clients send only what they want to change.
-    """
-
-    class Meta(UserProfileSerializer.Meta):
-        # Explicitly mark all writable fields as not required
-        # Redundant when used with partial=True but makes intent clear
-        extra_kwargs = {
-            **UserProfileSerializer.Meta.extra_kwargs,
-            "phone": {"required": False},
-            "date_of_birth": {"required": False},
-            "gender": {"required": False},
-            "address_line1": {"required": False},
-            "address_line2": {"required": False},
-            "city": {"required": False},
-            "province": {"required": False},
-            "postal_code": {"required": False},
-            "country": {"required": False},
-        }
-
+# "address_line1": {"required": False},
+            # "address_line2": {"required": False},
+            # "city": {"required": False},
+            # "province": {"required": False},
+            # "postal_code": {"required": False},
+            # "country": {"required": False},
 
 
 # ─── Avatar Upload Serializer ─────────────────────────────────────────────────

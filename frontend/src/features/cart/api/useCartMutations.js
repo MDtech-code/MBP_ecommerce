@@ -73,3 +73,48 @@ export function useClearCart() {
     },
   });
 }
+
+
+// ── Coupon mutations ───────────────────────────────────────────────────────────
+
+/**
+ * useApplyCoupon
+ *
+ * POST /api/cart/coupon/
+ * Applies coupon code to cart. Backend runs Phase 1 validation.
+ * On success: updates cart cache directly — discount_amount and
+ * total_price reflect the applied coupon immediately.
+ *
+ * DomainError (400) bubbles to useCart for normalized error display.
+ */
+export function useApplyCoupon() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ code }) => cartService.applyCoupon(code),
+    onSuccess: (result) => {
+      queryClient.setQueryData(CART_QUERY_KEY, result)
+    },
+  })
+}
+
+/**
+ * useRemoveCoupon
+ *
+ * DELETE /api/cart/coupon/remove/
+ * Removes applied coupon from cart.
+ * On success: updates cart cache — discount_amount returns to 0,
+ * total_price equals subtotal again.
+ *
+ * DomainError (400) bubbles to useCart if no coupon was applied.
+ */
+export function useRemoveCoupon() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: () => cartService.removeCoupon(),
+    onSuccess: (result) => {
+      queryClient.setQueryData(CART_QUERY_KEY, result)
+    },
+  })
+}
