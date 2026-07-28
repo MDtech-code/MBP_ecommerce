@@ -271,6 +271,31 @@ export const accountService = {
     });
     return extractResponse(response);
   },
+  // add inside accountService object in your existing accountService file
+
+  /**
+   * POST /api/accounts/profile/phone/send-otp/
+   * @param {{ phone: string }} payload
+   */
+  sendPhoneOtp: async (payload) => {
+    const response = await api.post(
+      "/api/accounts/profile/phone/send-otp/",
+      payload,
+    );
+    return extractResponse(response);
+  },
+
+  /**
+   * POST /api/accounts/profile/phone/verify-otp/
+   * @param {{ phone: string, otp: string }} payload
+   */
+  verifyPhoneOtp: async (payload) => {
+    const response = await api.post(
+      "/api/accounts/profile/phone/verify-otp/",
+      payload,
+    );
+    return extractResponse(response);
+  },
   // /**
   //  * POST /api/accounts/change-password/
   //  * Authenticated user changes their own password

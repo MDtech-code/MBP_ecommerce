@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery ,useQueryClient} from "@tanstack/react-query";
 import { accountService } from "@shared/api";
 import { useAuthStore } from "@entities/user";
 
@@ -61,4 +61,20 @@ export function useUploadAvatar() {
 
 
 
+export function useSendPhoneOtp() {
+  return useMutation({
+    mutationFn: (phone) => accountService.sendPhoneOtp({ phone }),
+  });
+}
 
+export function useVerifyPhoneOtp() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ phone, otp }) =>
+      accountService.verifyPhoneOtp({ phone, otp }),
+    onSuccess: () => {
+      // Invalidate user profile so ProfileView re-fetches is_phone_verified
+      queryClient.invalidateQueries({ queryKey: ["user-profile"] });
+    },
+  });
+}

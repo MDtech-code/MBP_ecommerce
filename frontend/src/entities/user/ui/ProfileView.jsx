@@ -1,5 +1,5 @@
 // src/entities/ui/ProfileView.jsx
-import { UserRound, Camera, Mail, Phone, MapPin, Calendar, Venus, Edit3 } from "lucide-react"
+import { UserRound, Camera, Mail, Phone, MapPin, Calendar, Venus, Edit3 , ShieldAlert, ShieldCheck} from "lucide-react"
 import ProfileInfoRow from "./ProfileInfoRow"
 import { getMediaUrl } from "@shared/lib"
 
@@ -74,7 +74,26 @@ export default function ProfileView({ user, onEdit, onAvatarClick , onManageAddr
             Personal Information
           </h3>
           <ProfileInfoRow icon={Mail}     label="Email"         value={user?.email} />
-          <ProfileInfoRow icon={Phone}    label="Phone"         value={user?.profile?.phone} />
+          {/* Replace the existing phone row with this */}
+<div className="flex items-center justify-between">
+  <ProfileInfoRow
+    icon={Phone}
+    label="Phone"
+    value={user?.profile?.phone}
+  />
+  {user?.profile?.phone && (
+    user?.profile?.is_phone_verified ? (
+      <span className="flex items-center gap-1 text-green-600 text-xs font-bold">
+        <ShieldCheck size={13} /> Verified
+      </span>
+    ) : (
+      <span className="flex items-center gap-1 text-amber-500 text-xs font-bold">
+        <ShieldAlert size={13} /> Not verified
+      </span>
+    )
+  )}
+</div>
+          {/* <ProfileInfoRow icon={Phone}    label="Phone"         value={user?.profile?.phone} /> */}
           <ProfileInfoRow icon={Calendar} label="Date of Birth" value={user?.profile?.date_of_birth} />
           <ProfileInfoRow icon={Venus}    label="Gender"        value={user?.profile?.gender_display} />
         </div>

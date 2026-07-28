@@ -135,6 +135,8 @@ export function useConfirmEmailChange() {
 export function useDeleteAccount() {
   return useMutation({ mutationFn: accountService.deleteAccount });
 }
+
+
 // /**
 //  * useChangePassword
 //  * POST /api/accounts/change-password/
