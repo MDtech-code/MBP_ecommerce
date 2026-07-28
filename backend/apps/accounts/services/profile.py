@@ -68,8 +68,8 @@ def update_user_profile(*, user_id: int, data: dict) -> "User":
     
 
     try:
-        print("next check ha boss")
-        ensure_phone_uniqueness(data['phone'])
+        print("try ma hu")
+        # ensure_phone_uniqueness(data['phone'])
         with transaction.atomic():
 
             # Step 1: Fetch user with profile
@@ -92,6 +92,9 @@ def update_user_profile(*, user_id: int, data: dict) -> "User":
                     code=ErrorCode.NOT_FOUND,
                     status_code=400,
                 )
+            # Step 2: Instance-aware uniqueness check — only if phone is incoming
+            if "phone" in data and data["phone"]:
+                ensure_phone_uniqueness(data["phone"], instance=profile)
 
             # Step 2: Validate and save
             serializer = ProfileUpdateSerializer(

@@ -29,6 +29,12 @@ class UserProfileSerializer(TimestampFieldsMixin,serializers.ModelSerializer):
         source="get_gender_display",
         read_only=True,
     )
+    phone = serializers.CharField(
+        required=False,
+        allow_null=True,
+        allow_blank=True,
+        validators=[validate_pakistani_phone],
+    )
     
 
     class Meta:
@@ -99,6 +105,7 @@ class ProfileUpdateSerializer(UserProfileSerializer):
             "gender": {"required": False},
             
         }
+
 class UserAddressSerializer(TimestampFieldsMixin,serializers.ModelSerializer):
     """
     Shipping address serializer.
