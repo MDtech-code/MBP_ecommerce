@@ -31,7 +31,9 @@ import { CartPage }                   from "@pages/cart"
 // Pages — Checkout
 import { CheckoutAddressPage,
          CheckoutPaymentPage }        from "@pages/Checkout"
-
+// Pages — Orders
+import { OrderListPage }              from "@pages/order"
+import { OrderDetailPage }            from "@pages/order"
 // Pages — Dashboard 
 import { ProfilePage }                from "@pages/profile"
 import { SecurityPage,
@@ -112,6 +114,9 @@ export const router = createBrowserRouter([
             element: <DashboardLayout />,
             children: [
               { path: "/profile", element: <ProfilePage /> },
+              // ── Orders ─────────────────────────────────────────
+              { path: "/orders",              element: <OrderListPage /> },
+              { path: "/orders/:orderNumber", element: <OrderDetailPage /> },
               // ── Security hub ────────────────────────────────
               { path: "/security",                        element: <SecurityPage /> },
               { path: "/security/verify",                 element: <SecurityVerificationGatePage /> },
