@@ -97,14 +97,22 @@ class ShippingAddressInputSerializer(serializers.Serializer):
             )
         return value.strip().upper()
 
-
 class CheckoutInputSerializer(serializers.Serializer):
     """
     Input validation for the full checkout request body.
 
     Wraps payment method selection, nested shipping address,
-    and optional delivery notes. Coupon is NOT accepted here —
-    it is already on Cart.coupon from the apply endpoint.
+    optional delivery notes, and selected cart item IDs.
+
+    selected_item_ids:
+        List of CartItem IDs the user chose to checkout.
+        Must contain at least one ID.
+        Ownership validation (IDs belong to this user's cart)
+        happens in OrderService.checkout() — serializer only
+        validates type and minimum length.
+
+    Coupon is NOT accepted here — it is already on Cart.coupon
+    from the apply endpoint. Checkout reads it from cart directly.
     """
 
     payment_method = serializers.ChoiceField(
@@ -121,6 +129,51 @@ class CheckoutInputSerializer(serializers.Serializer):
         default="",
         max_length=500,
     )
+    selected_item_ids = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
+        min_length=1,
+        error_messages={
+            "required": _("Please select at least one item to checkout."),
+            "min_length": _("Please select at least one item to checkout."),
+        },
+    )
+
+    def validate_selected_item_ids(self, value: list) -> list:
+        """
+        Remove duplicates while preserving order.
+
+        Duplicate IDs would cause the ownership count check in
+        OrderService to fail — 2 IDs passed but only 1 item found.
+        Deduplication here prevents that false rejection.
+        """
+        seen = []
+        for item_id in value:
+            if item_id not in seen:
+                seen.append(item_id)
+        return seen
+# class CheckoutInputSerializer(serializers.Serializer):
+#     """
+#     Input validation for the full checkout request body.
+
+#     Wraps payment method selection, nested shipping address,
+#     and optional delivery notes. Coupon is NOT accepted here —
+#     it is already on Cart.coupon from the apply endpoint.
+#     """
+
+#     payment_method = serializers.ChoiceField(
+#         choices=Order.PaymentMethod.choices,
+#         error_messages={
+#             "required": _("Payment method is required."),
+#             "invalid_choice": _("Invalid payment method selected."),
+#         },
+#     )
+#     shipping_address = ShippingAddressInputSerializer()
+#     notes = serializers.CharField(
+#         required=False,
+#         allow_blank=True,
+#         default="",
+#         max_length=500,
+#     )
 
 
 class OrderShippingAddressSerializer(serializers.ModelSerializer):

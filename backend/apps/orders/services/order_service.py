@@ -146,6 +146,7 @@ class OrderService:
         payment_method   = validated_data["payment_method"]
         shipping_address = validated_data["shipping_address"]
         notes            = validated_data.get("notes", "")
+        selected_item_ids = validated_data["selected_item_ids"]
 
         # ── Pre-checks (outside atomic — fast rejections) ─────────────────
 
@@ -161,8 +162,18 @@ class OrderService:
         cart_items = list(
             CartItem.objects
             .select_related("product__category")
-            .filter(cart=cart)
+            .filter(cart=cart, id__in=selected_item_ids)
         )
+            # .filter(cart=cart)
+        # Ownership validation — runs immediately after the query above
+        # If count mismatch: some IDs don't belong to this user's cart
+        if len(cart_items) != len(selected_item_ids):
+            raise DomainError(
+                "One or more selected items are invalid. "
+                "Please return to your cart and try again.",
+                code="invalid_cart_items",
+                status_code=400,
+            )
 
         # Step 3 — Soft product availability check
         unavailable = [
@@ -425,16 +436,27 @@ class OrderService:
             # Step L — Clear cart + reset coupon fields
             # Cart cleared INSIDE atomic so if anything above failed,
             # cart remains intact and customer can retry checkout.
-            cart.items.all().delete()
-            cart.coupon = None
-            cart.coupon_code_input = ""
-            cart.save(update_fields=["coupon", "coupon_code_input"])
+
+            #cart.items.all().delete()
+            #cart.coupon = None
+            #cart.coupon_code_input = ""
+            #cart.save(update_fields=["coupon", "coupon_code_input"])
+            cart.items.filter(id__in=selected_item_ids).delete()
+
+            # Only clear coupon if ALL items were checked out
+            # If partial checkout — coupon stays on cart for remaining items
+            remaining_count = cart.items.count()
+            if remaining_count == 0:
+                cart.coupon = None
+                cart.coupon_code_input = ""
+                cart.save(update_fields=["coupon", "coupon_code_input"])
 
             logger.info(
-                "OrderService.checkout: cart cleared | "
-                "cart_id=%s user_id=%s",
+                "OrderService.checkout: cart partially cleared | "
+                "cart_id=%s selected_items=%s remaining_items=%s",
                 cart.pk,
-                user.pk,
+                selected_item_ids,
+                remaining_count,
             )
 
         # ── Post-atomic actions (outside transaction) ─────────────────────
