@@ -180,6 +180,31 @@ def validate_pakistani_phone(value: str) -> str:
             code=ErrorCode.INVALID_PHONE,
         )
     return value
+from django.core.exceptions import ValidationError
+from apps.accounts.models import UserProfile
+
+def ensure_phone_uniqueness(phone: str, instance=None) -> str:
+    """
+    Ensure the given phone number is unique in Profile.
+
+    Args:
+        phone: Phone number string from validated data.
+        instance: Optional Profile instance being updated.
+
+    Returns:
+        The phone number string if unique.
+
+    Raises:
+        ValidationError: If the phone number already exists.
+    """
+    qs = UserProfile.objects.filter(phone=phone)
+    print(qs)
+    if instance:
+        print('ha instance be hu')
+        qs = qs.exclude(pk=instance.pk)
+    if qs.exists():
+        raise ValidationError("This phone number is already in use.")
+    return phone
 
 
 def validate_image_file(value: UploadedFile) -> UploadedFile:
