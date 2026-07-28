@@ -37,7 +37,12 @@ from apps.accounts.utils.cookie_utils import (
     clear_csrf_cookie,
 )
 from .models import User, EmailVerificationToken, PasswordResetToken,UserProfile,UserAddress
-
+from apps.accounts.serializers import (
+    SendPhoneOTPSerializer,
+    VerifyPhoneOTPSerializer,
+)
+from apps.accounts.services.otp_service import send_phone_otp, verify_phone_otp
+from django.utils import timezone
 from .services import (
     register_user,
     verify_email,
@@ -1424,4 +1429,110 @@ class DeleteAccountView(BaseAPIView):
                 "We are sad to see you go. "
                 "You are always welcome back."
             ),
+        )
+
+
+
+
+class SendPhoneOTPView(BaseAPIView):
+    """
+    POST /api/accounts/profile/phone/send-otp/
+
+    Send a 6-digit OTP to the given phone number.
+    Stores OTP in cache — valid for 5 minutes.
+
+    Permissions: IsAuthenticated
+    """
+
+    permission_classes = [IsAuthenticated]
+    serializer_class   = SendPhoneOTPSerializer
+
+    def post(self, request: Request) -> Response:
+        log_context = {"request_id": request.id, "user_id": request.user.id}
+
+        serializer = self.serializer_class(data=request.data)
+        if not serializer.is_valid():
+            logger.warning(
+                "Send OTP failed — invalid input",
+                extra={**log_context, "errors": serializer.errors},
+            )
+            return self.error_response(
+                message=_("Invalid phone number."),
+                errors=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        phone = serializer.validated_data["phone"]
+
+        result = send_phone_otp(user_id=request.user.pk, phone=phone)
+
+        logger.info(
+            "OTP sent successfully",
+            extra={**log_context, "phone": phone},
+        )
+
+        return self.success_response(
+            data=result,
+            message=_("OTP sent successfully."),
+        )
+
+
+class VerifyPhoneOTPView(BaseAPIView):
+    """
+    POST /api/accounts/profile/phone/verify-otp/
+
+    Verify the OTP and mark phone as verified on the profile.
+    On success — writes phone, is_phone_verified=True, phone_verified_at.
+
+    Permissions: IsAuthenticated
+    """
+
+    permission_classes = [IsAuthenticated]
+    serializer_class   = VerifyPhoneOTPSerializer
+
+    def post(self, request: Request) -> Response:
+        log_context = {"request_id": request.id, "user_id": request.user.id}
+
+        serializer = self.serializer_class(data=request.data)
+        if not serializer.is_valid():
+            logger.warning(
+                "Verify OTP failed — invalid input",
+                extra={**log_context, "errors": serializer.errors},
+            )
+            return self.error_response(
+                message=_("Invalid request data."),
+                errors=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        phone = serializer.validated_data["phone"]
+        otp   = serializer.validated_data["otp"]
+
+        success, error_msg = verify_phone_otp(
+            user_id=request.user.pk,
+            phone=phone,
+            otp=otp,
+        )
+
+        if not success:
+            # OTP expired / wrong code / phone mismatch — domain rule, not input error
+            raise DomainError(
+                error_msg,
+                code=ErrorCode.OTP_INVALID,
+                status_code=400,
+            )
+
+        UserProfile.objects.filter(user=request.user).update(
+            phone=phone,
+            is_phone_verified=True,
+            phone_verified_at=timezone.now(),
+        )
+
+        logger.info(
+            "Phone verified successfully",
+            extra={**log_context, "phone": phone},
+        )
+
+        return self.success_response(
+            message=_("Phone number verified successfully."),
         )

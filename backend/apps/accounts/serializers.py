@@ -730,3 +730,23 @@ class DeleteAccountSerializer(serializers.Serializer):
             "blank":   _("Verification token is required."),
         },
     )
+
+
+class SendPhoneOTPSerializer(serializers.Serializer):
+    phone = serializers.CharField()
+
+    def validate_phone(self, value: str) -> str:
+        return validate_pakistani_phone(value.strip())
+
+
+class VerifyPhoneOTPSerializer(serializers.Serializer):
+    phone = serializers.CharField()
+    otp   = serializers.CharField(min_length=6, max_length=6)
+
+    def validate_phone(self, value: str) -> str:
+        return validate_pakistani_phone(value.strip())
+
+    def validate_otp(self, value: str) -> str:
+        if not value.strip().isdigit():
+            raise serializers.ValidationError("OTP must be numeric.")
+        return value.strip()
