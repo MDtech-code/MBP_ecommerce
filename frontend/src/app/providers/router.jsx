@@ -28,6 +28,10 @@ import { VerifyEmailPage,
 // Pages — Protected 
 import { CartPage }                   from "@pages/cart"
 
+// Pages — Checkout
+import { CheckoutAddressPage,
+         CheckoutPaymentPage }        from "@pages/Checkout"
+
 // Pages — Dashboard 
 import { ProfilePage }                from "@pages/profile"
 import { SecurityPage,
@@ -38,6 +42,8 @@ import { SecurityPage,
          ChangeEmailFormPage,
          NewEmailOTPPage }            from "@pages/security"
 
+
+import {CheckoutGuard,PaymentStepGuard} from "@entities/checkout";
 
 export const router = createBrowserRouter([
 
@@ -78,6 +84,23 @@ export const router = createBrowserRouter([
         element: <ProtectedRoute />,
         children: [
           { path: "/cart", element: <CartPage /> },
+           // ── Checkout steps ──────────────────────────────────────
+          {
+            path: "/checkout/address",
+            element: (
+              <CheckoutGuard>
+                <CheckoutAddressPage />
+              </CheckoutGuard>
+            ),
+          },
+          {
+            path: "/checkout/payment",
+            element: (
+              <PaymentStepGuard>
+                <CheckoutPaymentPage />
+              </PaymentStepGuard>
+            ),
+          },
         ],
       },
 
