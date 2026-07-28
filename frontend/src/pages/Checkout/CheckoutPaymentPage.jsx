@@ -7,7 +7,7 @@ import {
   Truck, CreditCard, ShieldCheck
 } from "lucide-react"
 
-import { useCheckoutPayment } from "@features/checkout"
+import { useCheckoutPayment } from "@entities/checkout"
 
 // ── Step indicator (reused pattern) ──────────────────────────────────────────
 function CheckoutStepIndicator({ currentStep }) {

@@ -8,7 +8,7 @@ import {
 } from "lucide-react"
 
 import { FormField } from "@shared/ui/FormField"
-import { useCheckoutAddress } from "@features/checkout"
+import { useCheckoutAddress } from "@entities/checkout"
 import { useCreateAddress } from "@features/address"
 import { normalizeError } from "@shared/api"
 import {
