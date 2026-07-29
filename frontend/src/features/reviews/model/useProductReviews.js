@@ -47,11 +47,18 @@ export function useProductReviews({ slug, productId }) {
   // ── Mutations ─────────────────────────────────────────────────────────────
   const submitMutation = useSubmitReview({ slug, productId });
   const voteMutation = useVoteOnReview({ slug });
+  
 
+  // Separate query — always runs with no filter, page 1, page_size 1
+  // Only used to get meta.total — the true product review count
+  // independent of whatever rating filter is active.
+  // page_size=1 means backend returns minimal data — just the count in meta.
+  const unfilteredQuery = useProductReviewsQuery(slug, 1, null);
   // ── Derived data ──────────────────────────────────────────────────────────
   const reviews = reviewsQuery.data?.data ?? [];
   const meta = reviewsQuery.data?.meta ?? null;
-  const totalReviews = meta?.total ?? 0;
+  // const totalReviews = meta?.total ?? 0;
+  const totalReviews = unfilteredQuery.data?.meta?.total ?? 0;
 
   // eligibleItems — array of OrderItems user can review for this product
   // Empty array when not authenticated or no eligible purchases

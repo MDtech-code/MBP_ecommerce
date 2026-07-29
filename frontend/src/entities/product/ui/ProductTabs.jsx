@@ -193,259 +193,276 @@ export default function ProductTabs({ product }) {
         )}
 
         {/* ── Reviews ─────────────────────────────────────────────────── */}
-        {active === "reviews" && (
-          <div>
+{active === "reviews" && (
+  <div>
 
-            {/* ── Submit success banner ──────────────────────────────── */}
-            {submitSuccess && (
-              <div className="flex items-start gap-3 bg-green-50
-                              border border-green-200 rounded-xl
-                              px-4 py-4 mb-6">
-                <CheckCircle
-                  size={18}
-                  className="text-green-600 shrink-0 mt-0.5"
-                />
-                <div>
-                  <p className="text-sm font-semibold text-green-800">
-                    Review submitted
-                  </p>
-                  <p className="text-xs text-green-700 mt-0.5">
-                    Your review is pending moderation and will appear
-                    once approved by our team.
-                  </p>
-                </div>
-              </div>
-            )}
+    {/* ── Submit success banner ──────────────────────────────── */}
+    {submitSuccess && (
+      <div className="flex items-start gap-3 bg-green-50
+                      border border-green-200 rounded-xl
+                      px-4 py-4 mb-6">
+        <CheckCircle
+          size={18}
+          className="text-green-600 shrink-0 mt-0.5"
+        />
+        <div>
+          <p className="text-sm font-semibold text-green-800">
+            Review submitted
+          </p>
+          <p className="text-xs text-green-700 mt-0.5">
+            Your review is pending moderation and will appear
+            once approved by our team.
+          </p>
+        </div>
+      </div>
+    )}
 
-            {/* ── Eligible prompt + inline form ─────────────────────── */}
-            {user && hasEligibleItems && !submitSuccess && (
-              <div className="mb-6">
+    {/* ── Eligible prompt + inline form ─────────────────────── */}
+    {user && hasEligibleItems && !submitSuccess && (
+      <div className="mb-6">
 
-                {/* Prompt bar */}
-                {!formOpen && (
-                  <div className="flex items-center justify-between
-                                  bg-surface border border-gray-200
-                                  rounded-xl px-4 py-3">
-                    <p className="text-sm text-gray-700 font-medium">
-                      ✏️ You purchased this product
-                    </p>
-                    <button
-                      onClick={openForm}
-                      className="text-sm font-semibold text-primary
-                                 hover:underline"
+        {/* Prompt bar */}
+        {!formOpen && (
+          <div className="flex items-center justify-between
+                          bg-surface border border-gray-200
+                          rounded-xl px-4 py-3">
+            <p className="text-sm text-gray-700 font-medium">
+              ✏️ You purchased this product
+            </p>
+            <button
+              onClick={openForm}
+              className="text-sm font-semibold text-primary
+                         hover:underline"
+            >
+              Write a Review ▾
+            </button>
+          </div>
+        )}
+
+        {/* Inline review form */}
+        {formOpen && (
+          <div className="border border-gray-200 rounded-xl
+                          p-5 bg-white">
+
+            {/* Header */}
+            <p className="text-sm font-semibold text-gray-800 mb-4">
+              Reviewing:{" "}
+              <span className="text-gray-600 font-normal">
+                {selectedItem?.product_name}
+              </span>
+              {selectedItem?.order_number && (
+                <span className="text-gray-400 ml-2 font-normal">
+                  — Order #{selectedItem.order_number}
+                </span>
+              )}
+            </p>
+
+            {/* Multiple eligible items — dropdown to pick which */}
+            {eligibleItems.length > 1 && (
+              <div className="mb-4">
+                <label className="block text-xs font-semibold
+                                  text-gray-600 mb-1.5">
+                  Select Purchase
+                </label>
+                <select
+                  value={selectedItem?.order_item_id ?? ""}
+                  onChange={(e) => {
+                    const found = eligibleItems.find(
+                      (it) =>
+                        it.order_item_id === Number(e.target.value)
+                    );
+                    if (found) handleItemSelect(found);
+                  }}
+                  className="w-full border border-gray-200 rounded-lg
+                             px-3 py-2 text-sm text-gray-700
+                             focus:outline-none focus:ring-2
+                             focus:ring-primary/30"
+                >
+                  {eligibleItems.map((item) => (
+                    <option
+                      key={item.order_item_id}
+                      value={item.order_item_id}
                     >
-                      Write a Review ▾
-                    </button>
-                  </div>
-                )}
-
-                {/* Inline review form */}
-                {formOpen && (
-                  <div className="border border-gray-200 rounded-xl
-                                  p-5 bg-white">
-
-                    {/* Header */}
-                    <p className="text-sm font-semibold text-gray-800 mb-4">
-                      Reviewing:{" "}
-                      <span className="text-gray-600 font-normal">
-                        {selectedItem?.product_name}
-                      </span>
-                      {selectedItem?.order_number && (
-                        <span className="text-gray-400 ml-2 font-normal">
-                          — Order #{selectedItem.order_number}
-                        </span>
-                      )}
-                    </p>
-
-                    {/* Multiple eligible items — dropdown to pick which */}
-                    {eligibleItems.length > 1 && (
-                      <div className="mb-4">
-                        <label className="block text-xs font-semibold
-                                          text-gray-600 mb-1.5">
-                          Select Purchase
-                        </label>
-                        <select
-                          value={selectedItem?.order_item_id ?? ""}
-                          onChange={(e) => {
-                            const found = eligibleItems.find(
-                              (it) =>
-                                it.order_item_id === Number(e.target.value)
-                            );
-                            if (found) handleItemSelect(found);
-                          }}
-                          className="w-full border border-gray-200 rounded-lg
-                                     px-3 py-2 text-sm text-gray-700
-                                     focus:outline-none focus:ring-2
-                                     focus:ring-primary/30"
-                        >
-                          {eligibleItems.map((item) => (
-                            <option
-                              key={item.order_item_id}
-                              value={item.order_item_id}
-                            >
-                              Order #{item.order_number}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-
-                    {/* Star rating */}
-                    <div className="mb-4">
-                      <label className="block text-xs font-semibold
-                                        text-gray-600 mb-1.5">
-                        Your Rating{" "}
-                        <span className="text-primary">*</span>
-                      </label>
-                      <StarPicker
-                        value={formFields.rating}
-                        onChange={handleRatingSelect}
-                      />
-                    </div>
-
-                    {/* Title */}
-                    <div className="mb-4">
-                      <label className="block text-xs font-semibold
-                                        text-gray-600 mb-1.5">
-                        Title{" "}
-                        <span className="text-gray-400 font-normal">
-                          (optional)
-                        </span>
-                      </label>
-                      <input
-                        type="text"
-                        name="title"
-                        value={formFields.title}
-                        onChange={handleFieldChange}
-                        maxLength={100}
-                        placeholder="Summarise your experience"
-                        className="w-full border border-gray-200 rounded-lg
-                                   px-3 py-2 text-sm text-gray-700
-                                   placeholder:text-gray-300
-                                   focus:outline-none focus:ring-2
-                                   focus:ring-primary/30"
-                      />
-                    </div>
-
-                    {/* Body */}
-                    <div className="mb-5">
-                      <label className="block text-xs font-semibold
-                                        text-gray-600 mb-1.5">
-                        Your Review{" "}
-                        <span className="text-gray-400 font-normal">
-                          (optional)
-                        </span>
-                      </label>
-                      <textarea
-                        name="body"
-                        value={formFields.body}
-                        onChange={handleFieldChange}
-                        rows={4}
-                        placeholder="Tell others about your experience with this product"
-                        className="w-full border border-gray-200 rounded-lg
-                                   px-3 py-2 text-sm text-gray-700
-                                   placeholder:text-gray-300 resize-none
-                                   focus:outline-none focus:ring-2
-                                   focus:ring-primary/30"
-                      />
-                    </div>
-
-                    {/* Non-field error */}
-                    {submitNonFieldError && (
-                      <p className="text-xs text-red-600 mb-4">
-                        {submitNonFieldError.message}
-                      </p>
-                    )}
-
-                    {/* Actions */}
-                    <div className="flex items-center justify-between">
-                      <button
-                        onClick={closeForm}
-                        disabled={isSubmitting}
-                        className="text-sm text-gray-500 hover:text-gray-700
-                                   font-medium disabled:opacity-50"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={handleSubmit}
-                        disabled={
-                          isSubmitting || formFields.rating === 0
-                        }
-                        className="bg-primary text-white text-sm font-semibold
-                                   px-5 py-2 rounded-lg hover:bg-red-700
-                                   transition disabled:opacity-50
-                                   disabled:cursor-not-allowed"
-                      >
-                        {isSubmitting ? "Submitting…" : "Submit Review →"}
-                      </button>
-                    </div>
-
-                  </div>
-                )}
+                      Order #{item.order_number}
+                    </option>
+                  ))}
+                </select>
               </div>
             )}
 
-            {/* ── Rating filter buttons ──────────────────────────────── */}
-            {!isLoadingReviews && reviews.length > 0 && (
-              <div className="flex items-center gap-2 flex-wrap mb-5">
+            {/* Star rating */}
+            <div className="mb-4">
+              <label className="block text-xs font-semibold
+                                text-gray-600 mb-1.5">
+                Your Rating{" "}
+                <span className="text-primary">*</span>
+              </label>
+              <StarPicker
+                value={formFields.rating}
+                onChange={handleRatingSelect}
+              />
+            </div>
+
+            {/* Title */}
+            <div className="mb-4">
+              <label className="block text-xs font-semibold
+                                text-gray-600 mb-1.5">
+                Title{" "}
+                <span className="text-gray-400 font-normal">
+                  (optional)
+                </span>
+              </label>
+              <input
+                type="text"
+                name="title"
+                value={formFields.title}
+                onChange={handleFieldChange}
+                maxLength={100}
+                placeholder="Summarise your experience"
+                className="w-full border border-gray-200 rounded-lg
+                           px-3 py-2 text-sm text-gray-700
+                           placeholder:text-gray-300
+                           focus:outline-none focus:ring-2
+                           focus:ring-primary/30"
+              />
+            </div>
+
+            {/* Body */}
+            <div className="mb-5">
+              <label className="block text-xs font-semibold
+                                text-gray-600 mb-1.5">
+                Your Review{" "}
+                <span className="text-gray-400 font-normal">
+                  (optional)
+                </span>
+              </label>
+              <textarea
+                name="body"
+                value={formFields.body}
+                onChange={handleFieldChange}
+                rows={4}
+                placeholder="Tell others about your experience with this product"
+                className="w-full border border-gray-200 rounded-lg
+                           px-3 py-2 text-sm text-gray-700
+                           placeholder:text-gray-300 resize-none
+                           focus:outline-none focus:ring-2
+                           focus:ring-primary/30"
+              />
+            </div>
+
+            {/* Non-field error */}
+            {submitNonFieldError && (
+              <p className="text-xs text-red-600 mb-4">
+                {submitNonFieldError.message}
+              </p>
+            )}
+
+            {/* Actions */}
+            <div className="flex items-center justify-between">
+              <button
+                onClick={closeForm}
+                disabled={isSubmitting}
+                className="text-sm text-gray-500 hover:text-gray-700
+                           font-medium disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSubmit}
+                disabled={isSubmitting || formFields.rating === 0}
+                className="bg-primary text-white text-sm font-semibold
+                           px-5 py-2 rounded-lg hover:bg-red-700
+                           transition disabled:opacity-50
+                           disabled:cursor-not-allowed"
+              >
+                {isSubmitting ? "Submitting…" : "Submit Review →"}
+              </button>
+            </div>
+
+          </div>
+        )}
+      </div>
+    )}
+
+    {/* ── Loading state ──────────────────────────────────────── */}
+    {isLoadingReviews && (
+      <div className="space-y-4">
+        {[1, 2, 3].map((n) => (
+          <div
+            key={n}
+            className="h-24 bg-gray-100 rounded-xl animate-pulse"
+          />
+        ))}
+      </div>
+    )}
+
+    {/* ── Everything below only renders after loading completes ── */}
+    {!isLoadingReviews && (
+      <>
+        {/* ── Branch A — product has zero reviews at all ─────── */}
+        {totalReviews === 0 && (
+          <div className="flex flex-col items-center py-10 text-center">
+            <MessageSquare
+              size={36}
+              className="text-gray-300 mb-3"
+              strokeWidth={1.5}
+            />
+            <p className="text-sm font-bold text-gray-700">
+              No reviews yet
+            </p>
+            <p className="text-xs text-gray-400 mt-1">
+              Be the first to review this product
+            </p>
+          </div>
+        )}
+
+        {/* ── Branch B — product has reviews ─────────────────── */}
+        {totalReviews > 0 && (
+          <>
+            {/* Rating filter buttons — always visible when reviews exist */}
+            <div className="flex items-center gap-2 flex-wrap mb-5">
+              <button
+                onClick={() => handleRatingFilter(null)}
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold
+                            border transition
+                            ${ratingFilter === null
+                              ? "bg-primary text-white border-primary"
+                              : "border-gray-200 text-gray-600 hover:border-gray-400"
+                            }`}
+              >
+                All
+              </button>
+              {[5, 4, 3, 2, 1].map((star) => (
                 <button
-                  onClick={() => handleRatingFilter(null)}
+                  key={star}
+                  onClick={() => handleRatingFilter(star)}
                   className={`px-3 py-1.5 rounded-full text-xs font-semibold
                               border transition
-                              ${ratingFilter === null
+                              ${ratingFilter === star
                                 ? "bg-primary text-white border-primary"
                                 : "border-gray-200 text-gray-600 hover:border-gray-400"
                               }`}
                 >
-                  All
+                  ★{star}
                 </button>
-                {[5, 4, 3, 2, 1].map((star) => (
-                  <button
-                    key={star}
-                    onClick={() => handleRatingFilter(star)}
-                    className={`px-3 py-1.5 rounded-full text-xs font-semibold
-                                border transition
-                                ${ratingFilter === star
-                                  ? "bg-primary text-white border-primary"
-                                  : "border-gray-200 text-gray-600 hover:border-gray-400"
-                                }`}
-                  >
-                    ★{star}
-                  </button>
-                ))}
-              </div>
-            )}
+              ))}
+            </div>
 
-            {/* ── Loading state ──────────────────────────────────────── */}
-            {isLoadingReviews && (
-              <div className="space-y-4">
-                {[1, 2, 3].map((n) => (
-                  <div
-                    key={n}
-                    className="h-24 bg-gray-100 rounded-xl animate-pulse"
-                  />
-                ))}
-              </div>
-            )}
-
-            {/* ── Review list ────────────────────────────────────────── */}
-            {!isLoadingReviews && reviews.length > 0 && (
+            {/* Review list — current filter has results */}
+            {reviews.length > 0 && (
               <div className="space-y-4">
                 {reviews.map((review) => (
                   <ReviewCard
                     key={review.id}
                     review={review}
-                    onVote={(vote) =>
-                      handleVote(review.id, vote)
-                    }
+                    onVote={(vote) => handleVote(review.id, vote)}
                   />
                 ))}
               </div>
             )}
 
-            {/* ── Empty state ────────────────────────────────────────── */}
-            {!isLoadingReviews && reviews.length === 0 && (
+            {/* No results for active filter */}
+            {reviews.length === 0 && (
               <div className="flex flex-col items-center py-10 text-center">
                 <MessageSquare
                   size={36}
@@ -453,16 +470,16 @@ export default function ProductTabs({ product }) {
                   strokeWidth={1.5}
                 />
                 <p className="text-sm font-bold text-gray-700">
-                  No reviews yet
+                  No {ratingFilter}-star reviews
                 </p>
                 <p className="text-xs text-gray-400 mt-1">
-                  Be the first to review this product
+                  Try a different rating filter
                 </p>
               </div>
             )}
 
-           {/* ── Pagination ─────────────────────────────────────────────────── */}
-            {!isLoadingReviews && meta && meta.total_pages > 1 && (
+            {/* Pagination */}
+            {meta && meta.total_pages > 1 && (
               <Pagination
                 currentPage={meta.page}
                 totalPages={meta.total_pages}
@@ -471,10 +488,13 @@ export default function ProductTabs({ product }) {
                 onPageChange={handlePageChange}
               />
             )}
-
-          </div>
+          </>
         )}
+      </>
+    )}
 
+  </div>
+)}
         {/* ── Compatibility ────────────────────────────────────────────── */}
         {active === "compatibility" && (
           <div>
