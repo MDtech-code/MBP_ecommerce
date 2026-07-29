@@ -23,7 +23,7 @@ import { useSubmitReview } from "../api/useReviewMutations";
  * Slug and productId are not known upfront on the dashboard —
  * they are derived from the selected pending item when form opens.
  */
-export function useReviewDashboard() {
+export function useMyReviews() {
   // ── Active form state ─────────────────────────────────────────────────────
   // Tracks which pending item's form is open (by order_item_id)
   // null = no form open
