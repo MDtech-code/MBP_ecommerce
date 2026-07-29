@@ -174,6 +174,10 @@ AUTH_PASSWORD_VALIDATORS = [
 REST_FRAMEWORK = {
     #* Auto-generates OpenAPI schema (used by drf-spectacular for API docs)
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    #* only json render  
+    "DEFAULT_RENDERER_CLASSES": [
+        "rest_framework.renderers.JSONRenderer",
+    ],
    
     #* Require all requests to be from authenticated users by default
     'DEFAULT_PERMISSION_CLASSES': (

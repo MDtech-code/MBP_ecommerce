@@ -90,8 +90,11 @@ venv/Scripts/activate        # Windows
 # OR
 source venv/bin/activate     # Linux / Mac
 
-python manage.py runserver_plus --cert-file D:\MBP_ecommerce\backend\certs\localhost.crt --key-file D:\MBP_ecommerce\backend\certs\localhost-key.pem 0.0.0.0:8000
+## Backend Dev Server (local Windows)
+python manage.py runserver_plus --cert-file D:\MBP_ecommerce\certs\localhost.pem --key-file D:\MBP_ecommerce\certs\localhost-key.pem 0.0.0.0:8000
 
+## Backend Dev Server (Docker)
+python manage.py runserver_plus --cert-file /app/certs/localhost.pem --key-file /app/certs/localhost-key.pem 0.0.0.0:8000
 ```
 
 Runs on HTTPS locally.
