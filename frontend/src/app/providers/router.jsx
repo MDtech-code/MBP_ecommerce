@@ -34,6 +34,8 @@ import { CheckoutAddressPage,
 // Pages — Orders
 import { OrderListPage }              from "@pages/order"
 import { OrderDetailPage }            from "@pages/order"
+// Pages - reviews
+import { ReviewsPage } from "@pages/Reviews";
 // Pages — Dashboard 
 import { ProfilePage }                from "@pages/profile"
 import { SecurityPage,
@@ -117,6 +119,9 @@ export const router = createBrowserRouter([
               // ── Orders ─────────────────────────────────────────
               { path: "/orders",              element: <OrderListPage /> },
               { path: "/orders/:orderNumber", element: <OrderDetailPage /> },
+
+              // ── Reviews ────────────────────────────────────────────────────
+              { path: "/reviews", element: <ReviewsPage /> },
               // ── Security hub ────────────────────────────────
               { path: "/security",                        element: <SecurityPage /> },
               { path: "/security/verify",                 element: <SecurityVerificationGatePage /> },

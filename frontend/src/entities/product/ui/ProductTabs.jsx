@@ -4,7 +4,7 @@ import { useState } from "react";
 import { MessageSquare, Wrench, ThumbsUp, ThumbsDown, CheckCircle } from "lucide-react";
 import { useAuthStore } from "@entities/user";
 import { useProductReviews } from "@features/reviews/model/useProductReviews";
-import Pagination from "@shared/ui/Pagination";
+import {Pagination} from "@shared/ui/Pagination";
 
 /**
  * ProductTabs
