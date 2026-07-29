@@ -36,6 +36,8 @@ import { OrderListPage }              from "@pages/order"
 import { OrderDetailPage }            from "@pages/order"
 // Pages - reviews
 import { ReviewsPage } from "@pages/Reviews";
+
+import { WishlistPage } from "@pages/wishlist";
 // Pages — Dashboard 
 import { ProfilePage }                from "@pages/profile"
 import { SecurityPage,
@@ -122,6 +124,8 @@ export const router = createBrowserRouter([
 
               // ── Reviews ────────────────────────────────────────────────────
               { path: "/reviews", element: <ReviewsPage /> },
+              // ── Wishlist ────────────────────────────────────────────────────
+              { path: "/wishlist", element: <WishlistPage /> },
               // ── Security hub ────────────────────────────────
               { path: "/security",                        element: <SecurityPage /> },
               { path: "/security/verify",                 element: <SecurityVerificationGatePage /> },

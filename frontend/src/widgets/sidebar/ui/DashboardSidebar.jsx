@@ -1,11 +1,12 @@
 import { NavLink } from "react-router-dom";
-import { User, Shield, Key, Package,MessagesSquare } from "lucide-react";
+import { User, Shield, Key, Package,MessagesSquare,Heart } from "lucide-react";
 
 export default function DashboardSidebar() {
   const navItems = [
     { path: "/profile", label: "My Profile",  icon: User    },
     { path: "/orders",  label: "My Orders",   icon: Package },
     { path: "/reviews", label: "My Reviews", icon:MessagesSquare},
+    { path: "/wishlist", label: "My Wishlist",      icon: Heart          },
     { path: "/security",label: "Security",    icon: Shield  },
     { path: "/security/change-password", label: "Change Password", icon: Key },
   ];
