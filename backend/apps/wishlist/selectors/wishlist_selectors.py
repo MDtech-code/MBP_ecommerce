@@ -44,6 +44,7 @@ def get_wishlist_items(user) -> QuerySet:
     return (
         WishlistItem.objects
         .select_related("product", "product__category")
+        .prefetch_related("product__images")
         .filter(user=user)
         .order_by("-created_at")
     )

@@ -19,30 +19,35 @@ from rest_framework import serializers
 from apps.core.mixins import TimestampFieldsMixin
 from apps.products.models import Product
 from apps.wishlist.models import WishlistItem
-
-
 class WishlistItemSerializer(TimestampFieldsMixin, serializers.ModelSerializer):
     """
     Output serializer for a single WishlistItem.
 
     Exposes product summary fields inline — the frontend needs
-    product name, price, and image to render the wishlist page
+    product name, price, image and slug to render the wishlist page
     without a second API call per item.
+
+    product_image:
+        Returns absolute URL of primary product image.
+        Requires prefetch_related("product__images") on the QuerySet —
+        enforced by get_wishlist_items() selector.
+        Requires context={"request": request} from the view.
+        Returns None if no primary image exists.
     """
 
-    product_id    = serializers.IntegerField(
+    product_id       = serializers.IntegerField(
         source="product.id",
         read_only=True,
     )
-    product_name  = serializers.CharField(
+    product_name     = serializers.CharField(
         source="product.name",
         read_only=True,
     )
-    product_slug  = serializers.SlugField(
+    product_slug     = serializers.SlugField(
         source="product.slug",
         read_only=True,
     )
-    product_price = serializers.DecimalField(
+    product_price    = serializers.DecimalField(
         source="product.current_price",
         max_digits=10,
         decimal_places=2,
@@ -52,6 +57,26 @@ class WishlistItemSerializer(TimestampFieldsMixin, serializers.ModelSerializer):
         source="product.is_in_stock",
         read_only=True,
     )
+    product_image    = serializers.SerializerMethodField()
+
+    def get_product_image(self, obj) -> str | None:
+        """
+        Return absolute URL of the primary product image.
+
+        Filters prefetched images in Python — no extra DB query.
+        Falls back to None if no primary image or no request context.
+        """
+        request = self.context.get("request")
+        if not request:
+            return None
+        # Filter prefetched images in Python — avoids extra query
+        primary = next(
+            (img for img in obj.product.images.all() if img.is_primary),
+            None,
+        )
+        if primary:
+            return request.build_absolute_uri(primary.image.url)
+        return None
 
     class Meta:
         model  = WishlistItem
@@ -61,10 +86,56 @@ class WishlistItemSerializer(TimestampFieldsMixin, serializers.ModelSerializer):
             "product_name",
             "product_slug",
             "product_price",
+            "product_image",
             "product_in_stock",
             "created_at",
             "updated_at",
         ]
+
+# class WishlistItemSerializer(TimestampFieldsMixin, serializers.ModelSerializer):
+#     """
+#     Output serializer for a single WishlistItem.
+
+#     Exposes product summary fields inline — the frontend needs
+#     product name, price, and image to render the wishlist page
+#     without a second API call per item.
+#     """
+
+#     product_id    = serializers.IntegerField(
+#         source="product.id",
+#         read_only=True,
+#     )
+#     product_name  = serializers.CharField(
+#         source="product.name",
+#         read_only=True,
+#     )
+#     product_slug  = serializers.SlugField(
+#         source="product.slug",
+#         read_only=True,
+#     )
+#     product_price = serializers.DecimalField(
+#         source="product.current_price",
+#         max_digits=10,
+#         decimal_places=2,
+#         read_only=True,
+#     )
+#     product_in_stock = serializers.BooleanField(
+#         source="product.is_in_stock",
+#         read_only=True,
+#     )
+
+#     class Meta:
+#         model  = WishlistItem
+#         fields = [
+#             "id",
+#             "product_id",
+#             "product_name",
+#             "product_slug",
+#             "product_price",
+#             "product_in_stock",
+#             "created_at",
+#             "updated_at",
+#         ]
 
 
 class WishlistAddSerializer(serializers.Serializer):
