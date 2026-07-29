@@ -89,35 +89,30 @@ class ReviewerSerializer(serializers.Serializer):
             return full_name.strip().split()[0]
         email = getattr(obj, "email", "")
         return email.split("@")[0] if email else "Customer"
-
-
 class ReviewListSerializer(TimestampFieldsMixin, serializers.ModelSerializer):
     """
     Output — single approved review on the public product page.
 
-    helpful_count and not_helpful_count use Review properties.
-    These require prefetch_related("votes") on the QuerySet —
-    enforced by get_approved_reviews() selector.
+    Fields derived from model properties via SerializerMethodField:
+        helpful_count        — count of HELPFUL votes on this review.
+        not_helpful_count    — count of NOT_HELPFUL votes on this review.
+        is_verified_purchase — True when order_item_id is not null.
 
-    is_verified_purchase uses the Review.is_verified_purchase property.
-    True when order_item_id is not null — no extra query needed.
+    N+1 warning:
+        helpful_count and not_helpful_count call Review properties which
+        hit the DB if votes are not prefetched. The selector
+        get_approved_reviews() always prefetches votes — views must
+        always use that selector, never raw Review.objects.filter().
 
-    reviewer shows only first name for privacy.
+    Privacy:
+        reviewer shows only first name via ReviewerSerializer.
+        Full email and PII never exposed on public endpoints.
     """
 
-    reviewer         = ReviewerSerializer(source="user", read_only=True)
-    helpful_count    = serializers.IntegerField(
-        source="helpful_count",
-        read_only=True,
-    )
-    not_helpful_count = serializers.IntegerField(
-        source="not_helpful_count",
-        read_only=True,
-    )
-    is_verified_purchase = serializers.BooleanField(
-        source="is_verified_purchase",
-        read_only=True,
-    )
+    reviewer             = ReviewerSerializer(source="user", read_only=True)
+    helpful_count        = serializers.SerializerMethodField()
+    not_helpful_count    = serializers.SerializerMethodField()
+    is_verified_purchase = serializers.SerializerMethodField()
 
     class Meta:
         model  = Review
@@ -133,6 +128,70 @@ class ReviewListSerializer(TimestampFieldsMixin, serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+
+    def get_is_verified_purchase(self, obj: Review) -> bool:
+        """
+        True when review is linked to a real delivered OrderItem.
+        Shown as Verified Purchase badge on the product page.
+        No extra query — order_item_id is loaded with the Review instance.
+        """
+        return obj.is_verified_purchase
+
+    def get_helpful_count(self, obj: Review) -> int:
+        """
+        Count of HELPFUL votes on this review.
+        Requires prefetch_related('votes') on the QuerySet to avoid N+1.
+        Enforced by get_approved_reviews() selector.
+        """
+        return obj.helpful_count
+
+    def get_not_helpful_count(self, obj: Review) -> int:
+        """
+        Count of NOT_HELPFUL votes on this review.
+        Requires prefetch_related('votes') on the QuerySet to avoid N+1.
+        Enforced by get_approved_reviews() selector.
+        """
+        return obj.not_helpful_count
+
+# class ReviewListSerializer(TimestampFieldsMixin, serializers.ModelSerializer):
+#     """
+#     Output — single approved review on the public product page.
+
+#     helpful_count and not_helpful_count use Review properties.
+#     These require prefetch_related("votes") on the QuerySet —
+#     enforced by get_approved_reviews() selector.
+
+#     is_verified_purchase uses the Review.is_verified_purchase property.
+#     True when order_item_id is not null — no extra query needed.
+
+#     reviewer shows only first name for privacy.
+#     """
+
+#     reviewer         = ReviewerSerializer(source="user", read_only=True)
+#     helpful_count    = serializers.SerializerMethodField()
+#     not_helpful_count = serializers.SerializerMethodField()
+#     is_verified_purchase = serializers.SerializerMethodField()
+
+#     class Meta:
+#         model  = Review
+#         fields = [
+#             "id",
+#             "reviewer",
+#             "rating",
+#             "title",
+#             "body",
+#             "is_verified_purchase",
+#             "helpful_count",
+#             "not_helpful_count",
+#             "created_at",
+#             "updated_at",
+#         ]
+#     def get_is_verified_purchase(self,obj):
+#         return obj.is_verified_purchase
+#     def get_helpful_count(self,obj):
+#         return obj.helpful_count
+#     def get_not_helpful_count(self,obj):
+#         return obj.not_helpful_count
 
 
 class EligibleItemSerializer(serializers.Serializer):

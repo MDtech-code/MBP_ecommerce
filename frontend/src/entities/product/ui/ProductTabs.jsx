@@ -50,6 +50,8 @@ export default function ProductTabs({ product }) {
     submitSuccess,
     isSubmitting,
     submitNonFieldError,
+    handleVote,
+    
   } = useProductReviews({
     slug: product?.slug,
     productId: product?.id,

@@ -24,7 +24,7 @@ urlpatterns = [
     path("<slug:slug>/", ProductDetailAPIView.as_view(), name="product-detail"),
 
     # ─── Product review ────────────────────────────────── 
-    path("products/<slug:slug>/reviews/", ProductReviewListAPIView.as_view())
+    path("<slug:slug>/reviews/", ProductReviewListAPIView.as_view())
 
    
 ]
