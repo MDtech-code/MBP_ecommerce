@@ -7,7 +7,7 @@ from django.contrib.auth.password_validation import validate_password as django_
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import UploadedFile
 from django.utils.translation import gettext_lazy as _
-from apps.core.exceptions import DomainError
+
 
 from apps.core.error_codes import ErrorCode
 
@@ -40,37 +40,7 @@ def validate_email_format(email: str) -> str:
         )
     
     return email
-def ensure_email_unique(email: str, exclude_user_id: int | None = None) -> str:
-    """
-    Validate that email is unique across the system.
 
-    Normalizes to lowercase before checking.
-    Pass ``exclude_user_id`` when validating during profile update
-    to avoid false positives on the existing user's own email.
-
-    Args:
-        email: Raw email string from input.
-        exclude_user_id: Optional user PK to exclude from uniqueness check.
-
-    Returns:
-        Normalized (lowercase, stripped) email string.
-
-    Raises:
-        ValidationError: If email is already registered.
-    """
-    from .models import User
-
-    email = email.lower().strip()
-    qs = User.objects.filter(email=email)
-    if exclude_user_id:
-        qs = qs.exclude(id=exclude_user_id)
-    if qs.exists():
-        raise DomainError(
-            "An account with this email already exists. ",
-            code=ErrorCode.EMAIL_ALREADY_EXISTS,
-            status_code=409,
-        )
-    return email
 
 
 def validate_full_name(value: str) -> str:

@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import logging
+from django.db import IntegrityError, transaction
 from apps.accounts.models import EmailVerificationToken, User,UserProfile
 from apps.accounts.tasks import send_verification_email_task
+from apps.accounts.selectors.user_selectors import email_exists
 from apps.cart.models import Cart
-from django.db import IntegrityError, transaction
-from apps.accounts.validators import ensure_email_unique
 from apps.core.error_codes import ErrorCode
 from apps.core.exceptions import DomainError
+
 
 logger = logging.getLogger("apps.accounts")
 
@@ -62,7 +63,13 @@ def register_user(
 
             #! Step 1: Create User
             try:
-                ensure_email_unique(email)
+                if email_exists(email):
+                    raise DomainError(
+                    "An account with this email already exists.",
+                    code=ErrorCode.EMAIL_ALREADY_EXISTS,
+                    status_code=409,
+                )
+                
                 user = User.objects.create_user(
                     email=email,
                     full_name=full_name,
