@@ -1,27 +1,36 @@
 """
 apps/core/api/views.py
-──────────────────────
-
-
+─────────────────────────
 All views in the project must inherit from BaseAPIView.
-Never use APIView or GenericAPIView directly to stay consistance accross backend 
+Never use APIView or GenericAPIView directly — that is what keeps every
+endpoint's response shape consistent.
+
+This file imports only public names from apps.core.api.exceptions
+(build_envelope_from_exception, _format_drf_errors is intentionally not
+imported here beyond the cases below — see each helper's docstring for
+why). No underscore-prefixed name from that module is imported here.
+Reaching into that module's internals would recreate the exact coupling
+this refactor removed; if a helper here needs something that module does
+not expose publicly, the fix is to expose it, not to import the private
+name.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 from rest_framework import status
 from rest_framework.generics import GenericAPIView
 from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
 
-from apps.core.exceptions import DomainError
-from .exceptions import (
-    _format_drf_errors,
-    _non_fields_domain,
-    _status_to_error_code,
-
+from apps.core.exceptions import (
+    AuthenticationRequiredError,
+    BaseAppError,
+    NotFoundError,
+    PermissionDeniedError,
 )
+from .exceptions import build_envelope_from_exception, _format_drf_errors
 from .mixins import APIResponseMixin
 
 
@@ -29,40 +38,27 @@ class BaseAPIView(APIResponseMixin, GenericAPIView):
     """
     Base API view for all endpoints.
 
-    Provides
-    ────────
-    - Standardized response helpers: success_response, created_response,
-      error_response, domain_error_response, not_found_response,
-      unauthorized_response, forbidden_response.
-    - Automatic request_id injection into every response meta.
-    - Consistent errors envelope on every response — success or failure —
-      so the frontend never receives two different shapes for the same
-      semantic situation.
+    Provides standardized response helpers so every endpoint in the
+    project returns the same envelope shape, whether the response
+    represents success, a raised exception the global handler caught,
+    or a manually constructed error a view builds inline.
 
     Response helper decision guide
-    ──────────────────────────────
+    ─────────────────────────────────
     serializer.errors, bad raw input      → error_response()
-    DomainError caught manually in view   → domain_error_response()
+    A BaseAppError caught/built in a view → app_error_response()
     Resource does not exist               → not_found_response()
     Auth credentials missing              → unauthorized_response()
     Auth present but access denied        → forbidden_response()
 
-    Prefer raising over catching
-    ────────────────────────────
-    In most cases you should NOT catch DomainError or InfrastructureError
-    in views at all. Raise them in your service/domain layer and let
-    custom_exception_handler convert them to responses automatically.
-    Use domain_error_response() only when a view constructs a domain error
-    directly without a service layer in between (rare).
-
     Envelope consistency guarantee
-    ──────────────────────────────
-    Every helper — including not_found_response, unauthorized_response, and
-    forbidden_response — produces the same full errors envelope that the
-    global exception handler produces for the equivalent exception. The
-    frontend always receives:
-        { code, fields, non_fields: { category, message, code, extra } }
-    and never receives errors: null for these helpers.
+    ─────────────────────────────────
+    not_found_response(), unauthorized_response(), and forbidden_response()
+    each raise the equivalent BaseAppError subclass and return the same
+    envelope custom_exception_handler would produce for that exception —
+    both paths call build_envelope_from_exception() on the same instance,
+    so there is exactly one function in the codebase that knows how to
+    describe a BaseAppError, not two independently maintained ones.
     """
 
     permission_classes = [AllowAny]
@@ -75,8 +71,17 @@ class BaseAPIView(APIResponseMixin, GenericAPIView):
         data: Any = None,
         message: str = "Request successful",
         status_code: int = status.HTTP_200_OK,
-        meta: Optional[Dict[str, Any]] = None,
-    ):
+        meta: dict[str, Any] | None = None,
+    ) -> Response:
+        """
+        Return a standardized success response.
+
+        Args:
+            data: The response payload.
+            message: Human-readable summary.
+            status_code: HTTP status, expected to be 2xx.
+            meta: Additional metadata (pagination, etc).
+        """
         return self.build_response(
             data=data,
             message=message,
@@ -89,8 +94,9 @@ class BaseAPIView(APIResponseMixin, GenericAPIView):
         *,
         data: Any = None,
         message: str = "Resource created successfully",
-        meta: Optional[Dict[str, Any]] = None,
-    ):
+        meta: dict[str, Any] | None = None,
+    ) -> Response:
+        """Return a standardized 201 Created response."""
         return self.build_response(
             data=data,
             message=message,
@@ -106,27 +112,25 @@ class BaseAPIView(APIResponseMixin, GenericAPIView):
         message: str = "Request failed",
         errors: Any = None,
         status_code: int = status.HTTP_400_BAD_REQUEST,
-    ):
+    ) -> Response:
         """
-        Return a standardized error response for DRF / serializer errors.
+        Return a standardized error response for raw DRF-shaped errors.
 
-        Automatically formats errors into the {code, fields, non_fields}
-        envelope via _format_drf_errors(). Callers pass serializer.errors,
-        a plain string, or any dict — formatting is handled here, never
-        in the view.
+        Use this specifically for serializer.errors, plain strings, or
+        raw DRF error dicts — anything that is not already a BaseAppError
+        instance. This is why it still uses _format_drf_errors rather
+        than build_envelope_from_exception: there is no exception
+        instance here to ask for its own envelope, only raw data DRF
+        produced, which is exactly the case _format_drf_errors exists for.
 
-        Use for:
-            - serializer.errors  (field-level validation failures)
-            - Plain string error messages
-            - Raw DRF error dicts
-
-        Do NOT use for domain errors — use domain_error_response() so the
-        frontend receives category="domain" instead of category="validation".
+        For a BaseAppError instance, use app_error_response() instead, so
+        the response is built the same way the global handler would build
+        it for the same exception, rather than reformatted here.
 
         Args:
-            message:     Human-readable error summary.
-            errors:      Raw errors — serializer.errors, string, or dict.
-            status_code: HTTP status code (default 400).
+            message: Human-readable error summary.
+            errors: serializer.errors, a plain string, or a raw dict.
+            status_code: HTTP status code.
         """
         return self.build_response(
             message=message,
@@ -134,29 +138,32 @@ class BaseAPIView(APIResponseMixin, GenericAPIView):
             status_code=status_code,
         )
 
-    def domain_error_response(self, *, exc: DomainError):
+    def app_error_response(self, *, exc: BaseAppError) -> Response:
         """
-        Return a standardized error response from a DomainError instance.
+        Return a standardized error response built from a BaseAppError
+        instance the view constructed or caught directly.
 
-        Produces the identical envelope that custom_exception_handler produces
-        for an uncaught DomainError — category="domain", correct status code,
-        client_extra forwarded, internal excluded.
+        Delegates entirely to build_envelope_from_exception(exc) — the
+        same function custom_exception_handler calls for an uncaught
+        exception of the same type. This is what guarantees "raise the
+        exception" and "call this helper with the same exception" produce
+        byte-identical output: both paths call the identical function.
 
         When to use this
-        ────────────────
-        Only when a view constructs and handles a DomainError itself, without
-        a service layer in between. In all other cases, raise DomainError in
-        your service layer and let the global handler catch it. Do not catch
-        and re-wrap what the handler would already handle correctly.
+        ────────────────────
+        Only when a view needs to return immediately rather than raise
+        (e.g. inside a loop where control flow needs to continue after
+        returning). In every other case, prefer raising the BaseAppError
+        subclass directly and letting the global handler process it —
+        that keeps error handling out of the view's control flow entirely.
 
         Args:
-            exc: The DomainError instance to convert to a response.
+            exc: The BaseAppError instance (any subclass) to convert.
 
-        Example::
-
+        Example:
             def post(self, request):
                 if not request.user.has_active_subscription():
-                    return self.domain_error_response(
+                    return self.app_error_response(
                         exc=DomainError(
                             "An active subscription is required.",
                             code="subscription_required",
@@ -165,75 +172,70 @@ class BaseAPIView(APIResponseMixin, GenericAPIView):
         """
         return self.build_response(
             message=exc.message,
-            errors={
-                "code":       _status_to_error_code(exc.status_code),
-                "fields":     None,
-                "non_fields": _non_fields_domain(exc),
-            },
+            errors=build_envelope_from_exception(exc),
             status_code=exc.status_code,
         )
 
-    def not_found_response(self, *, message: str = "Resource not found"):
+    def not_found_response(
+        self, *, message: str = "The requested resource was not found."
+    ) -> Response:
         """
-        Return a 404 response with a full structured errors envelope.
+        Return a 404 response with the standard errors envelope.
 
-        Produces the same shape as the global handler for a 404 exception:
-            errors.code             = "not_found"
-            errors.non_fields.category = "validation"
-            errors.non_fields.message  = message
-        """
-        return self.build_response(
-            message=message,
-            errors=_format_drf_errors(message, status.HTTP_404_NOT_FOUND),
-            status_code=status.HTTP_404_NOT_FOUND,
-        )
+        Builds a NotFoundError and hands it to app_error_response(), so
+        the output is identical to what would be produced by raising
+        NotFoundError(message) and letting the global handler catch it.
 
-    def unauthorized_response(self, *, message: str = "Authentication required"):
+        Args:
+            message: Human-readable explanation of what was not found.
         """
-        Return a 401 response with a full structured errors envelope.
+        return self.app_error_response(exc=NotFoundError(message))
 
-        Produces the same shape as the global handler for a 401 exception:
-            errors.code             = "authentication_error"
-            errors.non_fields.category = "validation"
-            errors.non_fields.message  = message
+    def unauthorized_response(
+        self, *, message: str = "Authentication required."
+    ) -> Response:
         """
-        return self.build_response(
-            message=message,
-            errors=_format_drf_errors(message, status.HTTP_401_UNAUTHORIZED),
-            status_code=status.HTTP_401_UNAUTHORIZED,
-        )
+        Return a 401 response with the standard errors envelope.
+
+        Builds an AuthenticationRequiredError and hands it to
+        app_error_response(), for the same equivalence guarantee as
+        not_found_response().
+
+        Args:
+            message: Human-readable explanation of the missing credentials.
+        """
+        return self.app_error_response(exc=AuthenticationRequiredError(message))
 
     def forbidden_response(
         self,
         *,
-        message: str = "You do not have permission to perform this action",
-    ):
+        message: str = "You do not have permission to perform this action.",
+    ) -> Response:
         """
-        Return a 403 response with a full structured errors envelope.
+        Return a 403 response with the standard errors envelope.
 
-        Produces the same shape as the global handler for a 403 exception:
-            errors.code             = "permission_error"
-            errors.non_fields.category = "validation"
-            errors.non_fields.message  = message
+        Builds a PermissionDeniedError and hands it to app_error_response(),
+        for the same equivalence guarantee as not_found_response().
+
+        Args:
+            message: Human-readable explanation of the denied access.
         """
-        return self.build_response(
-            message=message,
-            errors=_format_drf_errors(message, status.HTTP_403_FORBIDDEN),
-            status_code=status.HTTP_403_FORBIDDEN,
-        )
+        return self.app_error_response(exc=PermissionDeniedError(message))
 
     # ── Payload hook ──────────────────────────────────────────────────────────
 
-    def transform_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def transform_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         """
-        Inject request_id into every response meta automatically.
+        Inject request_id into every response's meta automatically.
 
-        Overrides APIResponseMixin.transform_payload().
-        Called by build_response() on every response before it is sent.
+        Overrides APIResponseMixin.transform_payload(), called by
+        build_response() on every response before it is sent. If the
+        request has no id attribute (e.g. RequestIDMiddleware is not
+        active, such as in a test), this is a silent no-op — meta is
+        left as whatever the caller passed, or None.
 
-        If the request has no id attribute (e.g. in tests running without
-        RequestIDMiddleware) this is a silent no-op — meta stays whatever
-        the caller passed, or None if nothing was passed.
+        Args:
+            payload: The assembled envelope dict, before being sent.
         """
         request_id = getattr(self.request, "id", None)
         if request_id:
