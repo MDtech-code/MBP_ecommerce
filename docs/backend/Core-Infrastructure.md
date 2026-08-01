@@ -84,9 +84,9 @@ returns the identical envelope shape regardless of success or failure.
 
 ### Domain Apps
 
-    apps.accounts       — Auth, JWT, profiles, addresses              (COMPLETE)
-    apps.products       — Catalog, variants, attributes, bike compat  (PARTIAL)
-    apps.cart           — Cart and cart items                         (PARTIAL)
+    apps.accounts       — Auth, JWT, profiles, addresses              
+    apps.products       — Catalog, variants, attributes, bike compat  
+    apps.cart           — Cart and cart items                         
     apps.coupons        — Coupon engine
     apps.orders         — Order creation, state machine, order items
     apps.payments       — Payment gateway integrations
@@ -118,7 +118,7 @@ Imports must only flow downward. Upper layers import lower layers, never reverse
     +---------------------------------------------+
     |  Layer 2: Models                             |  <- Schema, model methods
     +---------------------------------------------+
-    |  Layer 1: Core / Common                      |  <- Shared infra (this document)
+    |  Layer 1: Core / Common                      |  <- Shared infra 
     +---------------------------------------------+
 
 Rules:
@@ -129,7 +129,6 @@ Rules:
     - The global exception handler converts all exceptions to HTTP responses
 
 ---
-
 ## 5. API Response Envelope — The Contract
 
 CRITICAL: This envelope shape is returned by EVERY endpoint, success or failure,
@@ -223,10 +222,29 @@ without exception. The frontend relies on this. Never break this shape.
 
     Category    | When Used
     ------------|-------------------------------------------------------------------
-    validation  | DRF non_field_errors, auth failures, permission denied, not found
-    domain      | Business rule violation (raised as DomainError)
+    validation  | DRF non_field_errors and DRF-native exceptions the framework
+                | already recognizes (e.g. malformed serializer input DRF itself
+                | rejects before reaching a view's business logic)
+    domain      | Any BaseAppError subclass whose category is "domain" — this
+                | now includes not just generic business-rule violations raised
+                | as DomainError, but also NotFoundError (404),
+                | AuthenticationRequiredError (401), and PermissionDeniedError (403),
+                | since all three are DomainError subclasses. See Section 6 —
+                | this is a change from the previous version of this system, where
+                | not-found/unauthorized/forbidden responses were built by hand
+                | with category="validation". They are category="domain" now,
+                | because that is what the exception class they inherit from
+                | actually is.
     system      | Infrastructure failure (raised as InfrastructureError)
     unexpected  | Unhandled exception — always triggers monitor + ERROR log
+
+    IMPORTANT FOR FRONTEND: if any frontend logic currently branches on
+    non_fields.category === "validation" to detect a 404/401/403, that logic
+    must be updated to check non_fields.category === "domain" instead, or
+    better, branch on the top-level errors.code (not_found, authentication_error,
+    permission_error) which has not changed and remains the more stable contract
+    to switch on. errors.code is unaffected by this change — only non_fields.category
+    changed for these three specific response types.
 
 ### HTTP Status to errors.code Mapping
 
@@ -238,6 +256,7 @@ without exception. The frontend relies on this. Never break this shape.
     404         | not_found
     405         | method_not_allowed
     409         | conflict_error
+    422         | validation_error
     429         | rate_limit_exceeded
     500         | server_error
     503         | server_error
@@ -246,6 +265,12 @@ without exception. The frontend relies on this. Never break this shape.
     Rationale: validation_error means malformed data.
     409 means data was valid but current state refuses the operation.
     The frontend branches on the top-level code — conflating them breaks that.
+
+    NOTE: 422 was added to this mapping to support DomainError's widened
+    ALLOWED_STATUS_CODES (see Section 6). It maps to validation_error, same
+    as 400 — both represent "the request itself was invalid," 422 being the
+    more specific status some clients expect for semantically-invalid-but-
+    well-formed input.
 
 ### HTTP Status Default Messages (safe, shown to users)
 
@@ -257,6 +282,7 @@ without exception. The frontend relies on this. Never break this shape.
     404         | "The requested resource was not found."
     405         | "Method not allowed."
     409         | "This action conflicts with the current state of the resource."
+    422         | "Invalid request data."
     429         | "Too many requests. Please slow down."
     500         | "An unexpected error occurred. Please try again later."
     503         | "The service is temporarily unavailable. Please try again shortly."
@@ -297,24 +323,59 @@ File: apps/core/exceptions.py
 
 CRITICAL RULE: This file has ZERO imports from Django HTTP, DRF, or
 apps.core.api. It is safe to import from any layer including Celery tasks
-and management commands.
+and management commands. This file is the single source of truth for
+what every exception IS — its status code, its category, its default
+machine-readable code, and whether it notifies monitoring by default.
+No file outside this one needs to know the difference between exception
+types to handle them correctly; every exception describes itself.
 
     BaseAppError(Exception)
-    ├── DomainError          → Business rule violations → 400 or 409
-    └── InfrastructureError  → Infrastructure failures  → 503 always
+    ├── DomainError                    → Business rule violations → 400/401/403/404/409/422
+    │   ├── NotFoundError              → 404, category="domain"
+    │   ├── AuthenticationRequiredError → 401, category="domain"
+    │   └── PermissionDeniedError      → 403, category="domain"
+    └── InfrastructureError            → Infrastructure failures  → 503 always
 
 ### BaseAppError
 
-Never raise directly. Exists for catch-all handlers.
+Never raise directly. Exists as the shared root every other exception
+inherits from, and as the type custom_exception_handler checks for via
+a single isinstance(exc, BaseAppError) branch — this is what lets new
+exception subclasses work end-to-end without any change to the handler.
 
     BaseAppError(
         message: str,                         # human-readable, safe to show users
         *,
-        code: str,                            # machine-readable slug
+        code:         str | None = None,      # machine-readable slug; falls back
+                                               # to the subclass's default_code
         client_extra: dict | None = None,     # forwarded to client response
         internal:     dict | None = None,     # NEVER forwarded to client, logs only
+        notify:       bool | None = None,     # overrides the subclass's
+                                               # default_notify for this instance
     )
-    .status_code = 0  (sentinel, overridden by subclasses)
+
+Class-level attributes every subclass declares (rather than repeating
+logic in __init__):
+
+    .status_code     = 500        # overridden per subclass
+    .category        = "unexpected"  # overridden per subclass; used by the
+                                      # handler for logging/response shaping
+    .default_code    = "app_error"   # overridden per subclass
+    .default_notify  = False         # overridden per subclass
+
+Method every subclass inherits and should not need to override:
+
+    .to_envelope() -> dict
+        Returns {"category": ..., "message": ..., "code": ..., "extra": ...}.
+        This is the ONLY function in the entire codebase that decides how
+        a BaseAppError is described to a client. It deliberately excludes
+        internal — that exclusion happening here, once, in the base class,
+        is what makes "internal never reaches a response" a structural
+        guarantee instead of something every call site has to remember.
+        Both custom_exception_handler and BaseAPIView.app_error_response()
+        call this same method on the same instance, which is what
+        guarantees "raise this exception" and "manually build a response
+        from this exception" always produce identical output.
 
 ### DomainError
 
@@ -325,15 +386,38 @@ Not a malformed request — the data was fine but business rules refuse the oper
         message: str,
         *,
         code: str = "domain_error",
-        status_code: int = 400,     # MUST be 400 or 409 ONLY — raises ValueError otherwise
+        status_code: int = 400,     # MUST be one of ALLOWED_STATUS_CODES
+                                     # — raises ValueError otherwise, at
+                                     # construction time (fail-fast)
         client_extra: dict | None = None,
         internal:     dict | None = None,
     )
-    ALLOWED_STATUS_CODES = frozenset({400, 409})
+    ALLOWED_STATUS_CODES = {400, 401, 403, 404, 409, 422}
 
-When to use 400 vs 409:
+    NOTE: This set was widened from the previous {400, 409} to support
+    the named subclasses below (NotFoundError=404, AuthenticationRequiredError=401,
+    PermissionDeniedError=403) plus 422 for semantic-validation use cases,
+    without removing the fail-fast validation guard itself — an out-of-range
+    status_code still raises ValueError immediately, naming the valid options.
+
+    .category       = "domain"
+    .default_code   = "domain_error"
+    .default_notify = False   # DomainError never alerts monitoring by default —
+                              # it represents expected business logic, not a defect.
+
+status_code is set as an INSTANCE attribute in DomainError.__init__ (not
+a class attribute), because individual DomainError instances legitimately
+vary in status — 400 for one call site, 409 for another. This differs
+from InfrastructureError below, where status_code is a class attribute
+because every instance is always 503.
+
+When to use which status:
     400 — Generic domain rejection: "Cart is empty", "Coupon expired"
+    401 — No valid credentials on the request (or raise AuthenticationRequiredError)
+    403 — Valid credentials, insufficient access (or raise PermissionDeniedError)
+    404 — Resource does not exist (or raise NotFoundError)
     409 — State conflict: "Order already cancelled", "Email already exists"
+    422 — Semantically invalid but well-formed input, where 400 is too generic
 
 Examples:
 
@@ -359,10 +443,60 @@ Examples:
         internal={"coupon_id": 99, "used_by_user_id": 12},
     )
 
+### NotFoundError, AuthenticationRequiredError, PermissionDeniedError
+
+Named DomainError subclasses, added to replace the previous pattern where
+BaseAPIView.not_found_response() / unauthorized_response() / forbidden_response()
+hand-formatted a response with category="validation" using raw DRF-style
+formatting rather than a real exception instance. These three now exist as
+first-class exception types, each hardcoding its own status_code as a class
+attribute (no per-instance variation needed, same reasoning as InfrastructureError):
+
+    NotFoundError(
+        message: str = "The requested resource was not found.",
+        *,
+        code: str = "not_found",
+        client_extra: dict | None = None,
+        internal:     dict | None = None,
+    )
+    .status_code = 404, .category = "domain"
+
+    AuthenticationRequiredError(
+        message: str = "Authentication required.",
+        *,
+        code: str = "authentication_error",
+        client_extra: dict | None = None,
+        internal:     dict | None = None,
+    )
+    .status_code = 401, .category = "domain"
+
+    PermissionDeniedError(
+        message: str = "You do not have permission to perform this action.",
+        *,
+        code: str = "permission_error",
+        client_extra: dict | None = None,
+        internal:     dict | None = None,
+    )
+    .status_code = 403, .category = "domain"
+
+CONTRACT CHANGE FROM PREVIOUS VERSION: responses produced via
+BaseAPIView.not_found_response() / unauthorized_response() / forbidden_response()
+now have non_fields.category = "domain", not "validation". errors.code
+(not_found / authentication_error / permission_error) is unchanged. See
+Section 5's "non_fields — Four Categories" note above for the frontend
+implication.
+
+These can also be raised directly from a service layer, exactly like
+DomainError:
+
+    raise NotFoundError(f"Order {order_id} was not found.")
+    raise AuthenticationRequiredError()
+    raise PermissionDeniedError("You cannot cancel another user's order.")
+
 ### InfrastructureError
 
 Use when an external system or internal subsystem is temporarily unavailable.
-Always returns 503. Not configurable.
+Always returns 503. Not configurable per instance.
 
 IMPORTANT: Named InfrastructureError NOT SystemError to avoid shadowing
 Python's built-in SystemError, which the interpreter and C extensions raise
@@ -378,7 +512,13 @@ failures in third-party libraries that catch SystemError internally.
         client_extra: dict | None = None,
         internal:     dict | None = None,
     )
-    .status_code = 503  (class attribute, not overridable per instance)
+    .status_code     = 503  (class attribute, same for every instance)
+    .category        = "system"
+    .default_code    = "infrastructure_error"
+    .default_notify  = True   # infrastructure failures alert on-call by default;
+                              # pass notify=False at the call site for a
+                              # specific instance representing an already-
+                              # handled, expected outage
 
 Examples:
 
@@ -398,6 +538,23 @@ Examples:
         internal={"service": "rec-engine", "reason": "circuit_open"},
     )
 
+### Adding a New Exception Type
+
+Because every exception describes itself via class attributes and
+to_envelope(), adding a new type requires editing ONLY this file
+(apps/core/exceptions.py). No change is needed in
+apps/core/api/exceptions.py or apps/core/api/views.py for the new type
+to work end-to-end through the global handler and any view helper that
+raises it directly.
+
+    class RateLimitError(BaseAppError):
+        status_code     = 429
+        category        = "system"
+        default_code    = "rate_limit_exceeded"
+        default_notify  = False   # expected, not a defect — don't page on-call
+
+That is the entire change required.
+
 ---
 
 ## 7. Global Exception Handler
@@ -413,25 +570,41 @@ This guarantees exactly ONE log entry and ONE Sentry event per exception.
 SECURITY INVARIANT:
 exc.internal is NEVER passed to any builder function and NEVER appears in
 any response. It is only written to the logger inside custom_exception_handler.
+This invariant is now enforced structurally by BaseAppError.to_envelope()
+itself (see Section 6) rather than repeated by hand in every branch of
+this handler.
+
+PUBLIC INTERFACE OF THIS MODULE:
+Only three names are meant to be imported by other modules:
+
+    custom_exception_handler        — DRF EXCEPTION_HANDLER entry point
+    register_monitor                — monitoring backend injection point
+    build_envelope_from_exception   — shared envelope builder for any
+                                       BaseAppError, used by both this
+                                       handler and BaseAPIView, so the two
+                                       cannot produce different shapes
+                                       for the same exception
+
+Every other name in this file is underscore-prefixed and private. Nothing
+outside this file should import an underscore-prefixed name from it.
 
 ### Decision Tree (evaluated in order)
 
     Exception raised
     │
-    ├── isinstance(exc, DomainError)?
-    │       status          = exc.status_code (400 or 409)
-    │       non_fields.category = "domain"
-    │       monitor alert   = NO
-    │       log             = WARNING, no traceback
-    │       exc.internal    = logged at DEBUG before builder called
-    │       response body   = _non_fields_domain(exc)
-    │
-    ├── isinstance(exc, InfrastructureError)?
-    │       status          = 503
-    │       non_fields.category = "system"
-    │       if notify=True  → _notify_monitors(exc) + ERROR log + exc_info=True
-    │       if notify=False → WARNING log, no traceback, no monitor
-    │       response body   = _non_fields_infrastructure(exc)
+    ├── isinstance(exc, BaseAppError)?
+    │       [single branch — covers DomainError, InfrastructureError,
+    │        NotFoundError, AuthenticationRequiredError, PermissionDeniedError,
+    │        and any future subclass, with no per-type branching needed]
+    │       status          = exc.status_code
+    │       non_fields.category = exc.category  (read from the instance,
+    │                              not hardcoded per exception type)
+    │       if exc.notify=True  → _notify_monitors(exc) + ERROR log + exc_info=True
+    │       if exc.notify=False → WARNING log, no traceback, no monitor
+    │       exc.internal        = logged (at ERROR if notify=True, DEBUG if
+    │                              notify=False) — never passed to a builder
+    │       response body       = build_envelope_from_exception(exc), which
+    │                              internally calls exc.to_envelope()
     │
     ├── DRF-recognised exception? (exception_handler returns non-None)
     │       status          = original DRF status code preserved
@@ -447,6 +620,14 @@ any response. It is only written to the logger inside custom_exception_handler.
             DEBUG=True      → raw exc message in response
             DEBUG=False     → safe generic message only (never leak internals)
 
+    NOTE: this handler previously had TWO separate branches — one for
+    isinstance(exc, DomainError), one for isinstance(exc, InfrastructureError)
+    — each with hand-written logging logic. They have been collapsed into
+    the single BaseAppError branch above, driven generically by exc.notify
+    and exc.category rather than by which class exc happens to be. Output
+    shape for existing DomainError and InfrastructureError instances is
+    unchanged; only the code path producing that output changed.
+
 ### Monitor Registry
 
     from apps.core.api.exceptions import register_monitor
@@ -455,44 +636,66 @@ any response. It is only written to the logger inside custom_exception_handler.
     register_monitor(lambda exc: capture_exception(exc))
 
     Monitors ARE called for:
-        - InfrastructureError where notify=True
+        - Any BaseAppError instance where exc.notify is True
+          (InfrastructureError defaults to notify=True; DomainError and its
+          subclasses default to notify=False, but any instance can override
+          this via the notify kwarg)
         - DRF 5xx responses
         - Unhandled exceptions
 
     Monitors are NOT called for:
-        - DomainError (expected business logic)
+        - Any BaseAppError instance where exc.notify is False
+          (DomainError and subclasses by default — expected business logic)
         - DRF 4xx (client errors, not our defects)
-        - InfrastructureError where notify=False
 
-### Key Helper Functions (all pure — zero side effects, zero logging)
+### Key Functions
 
-    _format_drf_errors(data, status_code) -> dict
-        Normalizes DRF error data into the standard errors envelope.
-        Called by:
-            - custom_exception_handler for DRF exceptions
-            - BaseAPIView.error_response() for manual responses
-            - BaseAPIView.not_found_response(), unauthorized_response(), forbidden_response()
+    build_envelope_from_exception(exc: BaseAppError) -> dict   [PUBLIC]
+        Returns {"code": ..., "fields": None, "non_fields": exc.to_envelope()}.
+        This is the single function that turns ANY BaseAppError instance
+        into a full errors envelope. Called by custom_exception_handler for
+        every BaseAppError branch, and by BaseAPIView.app_error_response()
+        for the same purpose — both call sites are guaranteed to produce
+        identical output because they call this same function on the same
+        instance.
+
+    _format_drf_errors(data, status_code) -> dict   [private]
+        Normalizes DRF-native error data into the standard errors envelope.
+        Only used for exceptions DRF's own exception_handler already
+        recognized and formatted, or for raw string/dict input a view
+        helper wants formatted the same way. BaseAppError instances never
+        reach this function.
         Handles three DRF shapes:
             dict  → {"email": [ErrorDetail], "non_field_errors": [...]}
             list  → [ErrorDetail("Authentication credentials not provided.")]
             str   → "Not found."
 
-    _status_to_error_code(status_code) -> str
-        Maps HTTP status to top-level errors.code string.
-        409 maps to conflict_error, not validation_error.
+    _status_to_error_code(status_code) -> str   [private]
+        Maps HTTP status to top-level errors.code string. This is a
+        fallback source of truth for the coarse top-level classification
+        only — the richer per-exception detail (category, message,
+        specific code) always comes from exc.to_envelope() directly for
+        any BaseAppError. 409 maps to conflict_error, not validation_error;
+        422 maps to validation_error, same as 400.
 
-    _status_to_message(status_code) -> str
+    _status_to_message(status_code) -> str   [private]
         Maps HTTP status to safe default human message.
 
-    _non_fields_domain(exc: DomainError) -> dict
-        Builds domain non_fields block. Pure. No logging.
+    _non_fields_validation(detail) -> dict   [private]
+        Builds a "validation" non_fields block from a single DRF error
+        value (ErrorDetail or plain string). Used only for DRF-native
+        exceptions, not for BaseAppError instances.
 
-    _non_fields_infrastructure(exc: InfrastructureError) -> dict
-        Builds system non_fields block. Pure. No logging.
-
-    _non_fields_unexpected(exc, *, status_code) -> dict
+    _non_fields_unexpected(exc, *, status_code) -> dict   [private]
         Builds unexpected non_fields block. DEBUG shows raw message.
         Production always shows safe generic message.
+
+    REMOVED FROM THIS VERSION: _non_fields_domain and
+    _non_fields_infrastructure no longer exist as separate functions.
+    Their responsibility is now covered generically by
+    BaseAppError.to_envelope() (Section 6) plus build_envelope_from_exception
+    above, since every BaseAppError subclass — regardless of which one —
+    describes itself the same way.
 
 ---
 
@@ -511,6 +714,12 @@ RULE: Every view in the project inherits from BaseAPIView.
 BaseAPIView inherits from: APIResponseMixin, GenericAPIView
 Default: permission_classes = [AllowAny]  — override per view for protected routes.
 
+This file imports ONLY the public interface of apps.core.api.exceptions
+(build_envelope_from_exception, plus _format_drf_errors retained
+specifically for raw DRF/string error input in error_response() — see
+that method's own note below for why). No underscore-prefixed internal
+of apps.core.api.exceptions is imported here.
+
 ### Response Helper Decision Guide
 
     Situation                              | Helper to Use
@@ -518,15 +727,33 @@ Default: permission_classes = [AllowAny]  — override per view for protected ro
     Successful GET, list, or action        | self.success_response(...)
     Resource just created (POST)           | self.created_response(...)
     Serializer field errors                | self.error_response(errors=serializer.errors)
-    DomainError caught directly in view    | self.domain_error_response(exc=exc)
+    Any BaseAppError caught directly in view | self.app_error_response(exc=exc)
     Resource does not exist                | self.not_found_response(...)
     No auth credentials                    | self.unauthorized_response(...)
-    Auth present but access denied         | self.forbidden_response(...)
+    Auth present but access denied          | self.forbidden_response(...)
 
-    PREFERRED PATTERN: Raise DomainError / InfrastructureError in the service
-    layer and let custom_exception_handler handle automatically.
-    Only use domain_error_response() when a view constructs a domain error
-    directly without a service layer in between (rare).
+    PREFERRED PATTERN: Raise DomainError / InfrastructureError / their
+    subclasses in the service layer and let custom_exception_handler
+    handle it automatically. Only use app_error_response() when a view
+    constructs or catches a BaseAppError directly without a service layer
+    in between (rare).
+
+### BREAKING CHANGE FROM PREVIOUS VERSION
+
+    domain_error_response(exc: DomainError) -> Response
+
+has been RENAMED to:
+
+    app_error_response(exc: BaseAppError) -> Response
+
+The new name reflects that it now accepts ANY BaseAppError subclass, not
+only DomainError — it works identically for InfrastructureError,
+NotFoundError, AuthenticationRequiredError, PermissionDeniedError, or any
+future subclass. Any existing call site using domain_error_response must
+be updated to app_error_response; the underlying behavior (produce the
+same envelope the global handler would produce for the same exception)
+is preserved, and is now a guarantee rather than a documented convention,
+because both paths call build_envelope_from_exception(exc) internally.
 
 ### Full Method Signatures
 
@@ -558,37 +785,55 @@ Default: permission_classes = [AllowAny]  — override per view for protected ro
         errors:      Any = None,    # serializer.errors, str, or dict
         status_code: int = 400,
     ) -> Response
-    # Internally calls _format_drf_errors(errors, status_code)
-    # Do NOT use for domain errors — use domain_error_response() instead
-    # so frontend receives category="domain" not category="validation"
+    # Internally calls _format_drf_errors(errors, status_code).
+    # Use this ONLY for raw DRF-shaped data (serializer.errors, plain
+    # strings, raw dicts) — never for a BaseAppError instance, since there
+    # is no exception object here to ask for its own envelope. This is
+    # exactly the case _format_drf_errors exists for.
+    # Do NOT use for domain errors — use app_error_response() instead
+    # so the frontend receives the exception's real category (e.g.
+    # "domain") rather than "validation".
 
-    def domain_error_response(
+    def app_error_response(
         self,
         *,
-        exc: DomainError,
+        exc: BaseAppError,     # any subclass — DomainError, InfrastructureError,
+                                # NotFoundError, AuthenticationRequiredError,
+                                # PermissionDeniedError, or any future subclass
     ) -> Response
-    # Produces category="domain", correct status, client_extra forwarded
+    # Delegates entirely to build_envelope_from_exception(exc) — the same
+    # function custom_exception_handler calls for an uncaught exception of
+    # the same type. Produces byte-identical output to raising exc and
+    # letting the global handler process it, for every subclass, not just
+    # DomainError as in the previous version.
 
     def not_found_response(
         self,
         *,
-        message: str = "Resource not found",
+        message: str = "The requested resource was not found.",
     ) -> Response
-    # Returns 404, errors.code="not_found", category="validation"
+    # Returns 404. Builds NotFoundError(message) internally and routes
+    # through app_error_response(). errors.code="not_found" (unchanged).
+    # non_fields.category="domain" (CHANGED from "validation" — see
+    # Section 5 and Section 6's NotFoundError note).
 
     def unauthorized_response(
         self,
         *,
-        message: str = "Authentication required",
+        message: str = "Authentication required.",
     ) -> Response
-    # Returns 401, errors.code="authentication_error", category="validation"
+    # Returns 401. Builds AuthenticationRequiredError(message) internally.
+    # errors.code="authentication_error" (unchanged).
+    # non_fields.category="domain" (CHANGED from "validation").
 
     def forbidden_response(
         self,
         *,
-        message: str = "You do not have permission to perform this action",
+        message: str = "You do not have permission to perform this action.",
     ) -> Response
-    # Returns 403, errors.code="permission_error", category="validation"
+    # Returns 403. Builds PermissionDeniedError(message) internally.
+    # errors.code="permission_error" (unchanged).
+    # non_fields.category="domain" (CHANGED from "validation").
 
 ### transform_payload() — Request ID Injection
 
@@ -606,6 +851,8 @@ Default: permission_classes = [AllowAny]  — override per view for protected ro
     request.id is set by RequestIDMiddleware.
     If middleware is absent (e.g. unit tests), this is a silent no-op.
 
+    NOTE: this method is unchanged from the previous version.
+
 ---
 
 ## 9. APIResponseMixin
@@ -613,6 +860,11 @@ Default: permission_classes = [AllowAny]  — override per view for protected ro
 File: apps/core/api/mixins.py
 
 BaseAPIView inherits from this. You do not use this directly.
+
+NOTE: This file is unchanged in behavior from the previous version — it
+was already fully decoupled from apps.core.exceptions in both directions,
+and remains so. Only its docstrings and type hints were modernized during
+the exception-handling refactor; no logic changed.
 
     class APIResponseMixin:
         MESSAGE_KEY: str = "message"
@@ -648,6 +900,12 @@ The build_response() method:
 File: apps/core/error_codes.py
 
     from apps.core.error_codes import ErrorCode
+
+NOTE: This file is UNCHANGED by the exception-handling refactor. It is a
+flat registry of string constants with no dependency on
+apps.core.exceptions or apps.core.api.exceptions in either direction —
+the refactor did not touch it, and no update to this section beyond this
+note is required. It remains accurate as originally documented.
 
 All machine-readable error codes live here.
 No string literals at raise sites — always use ErrorCode constants.
@@ -701,6 +959,71 @@ Changing a value string is a BREAKING CHANGE.
     ErrorCode.INVALID_IMAGE_SIZE           = "invalid_image_size"
     ErrorCode.INVALID_IMAGE_TYPE           = "invalid_image_type"
 
+    # ── Cart ──────────────────────────────────────────────────────────────────
+    ErrorCode.CART_EMPTY                   = "cart_empty"
+    ErrorCode.CART_QUANTITY_EXCEEDS_STOCK  = "cart_quantity_exceeds_stock"
+
+    # ── Coupons ───────────────────────────────────────────────────────────────
+    ErrorCode.COUPON_INVALID               = "coupon_invalid"
+    ErrorCode.COUPON_EXPIRED               = "coupon_expired"
+    ErrorCode.COUPON_ALREADY_USED          = "coupon_already_used"
+    ErrorCode.COUPON_LIMIT_REACHED         = "coupon_limit_reached"
+    ErrorCode.COUPON_NOT_APPLIED           = "coupon_not_applied"
+
+    # ── Orders ────────────────────────────────────────────────────────────────
+    ErrorCode.PRODUCT_UNAVAILABLE          = "product_unavailable"
+    ErrorCode.INSUFFICIENT_STOCK           = "insufficient_stock"
+    ErrorCode.PAYMENT_METHOD_UNAVAILABLE   = "payment_method_unavailable"
+    ErrorCode.ORDER_NOT_CANCELLABLE        = "order_not_cancellable"
+
+    # ── Logistics ─────────────────────────────────────────────────────────────
+    ErrorCode.ORDER_NOT_CONFIRMED          = "order_not_confirmed"
+    ErrorCode.SHIPMENT_ALREADY_EXISTS      = "shipment_already_exists"
+    ErrorCode.TRACKING_NUMBER_EXISTS       = "tracking_number_exists"
+    ErrorCode.INVALID_SHIPMENT_TRANSITION  = "invalid_shipment_transition"
+    ErrorCode.SHIPMENT_NOT_FOUND           = "shipment_not_found"
+    ErrorCode.COURIER_API_TIMEOUT          = "courier_api_timeout"
+    ErrorCode.ORDER_HAS_NO_SHIPMENT        = "order_has_no_shipment"
+
+    # ── Logistics / Settlement ──────────────────────────────────────────────────
+    ErrorCode.SETTLEMENT_ALREADY_EXISTS     = "settlement_exists"
+    ErrorCode.SETTLEMENT_ALREADY_RECONCILED = "settlement_already_reconciled"
+    ErrorCode.SHIPMENT_NOT_DELIVERED        = "shipment_not_delivered"
+    ErrorCode.SHIPMENT_ALREADY_SETTLED      = "shipment_already_settled"
+
+    # ── Logistics / courier ──────────────────────────────────────────────────
+    ErrorCode.COURIER_API_NOT_CONFIGURED = "courier_api_not_configured"
+    ErrorCode.COURIER_API_ERROR          = "courier_api_error"
+
+    # ── Reviews ─────────────────────────────────────────────────────────────────
+    # Owner: apps.reviews
+    ErrorCode.ORDER_NOT_DELIVERED    = "order_not_delivered"
+    ErrorCode.REVIEW_ALREADY_EXISTS  = "review_already_exists"
+    ErrorCode.CANNOT_VOTE_OWN_REVIEW = "cannot_vote_own_review"
+    ErrorCode.REVIEW_NOT_APPROVED    = "review_not_approved"
+
+    # ── Returns ───────────────────────────────────────────────────────────────
+    # Owner: apps.returns
+    ErrorCode.RETURN_WINDOW_EXPIRED  = "return_window_expired"
+    ErrorCode.RETURN_ALREADY_EXISTS  = "return_already_exists"
+    ErrorCode.PHOTOS_REQUIRED        = "photos_required"
+    ErrorCode.RETURN_NOT_APPROVED    = "return_not_approved"
+    ErrorCode.REFUND_EXCEEDS_ORIGINAL = "refund_exceeds_original"
+
+    # ── Payments ──────────────────────────────────────────────────────────────────
+    # Owner: apps.payments
+    ErrorCode.ORDER_NOT_PAYABLE              = "order_not_payable"
+    ErrorCode.INVALID_GATEWAY                = "invalid_gateway"
+    ErrorCode.PAYMENT_ALREADY_SUCCESS        = "payment_already_success"
+    ErrorCode.PAYMENT_GATEWAY_TIMEOUT        = "payment_gateway_timeout"
+    ErrorCode.PAYMENT_GATEWAY_ERROR          = "payment_gateway_error"
+    ErrorCode.PAYMENT_GATEWAY_NOT_CONFIGURED = "payment_gateway_not_configured"
+
+    # ── Wishlist ──────────────────────────────────────────────────────────────
+    # Owner: apps.wishlist
+    ErrorCode.WISHLIST_ITEM_ALREADY_EXISTS = "wishlist_item_already_exists"
+    ErrorCode.WISHLIST_ITEM_NOT_FOUND      = "wishlist_item_not_found"
+
     # ── Top-level Category Codes (go into errors.code not non_fields.code) ───
     # These describe WHAT KIND of error occurred, not the specific cause.
     ErrorCode.VALIDATION_ERROR             = "validation_error"
@@ -717,7 +1040,6 @@ When adding a new code:
     2. Add a comment indicating which app/domain owns it
     3. Never delete — deprecate with a comment instead
     4. Inform the frontend team — these are a public contract
-
 ---
 
 ## 11. Two-Level Cache System
