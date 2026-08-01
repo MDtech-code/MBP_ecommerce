@@ -12,7 +12,4 @@
 // ✅ Dynamic - works in all environments automatically
 export const DIRECT_API_ORIGIN = `${window.location.protocol}//${window.location.hostname}:8000`;
 
-// Result:
-// Local dev  → https://localhost:8000 ✅
-// Docker     → https://localhost:8000 ✅
-// Production → https://yourdomain.com ✅ (change port logic for prod)
+
