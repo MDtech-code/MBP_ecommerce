@@ -5,8 +5,8 @@ import logging
 from django.db import IntegrityError, transaction
 from apps.accounts.models import EmailVerificationToken, User,UserProfile
 from apps.accounts.tasks import send_verification_email_task
-from apps.accounts.selectors.user_selectors import email_exists
-from apps.cart.models import Cart
+from apps.accounts.selectors.user_selectors import email_exists,create_user_profile,create_verification_token
+from apps.cart.selectors.cart import create_cart_for_user
 from apps.core.error_codes import ErrorCode
 from apps.core.exceptions import DomainError
 
@@ -92,21 +92,21 @@ def register_user(
             )
 
             #! Step 2: Create UserProfile
-            UserProfile.objects.create(user=user)
+            create_user_profile(user)
             logger.info(
              "UserProfile created for new user",
              extra={"user_id": user.id, "email": user.email},
          )
 
             #! Step 3: Create Cart
-            Cart.objects.create(user=user)
+            create_cart_for_user(user)
             logger.info(
                 "Cart created",
                 extra={**log_context, "user_id": user.id},
             )
 
             #! Step 4: Create EmailVerificationToken
-            token_obj = EmailVerificationToken.objects.create(user=user)
+            token_obj =create_verification_token(user)
             logger.info(
                 "Verification token created",
                 extra={**log_context, "user_id": user.id},

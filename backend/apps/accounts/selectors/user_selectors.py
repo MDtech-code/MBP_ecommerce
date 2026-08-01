@@ -1,7 +1,7 @@
 # apps/accounts/selectors/user_selectors.py
 
 
-from apps.accounts.models import User
+from apps.accounts.models import User,UserProfile,EmailVerificationToken
 
 
 
@@ -18,3 +18,11 @@ def email_exists(email: str, exclude_user_id: int | None = None) -> bool:
     if exclude_user_id:
         qs = qs.exclude(id=exclude_user_id)
     return qs.exists()
+
+
+
+def create_user_profile(user) -> "UserProfile":
+    return UserProfile.objects.create(user=user)
+
+def create_verification_token(user) -> "EmailVerificationToken":
+    return EmailVerificationToken.objects.create(user=user)

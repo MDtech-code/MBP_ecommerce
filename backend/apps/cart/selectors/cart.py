@@ -89,3 +89,8 @@ def get_cart_for_user(user) -> Cart:
         Cart.DoesNotExist — caller handles as 500.
     """
     return Cart.objects.get(user=user)
+
+
+
+def create_cart_for_user(user) -> "Cart":
+    return Cart.objects.create(user=user)
