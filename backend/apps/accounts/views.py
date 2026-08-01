@@ -118,7 +118,7 @@ class RegisterView(BaseAPIView):
         409 — Email already exists (race condition).
     """
 
-    permission_classes = [AllowAny]
+    permission_classes = [IsNotAuthenticated]
     throttle_classes = [AnonRateThrottle]
     serializer_class = RegisterSerializer
 
