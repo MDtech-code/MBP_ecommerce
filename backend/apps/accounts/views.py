@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-
+import time
 from django.conf import settings
 from django.db import transaction
 from django.utils.translation import gettext_lazy as _
@@ -25,6 +25,7 @@ from apps.accounts.services.social_auth import login_or_register_social_user
 from apps.core.error_codes import ErrorCode
 from apps.core.api.views import BaseAPIView
 from apps.core.permissions import IsNotAuthenticated
+from apps.core.throttles import RegistrationRateThrottle
 
 from apps.accounts.utils.ip_utils import (
     get_client_ip,
@@ -119,11 +120,12 @@ class RegisterView(BaseAPIView):
     """
 
     permission_classes = [IsNotAuthenticated]
-    throttle_classes = [AnonRateThrottle]
+    throttle_classes = [RegistrationRateThrottle]
     serializer_class = RegisterSerializer
 
     def post(self, request: Request) -> Response:
         log_context = {"request_id": request.id}
+        start=time.monotonic()
 
         serializer = self.get_serializer(data=request.data)
 
@@ -138,7 +140,14 @@ class RegisterView(BaseAPIView):
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
-        user = register_user(**serializer.validated_data)
+        try:
+            user = register_user(**serializer.validated_data)
+        except DomainError as exc:
+            elapsed = time.monotonic() - start
+            min_response_time = 0.5  # 500ms minimum
+            if elapsed < min_response_time:
+                time.sleep(min_response_time - elapsed)
+            return self.app_error_response(exc=exc)
 
         logger.info(
             "New user registered successfully",
