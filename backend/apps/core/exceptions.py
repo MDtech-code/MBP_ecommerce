@@ -1,34 +1,20 @@
 """
 apps/core/exceptions.py
-───────────────────────
-Transport-agnostic exception hierarchy for the entire project.
+────────────────────────
+Domain-level exception hierarchy. Framework-agnostic by design.
 
-DEPENDENCY RULE
-───────────────
-This module has ZERO imports from apps.core.api, DRF, or Django HTTP.
-It is safe to import from any layer:
+This module must never import Django, DRF, or anything under apps.core.api.
+That constraint is what lets this file be copied into a non-Django project
+unchanged. Everything an HTTP layer needs to turn one of these exceptions
+into a response is available on the exception instance itself, via
+to_envelope() — no external file has to know the difference between a
+DomainError and an InfrastructureError to handle either one correctly.
 
-    Domain / Service layer  →  raises these
-    API layer               →  catches these, maps to HTTP responses
-    Celery tasks            →  catches these, decides whether to retry
-    Management commands     →  catches these, formats CLI output
-
-Layer import direction (must never be reversed):
-
-    core.exceptions  ←  core.api.exceptions
-    core.exceptions  ←  services.*
-    core.exceptions  ←  tasks.*
-
-Exception hierarchy
-───────────────────
-    BaseAppError
-    ├── DomainError          Business-rule / invariant violation (4xx)
-    └── InfrastructureError  Recoverable infrastructure failure (503)
-
-INTENT: BaseAppError is never raised directly — only its subclasses.
-It exists to give catch-all handlers a single type to catch and to
-guarantee that status_code is always accessible through the base type
-without AttributeError.
+Each exception carries enough self-description (status_code, category,
+default_code, notify) that a caller holding a bare BaseAppError reference
+can treat any subclass uniformly, without isinstance checks. New exception
+types are added here, and only here — nothing outside this file needs to
+change for a new subclass to work end-to-end.
 """
 
 from __future__ import annotations
@@ -36,108 +22,78 @@ from __future__ import annotations
 from typing import Any
 
 
-# ─── Base ─────────────────────────────────────────────────────────────────────
-
 class BaseAppError(Exception):
     """
-    Root for all application-defined exceptions.
+    Holds the fields every subclass needs regardless of category:
+    a human-readable message, a machine-readable code, an HTTP status,
+    optional data safe to expose to a client, and optional data .
 
-    Never raise this directly — raise DomainError or InfrastructureError.
-    It exists so catch-all handlers can do:
+    Class attributes act as defaults that subclasses override:
+        status_code   - HTTP status this exception maps to
+        category      - grouping label used by the HTTP layer for logging
+                         and response shaping ("domain", "system", etc.)
+        default_code  - machine-readable code used when the caller does
+                         not supply one explicitly
+        default_notify - whether this exception should alert monitoring
+                         (e.g. Sentry, PagerDuty) by default
 
-        except BaseAppError as exc:
-            log(exc.status_code)   # always safe — never AttributeError
-
-    Shared contract:
-        message      – human-readable, safe to show end-users
-        code         – machine-readable slug for programmatic handling
-        status_code  – HTTP status; 0 here, overridden by every subclass
-        client_extra – structured data the client needs to act on
-        internal     – diagnostic data; NEVER forwarded to the client,
-                       only written to logs / Sentry
     """
 
-    #: Sentinel — subclasses always override this with a real HTTP status.
-    #: Declared here so `exc.status_code` never raises AttributeError when
-    #: catching through the base type.
-    status_code: int = 0
+    status_code: int = 500
+    category: str = "unexpected"
+    default_code: str = "app_error"
+    default_notify: bool = False
 
     def __init__(
         self,
         message: str,
         *,
-        code: str,
+        code: str | None = None,
         client_extra: dict[str, Any] | None = None,
         internal: dict[str, Any] | None = None,
+        notify: bool | None = None,
     ) -> None:
+        """
+        Args:
+            message: Human-readable description of what went wrong.
+            code: Machine-readable error code. Falls back to the subclass's default_code if not supplied.
+            client_extra: Structured data safe to serialize into an HTTP response body.
+            internal: Structured data for logging/debugging only.
+            notify: Overrides the subclass's default_notify for this specific instance.
+        """
         super().__init__(message)
         self.message = message
-        self.code = code
-        self.client_extra = client_extra  # serialized into response
-        self.internal = internal          # logged / sent to Sentry, never to client
+        self.code = code or self.default_code
+        self.client_extra = client_extra
+        self.internal = internal
+        self.notify = self.default_notify if notify is None else notify
 
+    def to_envelope(self) -> dict[str, Any]:
+        """
+        Returns exactly the fields an HTTP layer needs to construct the
+        non_fields portion of an error response: category, message,
+        code, and extra (client-safe data only). 
+        """
+        return {
+            "category": self.category,
+            "message": self.message,
+            "code": self.code,
+            "extra": self.client_extra,
+        }
 
-# ─── DomainError ──────────────────────────────────────────────────────────────
 
 class DomainError(BaseAppError):
     """
-    Intentional business-rule / domain-invariant violation.
-
-    Raise when application logic determines the requested operation is
-    not allowed given the current state of the domain — not because the
-    request is malformed, but because the domain says no.
-
-    HTTP mapping (decided by the API handler, not this class):
-        status_code=400  Generic domain rejection / bad request  (default)
-        status_code=409  Conflict — current state prevents the operation
-
-    Why only 400 and 409?
-        These two cover every real domain error scenario we have today.
-        Other 4xx codes (410, 422, etc.) require concrete use cases before
-        being added — ALLOWED_STATUS_CODES is a public contract that every
-        developer reads as "valid choices."
-
-    Args:
-        message:      Human-readable explanation shown to the user.
-        code:         Machine-readable slug (e.g. "cart_empty").
-        status_code:  HTTP status the API handler should return.
-                      Must be a member of ALLOWED_STATUS_CODES.
-                      Defaults to 400; use 409 for state-conflict situations.
-        client_extra: Structured data safe to forward to the client.
-                      Example: {"applied_on": "2024-01-15"}
-        internal:     Diagnostic data for logs / Sentry only.
-                      Example: {"cart_id": 42, "user_id": 7}
-                      NEVER reaches the client response.
-
-    Examples::
-
-        # Generic domain rejection → 400
-        raise DomainError(
-            "Your cart is empty. Add items before checking out.",
-            code="cart_empty",
-        )
-
-        # State conflict → 409
-        raise DomainError(
-            "This order has already been cancelled.",
-            code="order_already_cancelled",
-            status_code=409,
-        )
-
-        # Conflict with client-safe context
-        raise DomainError(
-            "Coupon has already been used.",
-            code="coupon_already_used",
-            status_code=409,
-            client_extra={"applied_on": "2024-01-15"},
-            internal={"coupon_id": 99, "used_by_user_id": 12},
-        )
+    A 4xx-class error caused by client input or client-visible state.
+    Examples: invalid input the serializer layer didn't already catch,
+    a business rule violation, a resource conflict. 
     """
 
-    #: Only these HTTP status codes are valid for domain errors.
-    #: Add new codes here only when a concrete use case exists —
-    #: this set is a public contract read by every developer on the team.
-    ALLOWED_STATUS_CODES: frozenset[int] = frozenset({400, 409})
+    category = "domain"
+    default_code = "domain_error"
+    default_notify = False
+
+    ALLOWED_STATUS_CODES = {400, 401, 403, 404, 409, 422}
 
     def __init__(
         self,
@@ -148,75 +104,117 @@ class DomainError(BaseAppError):
         client_extra: dict[str, Any] | None = None,
         internal: dict[str, Any] | None = None,
     ) -> None:
+        """
+        Args:
+            message: Human-readable description of the violated rule.
+            code: Machine-readable error code identifying the specific domain rule that failed.
+            status_code: HTTP status for this error. Must be a member of ALLOWED_STATUS_CODES.
+            client_extra: Structured data safe to return to the client.
+            internal: Structured data for logging only.
+
+        Raises:
+            ValueError: If status_code is not in ALLOWED_STATUS_CODES.
+                For 5xx conditions, raise InfrastructureError instead —
+                a DomainError is never allowed to represent a server
+                defect.
+        """
         if status_code not in self.ALLOWED_STATUS_CODES:
             raise ValueError(
                 f"DomainError status_code must be one of "
                 f"{sorted(self.ALLOWED_STATUS_CODES)}, got {status_code}. "
                 f"For 5xx conditions use InfrastructureError instead."
             )
+        super().__init__(message, code=code, client_extra=client_extra, internal=internal)
+        self.status_code = status_code
+
+
+class NotFoundError(DomainError):
+    """A requested resource does not exist or is not visible to the caller."""
+
+    default_code = "not_found"
+
+    def __init__(
+        self,
+        message: str = "The requested resource was not found.",
+        *,
+        code: str = "not_found",
+        client_extra: dict[str, Any] | None = None,
+        internal: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__(
             message,
             code=code,
+            status_code=404,
             client_extra=client_extra,
             internal=internal,
         )
-        self.status_code: int = status_code  # overrides BaseAppError sentinel (0)
 
 
-# ─── InfrastructureError ──────────────────────────────────────────────────────
+class AuthenticationRequiredError(DomainError):
+    """The request has no valid credentials attached."""
+
+    default_code = "authentication_error"
+
+    def __init__(
+        self,
+        message: str = "Authentication required.",
+        *,
+        code: str = "authentication_error",
+        client_extra: dict[str, Any] | None = None,
+        internal: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(
+            message,
+            code=code,
+            status_code=401,
+            client_extra=client_extra,
+            internal=internal,
+        )
+
+
+class PermissionDeniedError(DomainError):
+    """The request has valid credentials but insufficient access."""
+
+    default_code = "permission_error"
+
+    def __init__(
+        self,
+        message: str = "You do not have permission to perform this action.",
+        *,
+        code: str = "permission_error",
+        client_extra: dict[str, Any] | None = None,
+        internal: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(
+            message,
+            code=code,
+            status_code=403,
+            client_extra=client_extra,
+            internal=internal,
+        )
+
 
 class InfrastructureError(BaseAppError):
     """
-    Recoverable infrastructure / third-party integration failure.
+    A 5xx-class error caused by a system or dependency failure.
 
-    Raise when an external system or internal subsystem is temporarily
-    unavailable and the client should be told to retry.
+    Examples: database unreachable, third-party API timeout, message
+    queue unavailable. status_code is a class attribute here, not an
+    instance attribute — every InfrastructureError is 503, there is no
+    per-instance variation to support, unlike DomainError.
 
-    Named InfrastructureError (not SystemError) to avoid shadowing
-    Python's built-in SystemError, which the interpreter and C
-    extensions raise for internal VM-level failures. Shadowing it
-    causes silent, nearly impossible-to-debug failures in third-party
-    libraries that catch SystemError internally.
-
-    HTTP mapping: always 503 Service Unavailable — not configurable.
-    If you need a different 5xx, raise a DRF APIException directly.
-
-    Args:
-        message:      Human-readable explanation shown to the user.
-        code:         Machine-readable slug (e.g. "payment_gateway_timeout").
-        notify:       Whether to alert monitors (Sentry, PagerDuty).
-                      Default True. Pass False for expected, handled outages
-                      where a fallback is in place and paging on-call adds noise.
-                      Note: notify=False also downgrades the log level from
-                      ERROR to WARNING — expected outages should not pollute
-                      your error log.
-        client_extra: Structured data safe to forward to the client.
-                      Example: {"retry_after": 30}
-        internal:     Diagnostic data for logs / Sentry only.
-                      Example: {"gateway_url": "...", "response_code": 504}
-                      NEVER reaches the client response.
-
-    Examples::
-
-        # Unexpected failure — alert on-call
-        raise InfrastructureError(
-            "Payment gateway is temporarily unavailable. Please retry.",
-            code="payment_gateway_timeout",
-            client_extra={"retry_after": 30},
-            internal={"gateway": "stripe", "http_status": 504},
-        )
-
-        # Expected, handled outage — fallback already in place, no paging
-        raise InfrastructureError(
-            "Recommendations unavailable. Showing defaults.",
-            code="recommendation_service_down",
-            notify=False,
-            internal={"service": "rec-engine", "reason": "circuit_open"},
-        )
+    notify defaults to True at the class level because an infrastructure
+    failure is, by default, assumed to be an unexpected defect worth
+    paging on-call about. Pass notify=False at the call site for a
+    specific instance that represents an already-handled, expected
+    outage (e.g. a retried request to a dependency known to be degraded)
+    so it logs as a warning instead of alerting.
     """
 
-    #: Always 503 — overrides the BaseAppError sentinel (0).
-    status_code: int = 503
+    status_code = 503
+    category = "system"
+    default_code = "infrastructure_error"
+    default_notify = True
 
     def __init__(
         self,
@@ -227,12 +225,22 @@ class InfrastructureError(BaseAppError):
         client_extra: dict[str, Any] | None = None,
         internal: dict[str, Any] | None = None,
     ) -> None:
+        """
+        Construct an InfrastructureError.
+
+        Args:
+            message: Human-readable description of the failure.
+            code: Machine-readable error code identifying the failure.
+            notify: Whether this specific instance should alert
+                monitoring. Defaults to True; pass False for a known,
+                already-handled outage that does not need to page anyone.
+            client_extra: Structured data safe to return to the client.
+            internal: Structured data for logging only.
+        """
         super().__init__(
             message,
             code=code,
             client_extra=client_extra,
             internal=internal,
+            notify=notify,
         )
-        self.notify = notify
-        # status_code is a class attribute (503); no instance override needed.
-        # Declared at class level so isinstance checks and class inspection work.
