@@ -9,6 +9,7 @@ from apps.accounts.selectors.user_selectors import email_exists,create_user_prof
 from apps.cart.selectors.cart import create_cart_for_user
 from apps.core.error_codes import ErrorCode
 from apps.core.exceptions import DomainError
+from apps.common.utils.email_utils import mask_email
 
 
 logger = logging.getLogger("apps.accounts")
@@ -54,7 +55,8 @@ def register_user(
     
 
     
-
+    email = email.lower().strip()
+    full_name = " ".join(full_name.strip().split())
     log_context = {"email": email}
 
     #! ── Phase 1: Atomic DB operations ─────────────────────────────────────────
@@ -95,7 +97,7 @@ def register_user(
             create_user_profile(user)
             logger.info(
              "UserProfile created for new user",
-             extra={"user_id": user.id, "email": user.email},
+             extra={"user_id": user.id, "email": mask_email(user.email)},
          )
 
             #! Step 3: Create Cart
