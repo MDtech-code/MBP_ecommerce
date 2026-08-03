@@ -5,9 +5,6 @@ import { useAuthStore } from "@entities/user";
 export function useRegister() {
   return useMutation({
     mutationFn: accountService.register,
-    // No onSuccess business logic yet
-    // Register → backend sends verification email
-    // Component handles navigation to verify-email page
   });
 }
 

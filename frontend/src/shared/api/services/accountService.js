@@ -8,12 +8,17 @@ import { DIRECT_API_ORIGIN } from "@shared/config/api";
 
 
 export const accountService = {
-  /**
+
+  
+  /** 
    * POST /api/accounts/register/
    * @param {{ full_name, email, password, confirm_password }} payload
    */
   register: async (payload) => {
-    const response = await api.post("/api/accounts/register/", payload);
+    const response = await api.post("/api/accounts/register/", payload,{withCredentials: true,headers: {
+          "X-CSRFToken": getCookie("csrftoken"),
+        },});
+    console.log(response)
     return extractResponse(response);
   },
 
@@ -34,14 +39,15 @@ export const accountService = {
     return extractResponse(response);
   },
 
-  // ── NEW ──────────────────────────────────────────────────────────────────
 
   /**
    * POST /api/accounts/verify-email/
    * @param {{ token: string }} payload
    */
   verifyEmail: async (payload) => {
-    const response = await api.post("/api/accounts/verify-email/", payload);
+    const response = await api.post("/api/accounts/verify-email/", payload,{
+    withCredentials: true,
+  });
     return extractResponse(response);
   },
 
@@ -57,7 +63,6 @@ export const accountService = {
     return extractResponse(response);
   },
 
-  // ── NEW ────────────────────────────────────────────────────────────────────
 
   /**
    * POST /api/accounts/login/
@@ -191,7 +196,6 @@ export const accountService = {
     return extractResponse(response);
   },
 
-  // ── Security OTP Gate ──────────────────────────────────────────────────────
 
   /**
    * POST /api/accounts/security/send-otp/

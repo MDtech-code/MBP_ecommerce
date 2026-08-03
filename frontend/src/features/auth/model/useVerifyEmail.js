@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useVerifyEmail, useResendVerification } from "../api/useAuthMutations";
 import { normalizeError } from "@shared/api"
+import {getCookie} from  "@shared/lib"
 
 // MODULE-LEVEL CACHE: Survives React 18 Strict Mode double-mounting!
 let activeToken = null;
@@ -14,13 +15,7 @@ export function useVerifyEmailPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
-  // Check localstorgae
-  const [email] = useState(
-    () =>
-      
-      localStorage.getItem("pending_verification_email") ??
-      "",
-  );
+  const [email] = useState(() => getCookie("pending_verification_email") ?? "");
   const tokenFromUrl = searchParams.get("token");
 
   const [autoStatus, setAutoStatus] = useState(() =>

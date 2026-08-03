@@ -1,22 +1,18 @@
-
 import {  Link} from "react-router-dom"
 import { User, Mail,  Lock } from "lucide-react";
-
 import { FormInput } from "@shared/ui"
 import { useRegisterForm } from "@features/auth"
 
-export default function Register() {
+export default function Register() {  
+  const {form,fieldErrors,formError,isPending,handleChange,handleSubmit,} = useRegisterForm()
+  const formFields = [
+  { name: "full_name", placeholder: "Full name", icon: User },
+  { name: "email", placeholder: "Email address", icon: Mail, type: "email" },
+  { name: "password", placeholder: "Password", icon: Lock, type: "password" },
+  { name: "confirm_password", placeholder: "Confirm password", icon: Lock, type: "password" },
+];
 
   
-  const {
-    form,
-    fieldErrors,
-   
-    formError,
-    isPending,
-    handleChange,
-    handleSubmit,
-  } = useRegisterForm()
   return (
     <>
       <div>
@@ -28,9 +24,7 @@ export default function Register() {
           Join BikeExpress today
         </p>
 
-        {/* DIET CHANGE 1: Reduced top margin from mt-8 (32px) to mt-5 (20px) */}
-        {/* DIET CHANGE 2: Reduced input gaps from space-y-4 (16px) to space-y-3 (12px) */}
-         {/* Form level error banner */}
+         {/* Form level error  */}
         {formError && (
           <div
             role="alert"
@@ -41,18 +35,27 @@ export default function Register() {
           </div>
         )}
         <form className="mt-5 space-y-3"  onSubmit={handleSubmit}>
-          {/* <FormInput icon={User} placeholder="Full name" />
-          <FormInput icon={Mail} type="email" placeholder="Email address" />
-          {/* <FormInput icon={Phone} type="tel" placeholder="Phone number" /> 
-          <FormInput icon={Lock} type="password" placeholder="Password" />
-          <FormInput icon={Lock} type="password" placeholder="Confirm password" /> */}
+          {formFields.map(({ name, placeholder, icon, type }) => (
+  <FormInput
+    key={name}
+    icon={icon}
+    type={type}
+    name={name}
+    placeholder={placeholder}
+    value={form[name]}
+    onChange={handleChange}
+    error={fieldErrors[name]?.message}
+  />
+))}
+
+        {/* 
           <FormInput
             icon={User}
             name="full_name"
             placeholder="Full name"
             value={form.full_name}
             onChange={handleChange}
-            error={fieldErrors.full_name}
+            error={fieldErrors.full_name?.message}
           />
 
           <FormInput
@@ -62,7 +65,7 @@ export default function Register() {
             placeholder="Email address"
             value={form.email}
             onChange={handleChange}
-            error={fieldErrors.email}
+            error={fieldErrors.email?.message}
           />
 
           <FormInput
@@ -72,7 +75,7 @@ export default function Register() {
             placeholder="Password"
             value={form.password}
             onChange={handleChange}
-            error={fieldErrors.password}
+            error={fieldErrors.password?.message}
           />
 
           <FormInput
@@ -82,10 +85,9 @@ export default function Register() {
             placeholder="Confirm password"
             value={form.confirm_password}
             onChange={handleChange}
-            error={fieldErrors.confirm_password}
+            error={fieldErrors.confirm_password?.message}
           />
-
-          {/* DIET CHANGE 3: Reduced button margin from mt-4 to mt-3, slightly leaner padding */}
+          */}
           <button
             type="submit"
             disabled={isPending}
@@ -103,10 +105,6 @@ export default function Register() {
           >
             Login
           </Link>
-          {/* <span className="text-primary font-bold ml-1 cursor-pointer hover:underline">
-            Login
-          </span> */}
-
         </p>
       </div>
     </>

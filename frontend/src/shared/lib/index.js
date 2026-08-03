@@ -10,7 +10,9 @@ export {
   hasAuthToken,
   getAuthToken,
 } from "./authToken";
-export { getCookie } from "./getCsrfToken";
+export {getCookie} from './cookies';
+// export { getCookie } from "./getCsrfToken";
 export { getMediaUrl } from "./media";
+
 export { queryClient } from "./queryClient";
 export {CITY_PROVINCE_MAP,CITY_POSTAL_MAP,CITY_LIST,getPostalForCity,getProvinceForCity,getShippingFee} from './locationData'

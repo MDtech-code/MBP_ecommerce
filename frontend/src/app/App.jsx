@@ -2,13 +2,18 @@
 
 
 
-
+import { useEffect } from "react"
 import { RouterProvider } from "react-router-dom"
 import { router  } from "./providers/router"
 import { useBootstrapAuth } from "./providers/useBootstrapAuth"
 import { useAuthStore } from "@entities/user"
-
+import {ensureCsrfToken} from "@shared/api"
+console.log("app to mount huvi ha ")
 function AppContent() {
+  useEffect(() => {
+    console.log("yar cal to mia bi gya hu")
+    ensureCsrfToken();
+  }, []);
 
   useBootstrapAuth()
   const isBootstrapping = useAuthStore((state) => state.isBootstrapping)

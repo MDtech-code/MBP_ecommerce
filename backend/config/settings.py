@@ -197,7 +197,7 @@ REST_FRAMEWORK = {
         'apps.core.throttles.CustomUserRateThrottle',
     ],
     'DEFAULT_THROTTLE_RATES': {
-        "registration": "5/hour", 
+        "registration": "100/hour", 
         'anon': '10/hour',
         'user': '10/hour',
     },
