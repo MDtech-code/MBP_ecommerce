@@ -1,8 +1,7 @@
 # apps/accounts/utils/cookie_utils.py
 from __future__ import annotations
 
-from django.conf import settings
-from django.middleware.csrf import get_token
+
 
 # ── Cookie configuration ───────────────────────────────────────────────────────
 # Centralized here so every place that touches cookies
@@ -54,38 +53,38 @@ def clear_refresh_cookie(response) -> None:
     )
 
 
-def set_csrf_cookie(request, response) -> None:
-    """
-    Ensure csrftoken cookie is set and readable by JavaScript.
 
-    httponly=False is intentional — JS must read this value
-    and send it back in the X-CSRFToken header on state-changing
-    requests. This is the standard CSRF double-submit pattern.
 
-    Args:
-        request:  DRF Request object.
-        response: DRF Response object.
+
+
+
+
+EMAIL_COOKIE_NAME = "pending_verification_email"
+
+EMAIL_COOKIE_SETTINGS = {
+    "httponly": False,   
+    "secure": True,      
+    "samesite": "Lax",   
+    "max_age": 15 * 60, 
+    "path": "/",
+}
+
+def set_email_cookie(response, email: str) -> None:
     """
-    csrf_token = get_token(request)
+    Set a short-lived, readable cookie with the user's email.
+    Used only for UX on the verify page.
+    """
     response.set_cookie(
-        "csrftoken",
-        csrf_token,
-        httponly=False,         # must be accessible to JS
-        secure=not settings.DEBUG,
-        samesite="Lax",
+        EMAIL_COOKIE_NAME,
+        str(email),
+        **EMAIL_COOKIE_SETTINGS,
     )
 
-
-def clear_csrf_cookie(response) -> None:
+def clear_email_cookie(response) -> None:
     """
-    Delete the CSRF cookie from the response.
-
-    Scoped to root path — CSRF cookie is never path-scoped.
-
-    Args:
-        response: DRF Response object.
+    Clear the pending email cookie after verification.
     """
     response.delete_cookie(
-        "csrftoken",
-        path="/",
+        EMAIL_COOKIE_NAME,
+        path=EMAIL_COOKIE_SETTINGS["path"],
     )
