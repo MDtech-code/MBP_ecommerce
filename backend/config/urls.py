@@ -4,7 +4,7 @@ from django.urls import path,include
 from django.conf import settings
 from django.conf.urls.static import static
 
-
+from apps.core.views import CSRFTokenView
 from drf_spectacular.views import (
     SpectacularAPIView,
     SpectacularRedocView,
@@ -20,6 +20,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('api/csrf/',CSRFTokenView.as_view(),name='csrf'),
     path('api/accounts/', include('apps.accounts.urls', namespace='accounts')),
     path('api/products/', include('apps.products.urls', namespace='products')),
     path('api/cart/', include('apps.cart.urls', namespace='cart')),
