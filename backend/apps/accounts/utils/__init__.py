@@ -5,8 +5,9 @@ from .cookie_utils import (
     REFRESH_COOKIE_NAME,
     set_refresh_cookie,
     clear_refresh_cookie,
-    set_csrf_cookie,
-    clear_csrf_cookie,
+    EMAIL_COOKIE_NAME,
+    set_email_cookie,
+    clear_email_cookie
 )
 from .ip_utils import (
     get_client_ip,
@@ -21,8 +22,10 @@ __all__ = [
     "REFRESH_COOKIE_NAME",
     "set_refresh_cookie",
     "clear_refresh_cookie",
-    "set_csrf_cookie",
-    "clear_csrf_cookie",
+    "EMAIL_COOKIE_NAME",
+    "set_email_cookie",
+    "clear_email_cookie"
+    
     # ip / activity
     "get_client_ip",
     "get_user_agent",

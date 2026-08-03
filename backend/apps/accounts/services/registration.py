@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 from django.db import IntegrityError, transaction
-from apps.accounts.models import EmailVerificationToken, User,UserProfile
+from apps.accounts.models import  User
 from apps.accounts.tasks import send_verification_email_task
 from apps.accounts.selectors.user_selectors import email_exists,create_user_profile,create_verification_token
 from apps.cart.selectors.cart import create_cart_for_user
@@ -126,10 +126,7 @@ def register_user(
         raise
 
     # ── Phase 2: Side effects (after successful commit) ────────────────────────
-    # Transaction is fully committed at this point.
-    # Worker is guaranteed to find User, UserProfile, Cart, Token in DB.
-    # Task failure does NOT undo registration.
-    # Recovery available via resend-verification endpoint.
+   
     _dispatch_verification_email(
         user_id=user.id,
         token=token_obj.token,

@@ -34,9 +34,10 @@ from apps.accounts.utils.cookie_utils import (
     REFRESH_COOKIE_NAME,
     set_refresh_cookie,
     clear_refresh_cookie,
-    set_csrf_cookie,
-    clear_csrf_cookie,
+    set_email_cookie,
+    clear_email_cookie
 )
+from apps.core.utils.csrf_cookie import clear_csrf_cookie
 from .models import User, EmailVerificationToken, PasswordResetToken,UserProfile,UserAddress
 from apps.accounts.serializers import (
     SendPhoneOTPSerializer,
@@ -154,13 +155,17 @@ class RegisterView(BaseAPIView):
             extra={**log_context, "user_id": user.id, "email": user.email},
         )
 
-        return self.created_response(
-            data={"email": user.email},
+        response= self.created_response(
+            #data={"email": user.email},
             message=_(
                 "Account created successfully. "
                 "Please check your email to verify your account."
             ),
         )
+        set_email_cookie(response,user.email)
+        return response
+
+        
 
 
 # ─── Verify Email ──────────────────────────────────────────────────────────────
@@ -211,9 +216,12 @@ class VerifyEmailView(BaseAPIView):
                 message=_("Email verified successfully. You can now log in."),
             )
 
-        return self.success_response(
+        response=self.success_response(
             message=_("Email already verified. You can log in."),
         )
+        clear_email_cookie(response)
+        clear_csrf_cookie(response)
+        return response
 
 
 # ─── Resend Verification ───────────────────────────────────────────────────────
@@ -349,7 +357,6 @@ class LoginView(BaseAPIView):
         )
 
         set_refresh_cookie(response, result["refresh"])
-        set_csrf_cookie(request, response)
         return response
 
 
@@ -1166,7 +1173,6 @@ class SocialAuthView(BaseAPIView):
 
         # Refresh token in HttpOnly cookie — never in response body
         set_refresh_cookie(response, str(refresh))
-        set_csrf_cookie(request, response)
 
         return response
     
