@@ -1,13 +1,7 @@
 // src/shared/api/csrf.js
 //
 // Single source of truth for CSRF cookie bootstrapping.
-//
-// Previously, individual views (RegisterView) set the csrftoken cookie
-// as a side effect of an unrelated business action. That created a
-// hidden dependency: any endpoint needing CSRF protection only worked
-// if the user happened to hit register first, in the same browser
-// session, with cookies intact. A user landing directly on
-// /forgot-password with no prior visit had no token to send.
+
 //
 // This module removes that coupling: ensureCsrfToken() is called once,
 // unconditionally, on app load — before any form can be submitted —
@@ -16,6 +10,7 @@
 import { api } from "./client";
 
 let csrfBootstrapPromise = null;
+console.log(csrfBootstrapPromise)
 
 /**
  * Ensures a csrftoken cookie exists in the browser.
