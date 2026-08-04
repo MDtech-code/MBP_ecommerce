@@ -8,6 +8,7 @@
 // so every endpoint needing CSRF protection already has a token
 // available, regardless of which page the user starts on.
 import { api } from "./client";
+import {getCookie} from "@shared/lib"
 
 let csrfBootstrapPromise = null;
 
@@ -23,6 +24,10 @@ let csrfBootstrapPromise = null;
  * @returns {Promise<void>}
  */
 export const ensureCsrfToken = () => {
+
+   if (getCookie("csrftoken")) {
+    return Promise.resolve();
+  }
   if (!csrfBootstrapPromise) {
     csrfBootstrapPromise = api
       .get("/api/csrf/", { withCredentials: true })

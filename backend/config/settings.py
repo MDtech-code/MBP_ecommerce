@@ -197,9 +197,9 @@ REST_FRAMEWORK = {
         'apps.core.throttles.CustomUserRateThrottle',
     ],
     'DEFAULT_THROTTLE_RATES': {
-        "registration": "100/hour", 
-        'anon': '10/hour',
-        'user': '10/hour',
+        "registration": "1000/hour", 
+        'anon': '1000/hour',
+        'user': '1000/hour',
     },
     "EXCEPTION_HANDLER": "apps.core.api.exceptions.custom_exception_handler",
 }
@@ -217,7 +217,7 @@ CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=[
 # ─── JWT ──────────────────────────────────────────────
 from datetime import timedelta
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=59),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=1),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,

@@ -18,7 +18,6 @@ export const accountService = {
     const response = await api.post("/api/accounts/register/", payload,{withCredentials: true,headers: {
           "X-CSRFToken": getCookie("csrftoken"),
         },});
-    console.log(response)
     return extractResponse(response);
   },
 
@@ -356,10 +355,9 @@ export const accountService = {
   bootstrap: async () => {
     console.log("i am from the bootstrap");
 
-    console.log(DIRECT_API_ORIGIN);
+    
     const response = await axios.post(
-      // <-- CHANGED TO AXIOS
-      `${DIRECT_API_ORIGIN}/api/accounts/token/refresh/`, // Ensure full URL if using raw axios
+      `${DIRECT_API_ORIGIN}/api/accounts/token/refresh/`,
       {},
       {
         withCredentials: true,
@@ -371,5 +369,3 @@ export const accountService = {
     return extractResponse(response);
   },
 };
-// const response = await api.post(
-    //   "/api/accounts/token/refresh/",
