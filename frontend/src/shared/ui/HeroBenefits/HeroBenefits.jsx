@@ -41,16 +41,9 @@ export default function HeroBenefits({
         >
           <Icon size={28} className="text-white shrink-0" />
 
-          {/* ✅ Dot only in horizontal */}
-          {isHorizontal ? (
-            <span className="absolute left-5 bottom-4 text-primary mx-2">
-              •
-            </span>
-          ): (
-            <span className="absolute left-5 bottom-4 text-primary mx-2">
-              •
-            </span>
-          )}
+           <span className="absolute left-5 bottom-4 text-primary mx-2">
+            •
+          </span>
 
           <span
             className={`text-sm font-semibold leading-tight ${
