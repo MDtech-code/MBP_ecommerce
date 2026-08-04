@@ -1,6 +1,6 @@
 // src/hooks/account/useRegisterForm.js
 
-import { useState,useCallback } from "react";
+import { useState,useCallback,useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useRegister } from "../api/useAuthMutations";
 import { normalizeError,extractErrors, ErrorCode } from "@shared/api";
@@ -18,9 +18,13 @@ export function useRegisterForm() {
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [clientErrors, setClientErrors] = useState({});
 
-  const normalized = isError ? normalizeError(error) : null;
+  // const normalized = isError ? normalizeError(error) : null;
+  const normalized = useMemo(
+    () => (isError ? normalizeError(error) : null),
+    [isError, error]  // only recomputes when error changes
+);
   // const { fieldErrors, formError, formErrorCode } = extractErrors(normalized);
-  const { fieldErrors: serverFieldErrors, formError, formErrorCode } = extractErrors(normalized);
+  const { fieldErrors: serverFieldErrors, formError} = extractErrors(normalized);
   const fieldErrors = { ...clientErrors, ...serverFieldErrors };
 /*
   const fieldErrors = {
@@ -108,7 +112,7 @@ export function useRegisterForm() {
     },
     [submitAttempted, form]
   );
-
+  
   const handleSubmit = useCallback(
     (e) => {
       e.preventDefault();
@@ -142,7 +146,7 @@ export function useRegisterForm() {
   return {
     form,
     fieldErrors,
-    formErrorCode,
+    // formErrorCode,
     formError,
     isPending,
     ErrorCode,
