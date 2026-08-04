@@ -6,9 +6,7 @@
  * @returns {any|null} - The parsed value or null if not found
  */
 export const getCookie = (name) => {
-  console.log("cookie code ma enter hu")
   const value = `; ${document.cookie}`;
-  console.log(value)
   const parts = value.split(`; ${name}=`);
   if (parts.length === 2) {
     const raw = parts.pop().split(";").shift();

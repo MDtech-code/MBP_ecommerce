@@ -4,7 +4,9 @@ import { FormInput } from "@shared/ui"
 import { useRegisterForm } from "@features/auth"
 
 export default function RegisterPage() {  
+
   const {form,fieldErrors,formError,isPending,handleBlur,handleChange,handleSubmit,} = useRegisterForm()
+
   const formFields = [
   { name: "full_name", placeholder: "Full name", icon: User },
   { name: "email", placeholder: "Email address", icon: Mail, type: "email" },
@@ -49,46 +51,7 @@ export default function RegisterPage() {
   />
 ))}
 
-        {/* 
-          <FormInput
-            icon={User}
-            name="full_name"
-            placeholder="Full name"
-            value={form.full_name}
-            onChange={handleChange}
-            error={fieldErrors.full_name?.message}
-          />
-
-          <FormInput
-            icon={Mail}
-            type="email"
-            name="email"
-            placeholder="Email address"
-            value={form.email}
-            onChange={handleChange}
-            error={fieldErrors.email?.message}
-          />
-
-          <FormInput
-            icon={Lock}
-            type="password"
-            name="password"
-            placeholder="Password"
-            value={form.password}
-            onChange={handleChange}
-            error={fieldErrors.password?.message}
-          />
-
-          <FormInput
-            icon={Lock}
-            type="password"
-            name="confirm_password"
-            placeholder="Confirm password"
-            value={form.confirm_password}
-            onChange={handleChange}
-            error={fieldErrors.confirm_password?.message}
-          />
-          */}
+        
           <button
             type="submit"
             disabled={isPending}
