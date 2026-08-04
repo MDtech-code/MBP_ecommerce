@@ -1,9 +1,9 @@
 // src/hooks/account/useRegisterForm.js
 
-import { useState,useCallback,useMemo } from "react";
+import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useRegister } from "../api/useAuthMutations";
-import { normalizeError,extractErrors, ErrorCode } from "@shared/api";
+import { normalizeError, extractErrors, ErrorCode } from "@shared/api";
 import { run, hasErrors, registerSchema } from "@shared/lib/validators";
 
 export function useRegisterForm() {
@@ -18,15 +18,13 @@ export function useRegisterForm() {
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [clientErrors, setClientErrors] = useState({});
 
-  // const normalized = isError ? normalizeError(error) : null;
-  const normalized = useMemo(
-    () => (isError ? normalizeError(error) : null),
-    [isError, error]  // only recomputes when error changes
-);
+  const normalized = isError ? normalizeError(error) : null;
+  
   // const { fieldErrors, formError, formErrorCode } = extractErrors(normalized);
-  const { fieldErrors: serverFieldErrors, formError} = extractErrors(normalized);
+  const { fieldErrors: serverFieldErrors, formError } =
+    extractErrors(normalized);
   const fieldErrors = { ...clientErrors, ...serverFieldErrors };
-/*
+  /*
   const fieldErrors = {
      full_name: normalized?.errors?.fields?.full_name?.message ?? null,
      email: normalized?.errors?.fields?.email?.message ?? null,
@@ -45,11 +43,7 @@ export function useRegisterForm() {
    const formError = normalized?.errors?.non_fields?.message ?? null;
    const formErrorCode = normalized?.errors?.non_fields?.code ?? null;
    */
-  
 
-
-
-  
   // const handleChange = (e) => {
   //   setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   // };
@@ -62,7 +56,6 @@ export function useRegisterForm() {
 
       setForm((prev) => ({ ...prev, [name]: value }));
 
-
       if (clientErrors[name]) {
         setClientErrors((prev) => {
           const next = { ...prev };
@@ -71,9 +64,8 @@ export function useRegisterForm() {
         });
       }
     },
-    [clientErrors]
+    [clientErrors],
   );
-
 
   // const handleSubmit = (e) => {
   //   e.preventDefault();
@@ -110,9 +102,9 @@ export function useRegisterForm() {
         return next;
       });
     },
-    [submitAttempted, form]
+    [submitAttempted, form],
   );
-  
+
   const handleSubmit = useCallback(
     (e) => {
       e.preventDefault();
@@ -139,9 +131,8 @@ export function useRegisterForm() {
         // normalizeError picks it up automatically, no extra handling needed.
       });
     },
-    [form, register, navigate]
+    [form, register, navigate],
   );
-
 
   return {
     form,

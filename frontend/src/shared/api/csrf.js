@@ -10,7 +10,6 @@
 import { api } from "./client";
 
 let csrfBootstrapPromise = null;
-console.log(csrfBootstrapPromise)
 
 /**
  * Ensures a csrftoken cookie exists in the browser.
@@ -24,7 +23,6 @@ console.log(csrfBootstrapPromise)
  * @returns {Promise<void>}
  */
 export const ensureCsrfToken = () => {
-  console.log(csrfBootstrapPromise, "sirf andar aya hu")
   if (!csrfBootstrapPromise) {
     csrfBootstrapPromise = api
       .get("/api/csrf/", { withCredentials: true })

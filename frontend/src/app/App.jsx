@@ -8,10 +8,9 @@ import { router  } from "./providers/router"
 import { useBootstrapAuth } from "./providers/useBootstrapAuth"
 import { useAuthStore } from "@entities/user"
 import {ensureCsrfToken} from "@shared/api"
-console.log("app to mount huvi ha ")
+
 function AppContent() {
   useEffect(() => {
-    console.log("yar cal to mia bi gya hu")
     ensureCsrfToken();
   }, []);
 
