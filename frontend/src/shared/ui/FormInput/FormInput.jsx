@@ -8,6 +8,7 @@ export default function FormInput({
   name,
   value,
   onChange,
+  onBlur,
   error,
 }) {
   const [showPassword, setShowPassword] = useState(false);
@@ -24,6 +25,7 @@ export default function FormInput({
           name={name}
           value={value}
           onChange={onChange}
+          onBlur={onBlur}
           className="w-full outline-none text-gray-900 placeholder-gray-400
          dark:text-white dark:placeholder-gray-300"
         />

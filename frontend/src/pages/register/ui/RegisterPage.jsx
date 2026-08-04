@@ -3,8 +3,8 @@ import { User, Mail,  Lock } from "lucide-react";
 import { FormInput } from "@shared/ui"
 import { useRegisterForm } from "@features/auth"
 
-export default function Register() {  
-  const {form,fieldErrors,formError,isPending,handleChange,handleSubmit,} = useRegisterForm()
+export default function RegisterPage() {  
+  const {form,fieldErrors,formError,isPending,handleBlur,handleChange,handleSubmit,} = useRegisterForm()
   const formFields = [
   { name: "full_name", placeholder: "Full name", icon: User },
   { name: "email", placeholder: "Email address", icon: Mail, type: "email" },
@@ -44,6 +44,7 @@ export default function Register() {
     placeholder={placeholder}
     value={form[name]}
     onChange={handleChange}
+    onBlur={handleBlur}
     error={fieldErrors[name]?.message}
   />
 ))}
