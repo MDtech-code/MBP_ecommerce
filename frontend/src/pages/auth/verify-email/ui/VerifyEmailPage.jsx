@@ -7,7 +7,7 @@ import { AuthIconBadge } from "@shared/ui"
 import { AlertBanner } from "@shared/ui"
 import { useVerifyEmailPage } from "@features/auth"
 
-export default function VerifyEmail() {
+export default function VerifyEmailPage() {
   const {
     email,
     tokenFromUrl,

@@ -8,7 +8,7 @@ import { AlertBanner } from "@shared/ui"
 import { AuthIconBadge } from "@shared/ui"
 import { useResetPasswordForm } from "@features/auth"
 
-export default function ResetPassword() {
+export default function ResetPasswordPage() {
   const {
     fields,
     handleChange,

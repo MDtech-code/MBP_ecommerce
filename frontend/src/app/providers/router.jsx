@@ -18,12 +18,7 @@ import { ProductListingPage,
          ProductDetailPage }          from "@pages/products"
 
 // Pages — Auth
-import { RegisterPage }               from "@pages/register"
-import { LoginPage }                  from "@pages/login"
-import { VerifyEmailPage,
-         ForgotPasswordPage,
-         ForgotPasswordSentPage,
-         ResetPasswordPage }          from "@pages/auth"
+import { RegisterPage,LoginPage,VerifyEmailPage,ForgotPasswordPage,ForgotPasswordSentPage,ResetPasswordPage } from "@pages/auth"
 
 // Pages — Protected 
 import { CartPage }                   from "@pages/cart"

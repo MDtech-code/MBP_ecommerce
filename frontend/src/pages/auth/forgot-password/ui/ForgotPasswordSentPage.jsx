@@ -5,7 +5,7 @@ import { Mail } from "lucide-react"
 
 import { AuthIconBadge } from "@shared/ui"
 
-export default function ForgotPasswordSent() {
+export default function ForgotPasswordSentPage() {
   const location = useLocation()
   const email = location.state?.email ?? "your email address"
 
