@@ -11,3 +11,4 @@ export * from "./HeroBenefits";
 export * from "./OTPInput";
 export * from "./ResendTimer"
 export * from  "./auth"
+export * from "./ThemeToggle";

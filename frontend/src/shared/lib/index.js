@@ -16,3 +16,5 @@ export { getMediaUrl } from "./media";
 
 export { queryClient } from "./queryClient";
 export {CITY_PROVINCE_MAP,CITY_POSTAL_MAP,CITY_LIST,getPostalForCity,getProvinceForCity,getShippingFee} from './locationData'
+export {useThemeStore} from "./themeStore"
+export {useThemeSync} from "./useThemeSync"

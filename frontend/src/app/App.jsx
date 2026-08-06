@@ -8,13 +8,17 @@ import { router  } from "./providers/router"
 import { useBootstrapAuth } from "./providers/useBootstrapAuth"
 import { useAuthStore } from "@entities/user"
 import {ensureCsrfToken} from "@shared/api"
+import {useThemeStore} from "@shared/lib"
+import {useThemeSync} from "@shared/lib"
 
 function AppContent() {
   useEffect(() => {
     ensureCsrfToken();
+    useThemeStore.getState().initTheme();
   }, []);
 
   useBootstrapAuth()
+  useThemeSync();
   const isBootstrapping = useAuthStore((state) => state.isBootstrapping)
   if (isBootstrapping) {
     return (
