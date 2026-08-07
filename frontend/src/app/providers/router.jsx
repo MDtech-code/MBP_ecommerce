@@ -35,6 +35,7 @@ import { ReviewsPage } from "@pages/Reviews";
 import { WishlistPage } from "@pages/wishlist";
 // Pages — Dashboard 
 import { ProfilePage }                from "@pages/profile"
+import { AddressesPage } from "@pages/addresses"
 import { SecurityPage,
          ChangePasswordPage,
          DeleteAccountPage,
@@ -113,6 +114,7 @@ export const router = createBrowserRouter([
             element: <DashboardLayout />,
             children: [
               { path: "/profile", element: <ProfilePage /> },
+              { path: "/addresses", element: <AddressesPage />  },
               // ── Orders ─────────────────────────────────────────
               { path: "/orders",              element: <OrderListPage /> },
               { path: "/orders/:orderNumber", element: <OrderDetailPage /> },
