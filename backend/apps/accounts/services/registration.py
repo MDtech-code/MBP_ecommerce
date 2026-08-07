@@ -140,22 +140,7 @@ def _dispatch_verification_email(
     token: str,
     log_context: dict,
 ) -> None:
-    """
-    Dispatch verification email task after registration commits.
-
-    Extracted for:
-        - Single responsibility
-        - Isolated exception handling
-        - Testability
-
-    Failure here does NOT affect registration success.
-    User account is valid and committed.
-
-    Args:
-        user_id:     Newly created user PK.
-        token:       Email verification token value.
-        log_context: Logging context dict from parent.
-    """
+   
     try:
         send_verification_email_task.delay(user_id, str(token))
         logger.info(

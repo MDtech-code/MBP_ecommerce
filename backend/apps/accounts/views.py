@@ -102,23 +102,6 @@ logger = logging.getLogger("apps.accounts")
 # ─── Register ──────────────────────────────────────────────────────────────────
 
 class RegisterView(BaseAPIView):
-    """
-    POST /api/accounts/register/
-
-    Permissions:
-        IsNotAuthenticated — authenticated users cannot re-register.
-
-    Throttling:
-        AnonRateThrottle — guards against registration spam.
-
-    Success (201):
-        Returns registered email address.
-        Verification email dispatched async via Celery.
-
-    Errors:
-        400 — Validation failure.
-        409 — Email already exists (race condition).
-    """
 
     permission_classes = [IsNotAuthenticated]
     throttle_classes = [AnonRateThrottle]
@@ -145,7 +128,7 @@ class RegisterView(BaseAPIView):
             user = register_user(**serializer.validated_data)
         except DomainError as exc:
             elapsed = time.monotonic() - start
-            min_response_time = 0.5  # 500ms minimum
+            min_response_time = 0.5  
             if elapsed < min_response_time:
                 time.sleep(min_response_time - elapsed)
             return self.app_error_response(exc=exc)
@@ -156,7 +139,6 @@ class RegisterView(BaseAPIView):
         )
 
         response= self.created_response(
-            #data={"email": user.email},
             message=_(
                 "Account created successfully. "
                 "Please check your email to verify your account."

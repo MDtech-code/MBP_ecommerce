@@ -232,15 +232,6 @@ class RegisterSerializer(serializers.Serializer):
 
     Responsibility:
         Validate and clean input data ONLY.
-        No database writes. No user creation.
-        User creation is handled by AccountService.register_user()
-        in the service layer.
-
-    Validates:
-        - Full name: minimum two words.
-        - Email: valid format, unique in the system.
-        - Password: meets Django's AUTH_PASSWORD_VALIDATORS.
-        - Confirm password: must match password.
     """
 
     full_name = serializers.CharField(
