@@ -2,10 +2,11 @@
 
 import { Link } from "react-router-dom"
 import { User, Mail, Lock } from "lucide-react"
-
+import {AuthPageHeader} from "@widgets/auth"
 import { FormInput } from "@shared/ui"
-import { AlertBanner } from "@shared/ui"
+import  {Toast}  from "@shared/ui"
 import { useRegisterForm } from "@features/auth"
+
 
 export default function RegisterPage() {
   const {
@@ -24,33 +25,11 @@ export default function RegisterPage() {
     { name: "password",         placeholder: "Password",          icon: Lock, type: "password"},
     { name: "confirm_password", placeholder: "Confirm password",  icon: Lock, type: "password"},
   ]
+  
 
   return (
     <div>
-      {/* Desktop heading — hidden on mobile/tablet, AuthBrand handles those */}
-      {/* ── OLD ──────────────────────────────────────────────────────
-      <h2 className="hidden lg:block text-2xl lg:text-3xl font-black
-                     text-gray-900 dark:text-gray-100 tracking-tight">
-        Create Account
-      </h2>
-      <p className="hidden lg:block mt-1 text-sm text-gray-500 dark:text-gray-300">
-        Join BikeExpress today
-      </p>
-      ──────────────────────────────────────────────────────────────── */}
-
-      {/* ── NEW ──────────────────────────────────────────────────────
-          Wrapped in a single div like Login — cleaner DOM grouping.
-          text-2xl lg:text-3xl → text-3xl unified, same as Login h2.
-          tracking-tight removed — Login h2 has none, now consistent.
-      ─────────────────────────────────────────────────────────────── */}
-      <div className="hidden lg:block">
-        <h2 className="text-3xl font-black text-gray-900 dark:text-gray-100">
-          Create Account
-        </h2>
-        <p className="mt-2 text-gray-500 dark:text-gray-300">
-          Join BikeExpress today
-        </p>
-      </div>
+      <AuthPageHeader title="Create Account"subtitle="Join BikeExpress today"/>
 
       {/* ── OLD ──────────────────────────────────────────────────────
           Hand-rolled error banner, missing dark mode variants.
@@ -68,9 +47,9 @@ export default function RegisterPage() {
           mt-4 consistent with Login.
       ─────────────────────────────────────────────────────────────── */}
       {formError && (
-        <AlertBanner type="error" className="mt-4">
+        <Toast type="error" >
           {formError}
-        </AlertBanner>
+        </Toast>
       )}
 
       {/* ── OLD ──────────────────────────────────────────────────────

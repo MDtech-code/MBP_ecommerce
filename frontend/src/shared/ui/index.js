@@ -9,6 +9,7 @@ export * from "./SectionTitle";
 export * from "./FormField";
 export * from "./HeroBenefits";
 export * from "./OTPInput";
-export * from "./ResendTimer"
-export * from  "./auth"
+export * from "./ResendTimer";
+export * from "./auth";
 export * from "./ThemeToggle";
+export * from "./toast"

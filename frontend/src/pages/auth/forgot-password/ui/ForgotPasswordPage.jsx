@@ -4,9 +4,11 @@ import { Link } from "react-router-dom"
 import { Lock, Mail } from "lucide-react"
 
 import { FormInput } from "@shared/ui"
-import { AlertBanner } from "@shared/ui"
-import { AuthIconBadge } from "@shared/ui"
+
+import { AuthIconBadge } from "@widgets/auth"
 import { useForgotPasswordForm } from "@features/auth"
+import {AuthPageHeader} from "@widgets/auth"
+import  {Toast}  from "@shared/ui"
 
 export default function ForgotPassword() {
   const {
@@ -19,25 +21,14 @@ export default function ForgotPassword() {
   } = useForgotPasswordForm()
 
   return (
-    <div>
+    <div className="text-center">
 
-      {/* ── OLD ──────────────────────────────────────────────────────
-          text-center on h2 but rest of page is not centered — inconsistent.
-          mt-8 pushed everything down unnecessarily.
-          dark:text-gray-300 — slightly off from other pages.
+      
 
-          <h2 className="hidden lg:block mt-8 text-2xl text-center
-                         font-black dark:text-gray-300">
-            Forgot Password?
-          </h2>
-          ──────────────────────────────────────────────────────────── */}
-
-      {/* ── NEW ─────────────────────────────────────────────────────── */}
-      <div className="hidden lg:block">
-        <h2 className="text-3xl font-black text-gray-900 dark:text-gray-100">
-          Forgot Password?
-        </h2>
-      </div>
+      
+      <AuthPageHeader
+  title="Forgot Password?"
+/>
 
       {/* ── OLD ──────────────────────────────────────────────────────
           <div className="mx-auto w-24 h-24 rounded-full bg-gray-100
@@ -74,10 +65,11 @@ export default function ForgotPassword() {
 
       {/* ── NEW ─────────────────────────────────────────────────────── */}
       {formError && (
-        <AlertBanner type="error" className="mt-4">
-          {formError}
-        </AlertBanner>
-      )}
+              <Toast type="error" >
+                {formError}
+              </Toast>
+            )}
+      
 
       <form onSubmit={handleSubmit} className="mt-6">
         <FormInput

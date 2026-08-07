@@ -4,9 +4,11 @@ import { Link } from "react-router-dom"
 import { Lock } from "lucide-react"
 
 import { FormInput } from "@shared/ui"
-import { AlertBanner } from "@shared/ui"
-import { AuthIconBadge } from "@shared/ui"
+
+import { AuthIconBadge } from "@widgets/auth"
 import { useResetPasswordForm } from "@features/auth"
+import {AuthPageHeader} from "@widgets/auth"
+import  {Toast}  from "@shared/ui"
 
 export default function ResetPasswordPage() {
   const {
@@ -22,21 +24,12 @@ export default function ResetPasswordPage() {
 
   if (tokenMissing) {
     return (
-      <div>
+      <div className="text-center">
 
-        {/* ── OLD ────────────────────────────────────────────────────
-            <h2 className="hidden lg:block mt-8 text-center text-2xl
-                           font-black dark:text-gray-300">
-              Reset Password
-            </h2>
-            ────────────────────────────────────────────────────────── */}
-
-        {/* ── NEW ──────────────────────────────────────────────────── */}
-        <div className="hidden lg:block">
-          <h2 className="text-3xl font-black text-gray-900 dark:text-gray-100">
-            Reset Password
-          </h2>
-        </div>
+        
+        <AuthPageHeader
+  title="Reset Password"
+/>
 
         {/* ── OLD ────────────────────────────────────────────────────
             <div className="mx-auto w-24 h-24 rounded-full bg-gray-100
@@ -65,9 +58,12 @@ export default function ResetPasswordPage() {
             ────────────────────────────────────────────────────────── */}
 
         {/* ── NEW ──────────────────────────────────────────────────── */}
-        <AlertBanner type="error" className="mt-6">
-          This reset link is invalid or has expired. Please request a new one.
-        </AlertBanner>
+       {formError && (
+               <Toast type="error" >
+                 {formError}
+               </Toast>
+             )}
+       
 
         <div className="mt-6">
           <Link
@@ -131,10 +127,10 @@ export default function ResetPasswordPage() {
 
       {/* ── NEW ──────────────────────────────────────────────────────── */}
       {formError && (
-        <AlertBanner type="error" className="mt-4">
-          {formError}
-        </AlertBanner>
-      )}
+               <Toast type="error" >
+                 {formError}
+               </Toast>
+             )}
 
       <form onSubmit={handleSubmit} className="mt-6 space-y-4">
         <FormInput

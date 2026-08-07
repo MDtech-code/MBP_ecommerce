@@ -8,6 +8,7 @@ import { AlertBanner } from "@shared/ui"
 import { SocialLogin } from "@features/auth"
 import { useLoginForm } from "@features/auth"
 import { ErrorCode } from "@shared/api"
+import {AuthPageHeader} from "@widgets/auth"
 
 export default function Login() {
   const {
@@ -26,29 +27,10 @@ export default function Login() {
   return (
     <div>
       {/* Desktop heading — hidden on mobile/tablet, AuthBrand handles those */}
-      <div className="hidden lg:block">
-        {/* ── OLD ──────────────────────────────────────────────────
-        <h2 className="text-3xl font-black text-gray-900 dark:text-gray-200">
-          Hello Again!
-        </h2>
-        <p className="mt-2 text-gray-500 dark:text-gray-400">
-          Login to manage your account
-        </p>
-        ─────────────────────────────────────────────────────────── */}
-
-        {/* ── NEW ──────────────────────────────────────────────────
-            dark:text-gray-100 unified across all auth page headings.
-            was dark:text-gray-200 here vs dark:text-gray-100 on
-            Register — one step difference, now consistent.
-        ─────────────────────────────────────────────────────────── */}
-        <h2 className="text-3xl font-black text-gray-900 dark:text-gray-100">
-          Hello Again!
-        </h2>
-        <p className="mt-2 text-gray-500 dark:text-gray-400">
-          Login to manage your account
-        </p>
-      </div>
-
+      <AuthPageHeader
+  title="Hello Again!"
+  subtitle="Login to manage your account"
+/>
       {/* ── Form level feedback ────────────────────────────────────
           ── OLD ────────────────────────────────────────────────────
           Two separate hand-rolled banner divs with full inline

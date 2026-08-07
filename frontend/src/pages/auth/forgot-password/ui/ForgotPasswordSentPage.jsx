@@ -3,33 +3,20 @@
 import { Link, useLocation } from "react-router-dom"
 import { Mail } from "lucide-react"
 
-import { AuthIconBadge } from "@shared/ui"
+import { AuthIconBadge } from "@widgets/auth"
+import {AuthPageHeader} from "@widgets/auth"
 
 export default function ForgotPasswordSentPage() {
   const location = useLocation()
   const email = location.state?.email ?? "your email address"
 
   return (
-    <div>
+    <div className="text-center">
 
-      {/* ── OLD ──────────────────────────────────────────────────────
-          text-grey-300 — British spelling, invalid Tailwind class.
-          Text rendered with no color, inherited unpredictably.
-          text-center on h2 only — inconsistent with rest of page.
-          mt-8 — unnecessary push.
-
-          <h2 className="hidden lg:block mt-8 text-2xl text-center
-                         text-grey-300 font-black">
-            Check Your Email
-          </h2>
-          ──────────────────────────────────────────────────────────── */}
-
-      {/* ── NEW ─────────────────────────────────────────────────────── */}
-      <div className="hidden lg:block">
-        <h2 className="text-3xl font-black text-gray-900 dark:text-gray-100">
-          Check Your Email
-        </h2>
-      </div>
+      
+      <AuthPageHeader
+  title="Check Your Email"
+/>
 
       {/* ── OLD ──────────────────────────────────────────────────────
           No badge on this page — icon circle without badge span.

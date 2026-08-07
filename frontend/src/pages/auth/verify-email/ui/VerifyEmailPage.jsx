@@ -3,9 +3,10 @@
 import { Link } from "react-router-dom"
 import { MailCheck } from "lucide-react"
 
-import { AuthIconBadge } from "@shared/ui"
+import { AuthIconBadge } from "@widgets/auth"
 import { AlertBanner } from "@shared/ui"
 import { useVerifyEmailPage } from "@features/auth"
+import {AuthPageHeader} from "@widgets/auth"
 
 export default function VerifyEmailPage() {
   const {
@@ -25,27 +26,10 @@ export default function VerifyEmailPage() {
   return (
     <div className="text-center">
 
-      {/* ── OLD ──────────────────────────────────────────────────────
-          text-black-400 — invalid, black has no shade scale in Tailwind.
-          dark:text-grey-300 — invalid, British spelling, silently ignored.
-          Text was rendering with no color applied, inheriting unpredictably.
-
-          <h2 className="hidden lg:block mt-8 text-2xl font-black
-                         text-black-400 dark:text-grey-300">
-            Verify Your Email
-          </h2>
-          ──────────────────────────────────────────────────────────── */}
-
-      {/* ── NEW ──────────────────────────────────────────────────────
-          Valid color classes. Consistent with Login and Register h2.
-          mt-2 instead of mt-8 — mt-8 pushed icon too far down on desktop,
-          AuthBrand already provides top spacing context on mobile/tablet.
-      ─────────────────────────────────────────────────────────────── */}
-      <div className="hidden lg:block">
-        <h2 className="text-3xl font-black text-gray-900 dark:text-gray-100">
-          Verify Your Email
-        </h2>
-      </div>
+      
+      <AuthPageHeader
+  title="Verify Your Email"
+/>
 
       {/* ── OLD ──────────────────────────────────────────────────────
           Hand-rolled icon circle with badge — repeated pattern.
