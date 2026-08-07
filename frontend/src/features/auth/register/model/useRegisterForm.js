@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { useRegister } from "../api/useAuthMutations";
+import { useRegister } from "@features/auth";
 import { normalizeError, extractErrors, ErrorCode } from "@shared/api";
 import { run, hasErrors, registerSchema } from "@shared/lib/validators";
 
@@ -19,12 +19,11 @@ export function useRegisterForm() {
   const [clientErrors, setClientErrors] = useState({});
 
   const normalized = isError ? normalizeError(error) : null;
-  
-  
+
   const { fieldErrors: serverFieldErrors, formError } =
     extractErrors(normalized);
   const fieldErrors = { ...clientErrors, ...serverFieldErrors };
-  
+
   // ── OnChange Handlers ──────────────────────────────────────────────────────────────
 
   const handleChange = useCallback(
@@ -44,15 +43,12 @@ export function useRegisterForm() {
     [clientErrors],
   );
 
- 
   const handleBlur = useCallback(
     (e) => {
-      
       if (!submitAttempted) return;
 
       const { name } = e.target;
 
-      
       const schema = registerSchema(form);
       const fieldSchema = { [name]: schema[name] };
       const result = run(fieldSchema, form);
@@ -62,7 +58,7 @@ export function useRegisterForm() {
         if (result[name]) {
           next[name] = result[name];
         } else {
-          delete next[name]; 
+          delete next[name];
         }
         return next;
       });
@@ -75,24 +71,20 @@ export function useRegisterForm() {
       e.preventDefault();
       setSubmitAttempted(true);
 
-      
       const schema = registerSchema(form);
       const result = run(schema, form);
 
       if (hasErrors(result)) {
-        
         setClientErrors(result);
-        return; 
+        return;
       }
 
-      
       setClientErrors({});
 
       register(form, {
         onSuccess: () => {
           navigate("/verify-email");
         },
-        
       });
     },
     [form, register, navigate],

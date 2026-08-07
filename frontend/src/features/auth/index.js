@@ -1,22 +1,10 @@
-export {
-  useRegister,
-  useVerifyEmail,
-  useResendVerification,
-  useLogin,
-  useLogout,
-  useRequestPasswordReset,
-  useConfirmPasswordReset,
-  useChangePassword,
-  useRequestEmailChange,
-  useConfirmEmailChange,
-  useDeleteAccount,
-} from "./api/useAuthMutations";
+export * from "./api/useAuthMutations";
+export * from "./register";
 
 export { useChangePasswordForm } from "./model/useChangePasswordForm";
 export { useForgotPasswordForm } from "./model/useForgotPasswordForm";
 export { useLoginForm } from "./model/useLoginForm";
 export { useLogoutForm } from "./model/useLogout";
-export { useRegisterForm } from "./model/useRegisterForm";
 export { useResetPasswordForm } from "./model/useResetPasswordForm";
 export { useVerifyEmailPage } from "./model/useVerifyEmail";
 
@@ -32,5 +20,6 @@ export { useConfirmEmailChangeForm } from "./model/useConfirmEmailChange";
 export { useSecurityGate } from "./model/useSecurityGate";
 export { useOTPEntryForm } from "./model/useOTPEntryForm";
 export { useNewEmailOTPForm } from "./model/useNewEmailOTPForm";
+
 
 
