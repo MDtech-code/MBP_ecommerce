@@ -114,7 +114,7 @@ if DEBUG:
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -344,7 +344,8 @@ EMAIL_USE_TLS =env.bool('EMAIL_USE_TLS', default=True)
 EMAIL_HOST_USER =env('EMAIL_HOST_USER', default="test@example.com")
 EMAIL_HOST_PASSWORD =env('EMAIL_HOST_PASSWORD',default='dummy')
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
-
+BRAND_NAME = "BikeExpress"          
+SUPPORT_EMAIL = "support@bikexpress.com" 
 FRONTEND_URL = env('FRONTEND_URL', default='https://localhost:5173')
 # ─── Sentry ───────────────────────────────────────────
 import sentry_sdk
