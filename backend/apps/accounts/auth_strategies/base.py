@@ -1,29 +1,20 @@
 # apps/accounts/auth_strategies/base.py
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+
+import requests
+
+from apps.core.error_codes import ErrorCode
+from apps.core.exceptions import DomainError
+
+logger = logging.getLogger("apps.accounts")
 
 
 @dataclass
 class SocialUserData:
-    """
-    Provider-agnostic normalized user data.
-
-    Every strategy MUST populate all required fields.
-    Optional fields default to safe empty values.
-
-    Fields:
-        provider_id:      Unique ID from provider. Never changes.
-        provider:         Slug matching SocialProvider choices.
-        email:            Verified email. Already lowercased by strategy.
-        full_name:        Constructed by strategy from provider parts.
-        avatar_url:       Profile picture. Empty string if not provided.
-        access_token:     Provider access token for API calls.
-        refresh_token:    Provider refresh token. Empty if not issued.
-        token_expires_at: Token expiry. None if provider does not specify.
-        is_verified:      Provider confirmed this email. Almost always True.
-    """
     provider_id:      str
     provider:         str
     email:            str
@@ -31,34 +22,57 @@ class SocialUserData:
     avatar_url:       str       = ""
     access_token:     str       = ""
     refresh_token:    str       = ""
-    token_expires_at: object    = None   
+    token_expires_at: object    = None
     is_verified:      bool      = True
-    is_provider_email_verified: bool     = False  
-    extra_data:                dict      = field(default_factory=dict) 
+    is_provider_email_verified: bool     = False
+    extra_data:                dict      = field(default_factory=dict)
 
 
 class BaseAuthStrategy(ABC):
-    """
-    Contract every authentication strategy must fulfill.
+    def _get(
+        self,
+        url: str,
+        *,
+        params: dict | None = None,
+        headers: dict | None = None,
+        timeout: int = 10,
+        provider: str,
+        unreachable_message: str,
+        invalid_status_message: str,
+        invalid_status_code_error: str = ErrorCode.INVALID_SOCIAL_TOKEN,
+    ) -> dict:
+        try:
+            response = requests.get(url, params=params, headers=headers, timeout=timeout)
+        except requests.Timeout:
+            logger.warning("%s request timeout: url=%s", provider, url)
+            raise DomainError(
+                unreachable_message,
+                code=ErrorCode.AUTH_PROVIDER_UNREACHABLE,
+                status_code=400,
+            )
+        except requests.RequestException:
+            logger.exception("%s network failure: url=%s", provider, url)
+            raise DomainError(
+                unreachable_message,
+                code=ErrorCode.AUTH_PROVIDER_UNREACHABLE,
+                status_code=400,
+            )
 
-    Subclasses implement authenticate() only.
-    All provider-specific logic stays inside the subclass.
-    Service layer only ever sees SocialUserData.
-    """
+        if response.status_code != 200:
+            logger.warning(
+                "%s rejected request: status=%s body=%s",
+                provider,
+                response.status_code,
+                response.text[:200],
+            )
+            raise DomainError(
+                invalid_status_message,
+                code=invalid_status_code_error,
+                status_code=400,
+            )
+
+        return response.json()
 
     @abstractmethod
     def authenticate(self, token: str) -> SocialUserData:
-        """
-        Verify token with provider. Return normalized user data.
-
-        Args:
-            token: Raw token from client (ID token or access token).
-
-        Returns:
-            SocialUserData — normalized, provider-agnostic.
-
-        Raises:
-            DomainError: Token invalid, expired, wrong audience,
-                         provider unreachable.
-        """
-        ...
+        pass

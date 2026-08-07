@@ -25,7 +25,7 @@ from apps.accounts.services.social_auth import login_or_register_social_user
 from apps.core.error_codes import ErrorCode
 from apps.core.api.views import BaseAPIView
 from apps.core.permissions import IsNotAuthenticated
-from apps.core.throttles import RegistrationRateThrottle
+
 
 from apps.accounts.utils.ip_utils import (
     get_client_ip,
@@ -121,7 +121,7 @@ class RegisterView(BaseAPIView):
     """
 
     permission_classes = [IsNotAuthenticated]
-    throttle_classes = [RegistrationRateThrottle]
+    throttle_classes = [AnonRateThrottle]
     serializer_class = RegisterSerializer
 
     def post(self, request: Request) -> Response:
@@ -1120,7 +1120,7 @@ class SocialAuthView(BaseAPIView):
               email not provided by Facebook, account inactive.
     """
 
-    permission_classes = [AllowAny]
+    permission_classes = [IsNotAuthenticated]
     throttle_classes   = [AnonRateThrottle]
 
     def post(self, request: Request):
@@ -1135,25 +1135,11 @@ class SocialAuthView(BaseAPIView):
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
-        try:
-            strategy    = auth_strategy_registry.get(provider)
-            social_data = strategy.authenticate(token)
-            user        = login_or_register_social_user(social_data)
-            refresh = RefreshToken.for_user(user)
-
-        except DomainError as exc:
-            logger.warning(
-                "Social auth failed",
-                extra={
-                    **log_context,
-                    "provider": provider,
-                    "code":     exc.code,
-                },
-            )
-            return self.error_response(
-                message=exc.message,
-                status_code=exc.status_code,
-            )
+        
+        strategy    = auth_strategy_registry.get(provider)
+        social_data = strategy.authenticate(token)
+        user        = login_or_register_social_user(social_data)
+        refresh = RefreshToken.for_user(user)
 
         logger.info(
             "Social auth success",

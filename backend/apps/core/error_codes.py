@@ -25,6 +25,7 @@ class ErrorCode:
     SESSION_EXPIRED              = "session_expired"
     TOKEN_INVALID                = "token_invalid"
     TOKEN_EXPIRED                = "token_expired"
+    SOCIAL_AUTH_FAILED           ="social login fail"
 
     # ── OTP ───────────────────────────────────────────────────────────────────
     OTP_RESEND_COOLDOWN          = "otp_resend_cooldown"

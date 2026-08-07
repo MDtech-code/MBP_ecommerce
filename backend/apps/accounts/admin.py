@@ -15,9 +15,10 @@ from .models import (
     UserAddress,
     UserLoginActivity,
     UserProfile,
+    SocialAccount,
 )
 
-
+admin.site.register(SocialAccount)
 # ─────────────────────────────────────────────────────────────────────────────
 # INLINES
 # ─────────────────────────────────────────────────────────────────────────────

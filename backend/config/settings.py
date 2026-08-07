@@ -226,6 +226,7 @@ SIMPLE_JWT = {
 # ─── Google credential  ──────────────────────────────────────────────
 GOOGLE_CLIENT_ID     = env("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = env("GOOGLE_CLIENT_SECRET")
+GOOGLE_REDIRECT_URI=env("GOOGLE_REDIRECT_URI")
 # ─── facebook credential  ──────────────────────────────────────────────
 FACEBOOK_APP_ID     = env("FACEBOOK_APP_ID")
 FACEBOOK_APP_SECRET = env("FACEBOOK_APP_SECRET")
