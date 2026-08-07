@@ -5,6 +5,382 @@ import logging
 
 from celery import shared_task
 from django.conf import settings
+
+from .emails import send_email
+
+logger = logging.getLogger("apps.accounts")
+
+
+# ─── Shared constants ─────────────────────────────────────────────────────────
+
+# Maps SecurityPurpose strings to human-readable labels.
+# Used in security_otp task subject and template context.
+# Defined once here — not inside the function — so it is not
+# reconstructed on every task execution.
+_PURPOSE_LABELS: dict[str, str] = {
+    "change_email":    "Email Change",
+    "change_password": "Password Change",
+    "delete_account":  "Account Deletion",
+}
+
+
+# ─── Send Verification Email ──────────────────────────────────────────────────
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def send_verification_email_task(self, user_id: int, token: str) -> None:
+    """
+    Send an email verification link to a newly registered user.
+
+    Args:
+        user_id: PK of the User to send to.
+        token:   UUID string of the EmailVerificationToken.
+
+    Retry:
+        Up to 3 times with 60-second delay on unexpected failures.
+        No retry if user is not found — permanent condition.
+    """
+    from .models import User
+
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        logger.warning(
+            "Verification email skipped — user not found",
+            extra={"user_id": user_id},
+        )
+        return
+
+    verify_url = f"{settings.FRONTEND_URL}/verify-email?token={token}"
+
+    try:
+        send_email(
+            subject       = f"Verify your {settings.BRAND_NAME} email address",
+            template_name = "emails/verify_email.html",
+            context       = {
+                "user_name":  user.short_name,
+                "verify_url": verify_url,
+            },
+            recipient     = user.email,
+        )
+        logger.info(
+            "Verification email sent successfully",
+            extra={"user_id": user.id},
+        )
+    except Exception as exc:
+        logger.exception(
+            "Failed to send verification email — will retry",
+            extra={"user_id": user.id, "attempt": self.request.retries},
+        )
+        raise self.retry(exc=exc)
+
+
+# ─── Send Password Reset Email ────────────────────────────────────────────────
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def send_password_reset_email_task(self, user_id: int, token: str) -> None:
+    """
+    Send a password reset link to the requesting user.
+
+    Args:
+        user_id: PK of the User requesting the reset.
+        token:   UUID string of the PasswordResetToken.
+
+    Retry:
+        Up to 3 times with 60-second delay on unexpected failures.
+        No retry if user is not found — permanent condition.
+    """
+    from .models import User
+
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        logger.warning(
+            "Password reset email skipped — user not found",
+            extra={"user_id": user_id},
+        )
+        return
+
+    reset_url = f"{settings.FRONTEND_URL}/reset-password?token={token}"
+
+    try:
+        send_email(
+            subject       = f"Reset your {settings.BRAND_NAME} password",
+            template_name = "emails/reset_password.html",
+            context       = {
+                "user_name": user.short_name,
+                "reset_url": reset_url,
+            },
+            recipient     = user.email,
+        )
+        logger.info(
+            "Password reset email sent successfully",
+            extra={"user_id": user.id},
+        )
+    except Exception as exc:
+        logger.exception(
+            "Failed to send password reset email — will retry",
+            extra={"user_id": user.id, "attempt": self.request.retries},
+        )
+        raise self.retry(exc=exc)
+
+
+# ─── Send Welcome Email ───────────────────────────────────────────────────────
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def send_welcome_email_task(self, user_id: int) -> None:
+    """
+    Send a welcome email after a user successfully verifies their email.
+
+    Args:
+        user_id: PK of the newly verified User.
+
+    Retry:
+        Up to 3 times with 60-second delay on unexpected failures.
+        No retry if user is not found — permanent condition.
+    """
+    from .models import User
+
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        logger.warning(
+            "Welcome email skipped — user not found",
+            extra={"user_id": user_id},
+        )
+        return
+
+    try:
+        send_email(
+            subject       = f"Welcome to {settings.BRAND_NAME}!",
+            template_name = "emails/welcome.html",
+            context       = {
+                "user_name": user.short_name,
+            },
+            recipient     = user.email,
+        )
+        logger.info(
+            "Welcome email sent successfully",
+            extra={"user_id": user.id},
+        )
+    except Exception as exc:
+        logger.exception(
+            "Failed to send welcome email — will retry",
+            extra={"user_id": user.id, "attempt": self.request.retries},
+        )
+        raise self.retry(exc=exc)
+
+
+# ─── Send Goodbye Email ───────────────────────────────────────────────────────
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def send_goodbye_email_task(self, user_email: str, user_name: str) -> None:
+    """
+    Send a goodbye email after a user deletes their account.
+
+    Why email and name instead of user_id?
+        User is hard deleted before this task runs.
+        A user_id lookup would always fail with DoesNotExist.
+        Email and name are collected before deletion and passed directly.
+
+    Args:
+        user_email: Email address collected before deletion.
+        user_name:  Short name collected before deletion.
+
+    Retry:
+        Up to 3 times with 60-second delay on unexpected failures.
+    """
+    try:
+        send_email(
+            subject       = f"We are sad to see you go — {settings.BRAND_NAME}",
+            template_name = "emails/goodbye.html",
+            context       = {
+                "user_name": user_name,
+            },
+            recipient     = user_email,
+        )
+        logger.info(
+            "Goodbye email sent successfully",
+            extra={"email": user_email},
+        )
+    except Exception as exc:
+        logger.exception(
+            "Failed to send goodbye email — will retry",
+            extra={"email": user_email, "attempt": self.request.retries},
+        )
+        raise self.retry(exc=exc)
+
+
+# ─── Send Security OTP Email ──────────────────────────────────────────────────
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def send_security_otp_task(
+    self,
+    user_id: int,
+    otp_code: str,
+    purpose: str,
+    recipient_email: str | None = None,
+) -> None:
+    """
+    Send a 6-digit security OTP to the user's email address.
+
+    Args:
+        user_id:         PK of the User.
+        otp_code:        Plain-text 6-digit OTP (never stored, only in transit).
+        purpose:         SecurityPurpose string — key into _PURPOSE_LABELS.
+        recipient_email: Override recipient address. When provided, the OTP is
+                         sent to this address instead of user.email. Used when
+                         the OTP must reach a new/pending email address before
+                         it is saved to the User record.
+
+    Retry:
+        Up to 3 times with 60-second delay on unexpected failures.
+        No retry if user is not found — permanent condition.
+    """
+    from .models import User
+
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        logger.warning(
+            "Security OTP task skipped — user not found",
+            extra={"user_id": user_id},
+        )
+        return
+
+    purpose_label = _PURPOSE_LABELS.get(purpose, "Security Verification")
+    target_email  = recipient_email or user.email
+
+    try:
+        send_email(
+            subject       = f"Your {settings.BRAND_NAME} verification code — {purpose_label}",
+            template_name = "emails/security_otp.html",
+            context       = {
+                "user_name":     user.short_name,
+                "otp_code":      otp_code,
+                "purpose_label": purpose_label,
+            },
+            recipient     = target_email,
+        )
+        logger.info(
+            "Security OTP email sent",
+            extra={"user_id": user.id, "purpose": purpose},
+        )
+    except Exception as exc:
+        logger.exception(
+            "Failed to send security OTP email — will retry",
+            extra={"user_id": user.id, "purpose": purpose},
+        )
+        raise self.retry(exc=exc)
+
+
+# ─── Send Email Change Verification ──────────────────────────────────────────
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def send_email_change_verification_task(
+    self,
+    user_id: int,
+    new_email: str,
+    token: str,
+) -> None:
+    """
+    Send email change verification link to the NEW email address.
+
+    Args:
+        user_id:   PK of the User requesting email change.
+        new_email: The new email address to send verification to.
+        token:     UUID string of the PendingEmailChange token.
+
+    Retry:
+        Up to 3 times with 60-second delay on unexpected failures.
+        No retry if user is not found — permanent condition.
+    """
+    from .models import User
+
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        logger.warning(
+            "Email change verification skipped — user not found",
+            extra={"user_id": user_id},
+        )
+        return
+
+    confirm_url = f"{settings.FRONTEND_URL}/security/verify-new-email-otp?token={token}"
+
+    try:
+        send_email(
+            subject       = f"Verify your new {settings.BRAND_NAME} email address",
+            template_name = "emails/email_change_verify.html",
+            context       = {
+                "user_name":   user.short_name,
+                "confirm_url": confirm_url,
+            },
+            recipient     = new_email,
+        )
+        logger.info(
+            "Email change verification sent successfully",
+            extra={"user_id": user_id, "new_email": new_email},
+        )
+    except Exception as exc:
+        logger.exception(
+            "Failed to send email change verification — will retry",
+            extra={"user_id": user_id, "attempt": self.request.retries},
+        )
+        raise self.retry(exc=exc)
+
+
+# ─── Send Email Change Security Notification ──────────────────────────────────
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def send_email_change_notification_task(
+    self,
+    user_id: int,
+    old_email: str,
+    user_name: str,
+) -> None:
+    """
+    Send security notification to the OLD email address after email change.
+
+    Why pass old_email and user_name directly?
+        By the time this task runs, user.email may already be updated.
+        Passing them directly guarantees correct values regardless
+        of when the worker picks up the task.
+
+    Args:
+        user_id:   PK of the User (for logging only).
+        old_email: Old email address to send notification to.
+        user_name: User's short name collected before the change.
+
+    Retry:
+        Up to 3 times with 60-second delay on unexpected failures.
+    """
+    try:
+        send_email(
+            subject       = f"Security notice — email address changed on your {settings.BRAND_NAME} account",
+            template_name = "emails/email_change_notify.html",
+            context       = {
+                "user_name": user_name,
+            },
+            recipient     = old_email,
+        )
+        logger.info(
+            "Email change security notification sent successfully",
+            extra={"user_id": user_id, "old_email": old_email},
+        )
+    except Exception as exc:
+        logger.exception(
+            "Failed to send email change security notification — will retry",
+            extra={"user_id": user_id, "attempt": self.request.retries},
+        )
+        raise self.retry(exc=exc)
+'''
+# apps/accounts/tasks.py
+from __future__ import annotations
+
+import logging
+
+from celery import shared_task
+from django.conf import settings
 from django.core.mail import send_mail
 
 logger = logging.getLogger("apps.accounts")
@@ -429,7 +805,8 @@ def send_email_change_notification_task(
             extra={"user_id": user_id, "attempt": self.request.retries},
         )
         raise self.retry(exc=exc)
-    
+    '''
+
 
 
 
