@@ -99,9 +99,7 @@ def verify_email(*, token_value: str) -> bool:
                     status_code=400,
                 )
 
-            #! Step 2c: Already verified — idempotent
-            # No DB writes needed. Return False so view sends
-            # the correct "already verified" message to the client.
+            #! Step 2c: Already verified 
             if user.is_verified:
                 logger.warning(
                     "Verification called for already-verified user",
