@@ -12,7 +12,7 @@ from apps.core.exceptions import DomainError
 from apps.common.utils.email_utils import mask_email
 
 
-logger = logging.getLogger("apps.accounts")
+logger = logging.getLogger(__name__)
 
 
 def register_user(
@@ -57,7 +57,7 @@ def register_user(
     
     email = email.lower().strip()
     full_name = " ".join(full_name.strip().split())
-    log_context = {"email": email}
+    log_context = {"email": mask_email(email)}
 
     #! ── Phase 1: Atomic DB operations ─────────────────────────────────────────
     try:
@@ -125,10 +125,10 @@ def register_user(
         )
         raise
 
-    # ── Phase 2: Side effects (after successful commit) ────────────────────────
-   
+    # ── Phase 2: dispatch email  ────────────────────────
+    print(user,type(user))
     _dispatch_verification_email(
-        user_id=user.id,
+        user=user,
         token=token_obj.token,
         log_context=log_context,
     )
@@ -136,21 +136,21 @@ def register_user(
     return user
 
 def _dispatch_verification_email(
-    user_id: int,
+    user:User,
     token: str,
     log_context: dict,
 ) -> None:
    
     try:
-        send_verification_email_task.delay(user_id, str(token))
+        send_verification_email_task.delay(user.id, str(token))
         logger.info(
             "Verification email task dispatched",
-            extra={**log_context, "user_id": user_id},
+            extra={**log_context, "user_id": user.id},
         )
     except Exception:
         logger.exception(
             "Failed to dispatch verification email — "
             "user created but email not sent. "
             "Recovery via resend-verification endpoint.",
-            extra={**log_context, "user_id": user_id},
+            extra={**log_context, "user_id": user.id},
         )

@@ -2,21 +2,22 @@
 from __future__ import annotations
 
 import logging
-
+from typing import TYPE_CHECKING
 from celery import shared_task
 from django.conf import settings
-
+from apps.core.decorators import require_user
 from .emails import send_email
 
-logger = logging.getLogger("apps.accounts")
+if TYPE_CHECKING:
+    from apps.accounts.models import User
 
 
-# ─── Shared constants ─────────────────────────────────────────────────────────
+logger = logging.getLogger(__name__)
 
-# Maps SecurityPurpose strings to human-readable labels.
-# Used in security_otp task subject and template context.
-# Defined once here — not inside the function — so it is not
-# reconstructed on every task execution.
+
+
+
+
 _PURPOSE_LABELS: dict[str, str] = {
     "change_email":    "Email Change",
     "change_password": "Password Change",
@@ -27,31 +28,10 @@ _PURPOSE_LABELS: dict[str, str] = {
 # ─── Send Verification Email ──────────────────────────────────────────────────
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
-def send_verification_email_task(self, user_id: int, token: str) -> None:
-    """
-    Send an email verification link to a newly registered user.
-
-    Args:
-        user_id: PK of the User to send to.
-        token:   UUID string of the EmailVerificationToken.
-
-    Retry:
-        Up to 3 times with 60-second delay on unexpected failures.
-        No retry if user is not found — permanent condition.
-    """
-    from .models import User
-
-    try:
-        user = User.objects.get(id=user_id)
-    except User.DoesNotExist:
-        logger.warning(
-            "Verification email skipped — user not found",
-            extra={"user_id": user_id},
-        )
-        return
-
+@require_user('Verification email')
+def send_verification_email_task(self, user: User, token: str) -> None:
+    
     verify_url = f"{settings.FRONTEND_URL}/verify-email?token={token}"
-
     try:
         send_email(
             subject       = f"Verify your {settings.BRAND_NAME} email address",
