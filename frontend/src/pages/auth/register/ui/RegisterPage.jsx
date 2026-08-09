@@ -3,8 +3,7 @@
 import { Link } from "react-router-dom"
 import { User, Mail, Lock } from "lucide-react"
 import {AuthPageHeader} from "@widgets/auth"
-import { FormInput } from "@shared/ui"
-import  {Toast}  from "@shared/ui"
+import { FormInput,Toast } from "@shared/ui"
 import { useRegisterForm } from "@features/auth"
 
 
@@ -29,7 +28,7 @@ export default function RegisterPage() {
 
   return (
     <div>
-      {/* auth page heading */}
+      {/*  heading */}
       <AuthPageHeader title="Create Account"subtitle="Join BikeExpress today"/>
 
       {/* Toast for non-fields error  */}
@@ -69,7 +68,7 @@ export default function RegisterPage() {
         </button>
       </form>
 
-      <p className="mt-4 text-center text-sm text-gray-600 dark:text-gray-400">
+      <p className="mt-4 text-center text-sm text-muted">
         Already have an account?{" "}
         <Link
           to="/login"
