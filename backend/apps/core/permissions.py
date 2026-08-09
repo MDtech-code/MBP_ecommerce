@@ -1,16 +1,14 @@
 from __future__ import annotations
 
-from typing import Any
 import logging
 
-from django.contrib.auth import get_user_model
-from rest_framework.permissions import BasePermission
 from rest_framework.request import Request
 from rest_framework.views import APIView
+from rest_framework.permissions import BasePermission
 
 from apps.common.choices.role import Role
 
-User = get_user_model()
+
 logger = logging.getLogger(__name__)
 
 
@@ -98,6 +96,7 @@ class IsVerified(BasePermission):
                 is_verified,
             )
         return is_verified
+
 
 
 class IsNotAuthenticated(BasePermission):

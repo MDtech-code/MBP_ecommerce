@@ -99,7 +99,7 @@ from .serializers import (
 logger = logging.getLogger("apps.accounts")
 
 
-# ─── Register ──────────────────────────────────────────────────────────────────
+#! ─── Register ──────────────────────────────────────────────────────────────────
 
 class RegisterView(BaseAPIView):
 

@@ -28,8 +28,7 @@ urlpatterns = [
     path("logout/", LogoutView.as_view(), name="logout"),
     path("token/refresh/", TokenRefreshView.as_view(), name="token-refresh"),
     path("auth/social/", SocialAuthView.as_view(), name="social-auth"),
-    # apps/accounts/urls.py — add new routes
-
+    # ─── OTP  ─────────────────────────────────────────
     path("security/send-otp/",    SendSecurityOTPView.as_view(),   name="security-send-otp"),
     path("security/verify-otp/",  VerifySecurityOTPView.as_view(), name="security-verify-otp"),
 
@@ -40,6 +39,7 @@ urlpatterns = [
     # ─── Password reset─────────────────────────────────────
     path("password-reset/", PasswordResetRequestView.as_view(), name="password-reset"),
     path("password-reset/confirm/", PasswordResetConfirmView.as_view(), name="password-reset-confirm"),
+    # ─── change password ─────────────────────────────────────────
     path("change-password/", ChangePasswordView.as_view(), name="change-password"),
 
     # ─── Profile ──────────────────────────────────────

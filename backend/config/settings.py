@@ -9,6 +9,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 environ.Env.read_env(BASE_DIR / ".env")
 
 
+
+
+
 # ─── Core ────────────────────────────────────────────
 SECRET_KEY = env('SECRET_KEY')
 DEBUG = env.bool('DEBUG',default=False)
@@ -374,86 +377,81 @@ if SENTRY_DSN:
 # AWS_STORAGE_BUCKET_NAME = env('AWS_STORAGE_BUCKET_NAME')
 # AWS_ACCESS_KEY_ID = env('AWS_ACCESS_KEY_ID')
 # AWS_SECRET_ACCESS_KEY = env('AWS_SECRET_ACCESS_KEY')
+
 # ─── Logging ──────────────────────────────────────────
 
-LOGS_DIR = BASE_DIR / 'logs'
-LOGS_DIR.mkdir(exist_ok=True)
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'filters': {
-        'sensitive_data': {
-            '()': 'apps.core.logging.SensitiveDataFilter',
-        }
-    },
-    'formatters': {
-        'verbose': {
-            'format': '[{asctime}] {levelname} {name} {message}',
-            'style': '{',
-            'datefmt': '%Y-%m-%d %H:%M:%S',
-        },
-    },
-    'handlers': {
-        'integration_test_file': {
-            'level': 'INFO',
-            'class': 'logging.FileHandler',
-            'filename': str(LOGS_DIR / 'integration_test.log'),
-            'formatter': 'verbose',
-        },
-        'core_file':{
-            'level': 'INFO',
-            'class': 'logging.FileHandler',
-            'filename': str(LOGS_DIR / 'core.log'),
-            'formatter': 'verbose',
+# LOGS_DIR = BASE_DIR / 'logs'
+# LOGS_DIR.mkdir(exist_ok=True)
+# LOGGING = {
+#     'version': 1,
+#     'disable_existing_loggers': False,
+#     'filters': {
+#         'sensitive_data': {
+#             '()': 'apps.core.logging.SensitiveDataFilter',
+#         }
+#     },
+#     'formatters': {
+#         'verbose': {
+#             'format': '[{asctime}] {levelname} {name} {message}',
+#             'style': '{',
+#             'datefmt': '%Y-%m-%d %H:%M:%S',
+#         },
+#     },
+#     'handlers': {
+        
+#         'core_file':{
+#             'level': 'INFO',
+#             'class': 'logging.FileHandler',
+#             'filename': str(LOGS_DIR / 'core.log'),
+#             'formatter': 'verbose',
 
-        },
-        'accounts_file':{
-            'level': 'INFO',
-            'class': 'logging.FileHandler',
-            'filename': str(LOGS_DIR / 'accounts.log'),
-            'formatter': 'verbose',
+#         },
+#         'accounts_file':{
+#             'level': 'INFO',
+#             'class': 'logging.FileHandler',
+#             'filename': str(LOGS_DIR / 'accounts.log'),
+#             'formatter': 'verbose',
 
-        },
-        'products_file': {
-    'level': 'INFO',
-    'class': 'logging.FileHandler',
-    'filename': str(LOGS_DIR / 'products.log'),
-    'formatter': 'verbose',
-},
-'orders_file': {
-    'level': 'INFO',
-    'class': 'logging.FileHandler',
-    'filename': str(LOGS_DIR / 'orders.log'),
-    'formatter': 'verbose',
-},
-'cart_file': {
-    'level': 'INFO',
-    'class': 'logging.FileHandler',
-    'filename': str(LOGS_DIR / 'cart.log'),
-    'formatter': 'verbose',
-},
-        'console': {
-            'class': 'logging.StreamHandler',
-            'formatter': 'verbose',
-            'level': 'DEBUG',
-        },
-        'file': {
-            'class': 'logging.FileHandler',
-            'filename': str(LOGS_DIR / 'django.log'),
-            'formatter': 'verbose',
-            'filters': ['sensitive_data'],
-            'level': 'DEBUG',
-        },
-    },
-    'loggers': {
-    'apps.accounts': {'handlers': ['console', 'accounts_file'], 'level': 'DEBUG', 'propagate': False},
-    'apps.products': {'handlers': ['console', 'products_file'], 'level': 'DEBUG', 'propagate': False},
-    'apps.orders':   {'handlers': ['console', 'orders_file'],   'level': 'DEBUG', 'propagate': False},
-    'apps.cart':     {'handlers': ['console', 'cart_file'],     'level': 'DEBUG', 'propagate': False},
-    'apps.core':     {'handlers': ['console', 'core_file'],     'level': 'DEBUG', 'propagate': False},
-    'apps.integration_test': {'handlers': ['console', 'integration_test_file'], 'level': 'DEBUG', 'propagate': False},
-    'celery':        {'handlers': ['console', 'file'], 'level': 'INFO',  'propagate': False},
-    'django':        {'handlers': ['console', 'file'], 'level': 'INFO',  'propagate': False},
-    '':              {'handlers': ['console', 'file'], 'level': 'WARNING'},
-},
-}
+#         },
+#         'products_file': {
+#     'level': 'INFO',
+#     'class': 'logging.FileHandler',
+#     'filename': str(LOGS_DIR / 'products.log'),
+#     'formatter': 'verbose',
+# },
+# 'orders_file': {
+#     'level': 'INFO',
+#     'class': 'logging.FileHandler',
+#     'filename': str(LOGS_DIR / 'orders.log'),
+#     'formatter': 'verbose',
+# },
+# 'cart_file': {
+#     'level': 'INFO',
+#     'class': 'logging.FileHandler',
+#     'filename': str(LOGS_DIR / 'cart.log'),
+#     'formatter': 'verbose',
+# },
+#         'console': {
+#             'class': 'logging.StreamHandler',
+#             'formatter': 'verbose',
+#             'level': 'DEBUG',
+#         },
+#         'file': {
+#             'class': 'logging.FileHandler',
+#             'filename': str(LOGS_DIR / 'django.log'),
+#             'formatter': 'verbose',
+#             'filters': ['sensitive_data'],
+#             'level': 'DEBUG',
+#         },
+#     },
+#     'loggers': {
+#     'apps.accounts': {'handlers': ['console', 'accounts_file'], 'level': 'DEBUG', 'propagate': False},
+#     'apps.products': {'handlers': ['console', 'products_file'], 'level': 'DEBUG', 'propagate': False},
+#     'apps.orders':   {'handlers': ['console', 'orders_file'],   'level': 'DEBUG', 'propagate': False},
+#     'apps.cart':     {'handlers': ['console', 'cart_file'],     'level': 'DEBUG', 'propagate': False},
+#     'apps.core':     {'handlers': ['console', 'core_file'],     'level': 'DEBUG', 'propagate': False},
+#     'celery':        {'handlers': ['console', 'file'], 'level': 'INFO',  'propagate': False},
+#     'django':        {'handlers': ['console', 'file'], 'level': 'INFO',  'propagate': False},
+#     '':              {'handlers': ['console', 'file'], 'level': 'WARNING'},
+# },
+# }
