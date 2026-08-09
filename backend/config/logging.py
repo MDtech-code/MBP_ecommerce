@@ -1,6 +1,6 @@
 # config/logging.py
 
-from settings import BASE_DIR
+from .settings import BASE_DIR
 
 LOGS_DIR = BASE_DIR / 'logs'
 LOGS_DIR.mkdir(exist_ok=True)
