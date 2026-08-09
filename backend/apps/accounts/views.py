@@ -25,6 +25,8 @@ from apps.accounts.services.social_auth import login_or_register_social_user
 from apps.core.error_codes import ErrorCode
 from apps.core.api.views import BaseAPIView
 from apps.core.permissions import IsNotAuthenticated
+from apps.core.timing import normalize_response_time
+from apps.common.utils.email_utils import mask_email
 
 
 from apps.accounts.utils.ip_utils import (
@@ -125,17 +127,15 @@ class RegisterView(BaseAPIView):
             )
 
         try:
+            
             user = register_user(**serializer.validated_data)
         except DomainError as exc:
-            elapsed = time.monotonic() - start
-            min_response_time = 0.5  
-            if elapsed < min_response_time:
-                time.sleep(min_response_time - elapsed)
+            normalize_response_time(start)
             return self.app_error_response(exc=exc)
 
         logger.info(
             "New user registered successfully",
-            extra={**log_context, "user_id": user.id, "email": user.email},
+            extra={**log_context, "user_id": user.id, "email": mask_email(user.email)},
         )
 
         response= self.created_response(

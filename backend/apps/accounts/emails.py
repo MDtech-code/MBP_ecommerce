@@ -8,7 +8,7 @@ from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 
-logger = logging.getLogger("apps.accounts")
+logger = logging.getLogger(__name__)
 
 
 def _base_context() -> dict:
@@ -22,7 +22,7 @@ def _base_context() -> dict:
         shop_url      — homepage link used in welcome email CTA
 
     Centralised here so adding a new global variable means
-    one change, not touching every send_* function.
+    one change.
     """
     return {
         "brand_name":    settings.BRAND_NAME,
@@ -33,20 +33,7 @@ def _base_context() -> dict:
 
 
 def _render_plain_text(html_content: str) -> str:
-    """
-    Derive a plain-text fallback from the rendered HTML.
-
-    Strategy: strip all HTML tags via a simple replace chain.
-    This is intentionally basic — the plain-text version is a
-    compatibility fallback for mail clients that block HTML.
-    It does not need to be beautiful, it needs to be readable.
-
-    Args:
-        html_content: Fully rendered HTML string.
-
-    Returns:
-        Stripped plain-text string.
-    """
+   
     import re
     # Remove style blocks entirely — CSS has no place in plain text
     text = re.sub(r'<style[^>]*>.*?</style>', '', html_content, flags=re.DOTALL)
@@ -86,8 +73,7 @@ def send_email(
         Exception: Re-raised after logging so the calling Celery task
                    can handle retry logic itself.
     """
-    # Merge base context — template-specific context takes priority
-    # if there is a key collision (unlikely but safe)
+    
     full_context = {**_base_context(), **context}
 
     html_content  = render_to_string(template_name, full_context)
