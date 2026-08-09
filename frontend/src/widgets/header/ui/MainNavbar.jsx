@@ -16,12 +16,7 @@ import { useAuthStore }        from "@entities/user"
 import { useNavigate }         from "react-router-dom"
 
 
-/**
- * Which mega menu is open:
- *   null         → none
- *   "bike-parts" → BikePartsMegaMenu
- *   "brands"     → BrandsMegaMenu
- */
+
 
 export default function MainNavbar({ user }) {
   const [menuOpen, setMenuOpen]       = useState(false);
@@ -147,12 +142,9 @@ const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
                                   transition-colors">
                     <ShoppingCart className="w-5 h-5" />
                     
-                   <span
-  className="hidden lg:inline text-sm cursor-pointer"
-  onClick={() => navigate(isAuthenticated ? "/cart" : "/login")}
->
-  Cart
-</span>
+                   <span className="hidden lg:inline text-sm cursor-pointer" onClick={() => navigate(isAuthenticated ? "/cart" : "/login")}>
+                      Cart
+                    </span>
 
                   </div>
                 </>
@@ -236,18 +228,7 @@ const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
                   </div>
 
                   {/* Cart */}
-                  {/* <div className="flex items-center gap-1.5 font-semibold
-                                  cursor-pointer hover:text-primary
-                                  transition-colors relative">
-                    <ShoppingCart className="w-5 h-5" />
-                    <span className="hidden lg:inline text-sm">Cart</span>
-                    <span className="absolute -top-2 -right-2 bg-primary
-                                     text-white text-xs rounded-full w-4 h-4
-                                     flex items-center justify-center
-                                     font-bold">
-                      0
-                    </span>
-                  </div> */}
+                  
                   <CartIcon/>
                 </>
               )}

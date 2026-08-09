@@ -67,14 +67,7 @@ logger = logging.getLogger("apps.cart")
 class CartDetailAPIView(BaseAPIView):
     """
     GET /api/cart/
-
     Return the authenticated user's cart with all items and totals.
-
-    Why Cart.DoesNotExist → 500 not 404:
-        Cart is auto-created by post_save signal on User creation.
-        A missing cart means the signal failed — server-side defect.
-        The client did nothing wrong. 404 would imply a bad request.
-        500 + support message is the correct signal to the user.
     """
 
     permission_classes = [IsAuthenticated]
