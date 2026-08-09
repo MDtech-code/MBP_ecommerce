@@ -14,7 +14,8 @@ APPS = [
 # Shared formatter
 FORMATTERS = {
     'verbose': {
-        'format': '[{asctime}] {levelname} {name} {message} | request_id={request_id} errors={errors}',
+        '()': 'apps.core.logging.ExtraFieldsFormatter',
+        'format': '[{asctime}] {levelname} {name} {message}',
         'style': '{',
         'datefmt': '%Y-%m-%d %H:%M:%S',
     },
