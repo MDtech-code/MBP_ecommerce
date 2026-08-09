@@ -3,8 +3,6 @@ from __future__ import annotations
 import logging
 
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.contrib.auth import authenticate
-from django.db import IntegrityError
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 from rest_framework.exceptions import ErrorDetail
@@ -16,7 +14,7 @@ from apps.core.mixins import TimestampFieldsMixin
 from .models import User, UserProfile,UserAddress,SecurityPurpose
 from .validators import validate_email_format,validate_full_name,validate_image_file,validate_pakistani_phone,validate_passwords_match,validate_strong_password
 
-logger = logging.getLogger("apps.accounts")
+logger = logging.getLogger(__name__)
 
 
 
@@ -228,10 +226,7 @@ class UserSerializer(TimestampFieldsMixin,serializers.ModelSerializer):
 
 class RegisterSerializer(serializers.Serializer):
     """
-    Validate new user registration input.
-
-    Responsibility:
-        Validate and clean input data ONLY.
+    Validate  user registration input.
     """
 
     full_name = serializers.CharField(
