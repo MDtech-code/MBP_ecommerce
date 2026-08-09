@@ -14,7 +14,7 @@ APPS = [
 # Shared formatter
 FORMATTERS = {
     'verbose': {
-        'format': '[{asctime}] {levelname} {name} {message}',
+        'format': '[{asctime}] {levelname} {name} {message} | request_id={request_id} errors={errors}',
         'style': '{',
         'datefmt': '%Y-%m-%d %H:%M:%S',
     },

@@ -17,5 +17,5 @@ class SensitiveDataFilter(logging.Filter):
                 msg = re.sub(pattern, replacement, msg)
             record.msg = msg
         except Exception as e:
-            pass  # Don't break logging if filtering fails
+            pass  
         return True

@@ -96,7 +96,7 @@ from .serializers import (
 
 
 
-logger = logging.getLogger("apps.accounts")
+logger = logging.getLogger(__name__)
 
 
 #! ─── Register ──────────────────────────────────────────────────────────────────
@@ -110,7 +110,7 @@ class RegisterView(BaseAPIView):
     def post(self, request: Request) -> Response:
         log_context = {"request_id": request.id}
         start=time.monotonic()
-        
+
         serializer = self.get_serializer(data=request.data)
 
         if not serializer.is_valid():
