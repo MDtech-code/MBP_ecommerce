@@ -1,10 +1,10 @@
 import { useRef } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { Container } from "@shared/ui"
-import CategoryCard from "./CategoryCard";
-import { categories } from "@shared/config"
+import { Container } from "@shared/ui";
+import CategoryCard from "./FeactureProductCard";
+import { FeatureProduct } from "@shared/config";
 
-export default function CategorySlider() {
+export default function FeactureProductSlider() {
   const scrollRef = useRef(null);
 
   const scroll = (direction) => {
@@ -23,7 +23,6 @@ export default function CategorySlider() {
     <section className="-mt-12 relative z-30">
       <Container>
         <div className="relative bg-white rounded-2xl shadow-xl">
-
           {/* LEFT BUTTON */}
           <button
             onClick={() => scroll("left")}
@@ -38,11 +37,8 @@ export default function CategorySlider() {
             ref={scrollRef}
             className="flex overflow-x-auto scroll-smooth no-scrollbar"
           >
-            {categories.map((category) => (
-              <CategoryCard
-                key={category.id}
-                category={category}
-              />
+            {FeatureProduct.map((category) => (
+              <CategoryCard key={category.id} category={category} />
             ))}
           </div>
 
@@ -54,7 +50,6 @@ export default function CategorySlider() {
           >
             <ChevronRight size={20} />
           </button>
-
         </div>
       </Container>
     </section>

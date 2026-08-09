@@ -1,7 +1,7 @@
 import { ArrowRight } from "lucide-react";
-import { Container } from "@shared/ui"
-import HeroBenefits from "./HeroBenefits";
-import bikeHero from "@shared/assets/images/hero/bike-hero-1.png"
+import { Container,HeroBenefits } from "@shared/ui"
+
+import {heroSectionImage} from "@shared/assets"
 export default function Hero() {
   return (
     <section className="relative overflow-hidden bg-dark">
@@ -39,7 +39,7 @@ export default function Hero() {
           {/* RIGHT IMAGE */}
           <div className="w-full lg:w-1/2 flex justify-center lg:justify-end mb-10 lg:mb-0">
             <img
-              src={bikeHero}
+              src={heroSectionImage}
               alt="Sport Bike"
               className="w-[85%] sm:w-[70%] lg:w-full max-w-lg object-contain"
             />

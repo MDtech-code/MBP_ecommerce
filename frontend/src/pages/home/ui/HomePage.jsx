@@ -1,7 +1,7 @@
 
 
 import { Hero } from "@widgets/home"
-import { CategorySlider } from "@widgets/home"
+import { FeactureProductSlider } from "@widgets/home"
 
 export default function Home(){
 
@@ -9,14 +9,8 @@ export default function Home(){
 return (
 
 <>
-
-
   <Hero />
-  <CategorySlider />
-
-
-
-
+  <FeactureProductSlider />
 
 </>
 

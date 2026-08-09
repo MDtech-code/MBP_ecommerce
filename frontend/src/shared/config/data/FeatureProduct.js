@@ -1,13 +1,7 @@
-import engine from "@shared/assets/images/categories/engine.png";
-import chain from "@shared/assets/images/categories/chain.png";
-import brake from "@shared/assets/images/categories/brake.png";
-import tyre from "@shared/assets/images/categories/tyre.png";
-import light from "@shared/assets/images/categories/light.png";
-import battery from "@shared/assets/images/categories/battries.png";
-import helmet from "@shared/assets/images/categories/helmet.png";
-import oil from "@shared/assets/images/categories/oil.png";
 
-export const categories = [
+import { batteries,brake,chain,engine,helmet,light,oil,tyre} from "@shared/assets"
+
+export const FeatureProduct = [
   {
     id: 1,
     name: "Engine Parts",
@@ -47,7 +41,7 @@ export const categories = [
     id: 6,
     name: "Batteries",
     products: "35+ Products",
-    image: battery,
+    image: batteries,
   },
 
   {

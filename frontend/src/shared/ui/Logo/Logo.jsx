@@ -1,6 +1,6 @@
-// src/components/layout/Logo.jsx
-import logo      from "@shared/assets/images/logo/logo.png"
-import auth_logo from "@shared/assets/images/logo/auth_banner_logo.png"
+// src/shared/ui/Logo/Logo.jsx
+
+import {logoRed,logoWhite} from "@shared/assets"
 
 export default function Logo({ variant = "light", size = "md" }) {
 
@@ -20,7 +20,6 @@ export default function Logo({ variant = "light", size = "md" }) {
       title: "text-3xl",
       tagline: "text-sm"
     },
-    // NEW — responsive size, small on mobile grows on laptop
     responsive: {
       img: "w-8 h-8 md:w-15 md:h-10",
       title: "text-lg md:text-xl",
@@ -33,13 +32,13 @@ export default function Logo({ variant = "light", size = "md" }) {
       bike: "text-black",
       express: "text-red-600",
       taglineColor: "text-muted",
-      logo: logo
+      logo: logoRed
     },
     dark: {
       bike: "text-white",
       express: "text-red-500",
       taglineColor: "text-gray-300",
-      logo: auth_logo
+      logo: logoWhite
     }
   }
 
