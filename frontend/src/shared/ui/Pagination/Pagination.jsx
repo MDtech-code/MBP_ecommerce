@@ -1,26 +1,7 @@
 // src/shared/ui/Pagination.jsx
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
-/**
- * Pagination — fully driven by backend meta object.
- *
- * Props:
- *   currentPage  : meta.page
- *   totalPages   : meta.total_pages
- *   hasNext      : meta.has_next
- *   hasPrevious  : meta.has_previous
- *   onPageChange : (page: number) => void  ← from useProductList.setPage
- *
- * Page window logic:
- *   Always shows up to 5 page buttons centered around currentPage.
- *   Shows ellipsis + last page when totalPages > window end.
- *   Prev/Next disabled at boundaries.
- *
- * Why this component owns no state:
- *   Page state lives in URL (useProductList reads/writes searchParams).
- *   This component is purely display + click handler.
- *   Zero useState needed.
- */
+
 export default function Pagination({
   currentPage = 1,
   totalPages  = 1,
