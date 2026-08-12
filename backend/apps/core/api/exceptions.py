@@ -275,7 +275,8 @@ def _format_drf_errors(data: Any, status_code: int) -> dict[str, Any]:
 
     if isinstance(data, dict):
         for field, value in data.items():
-            if field == "non_field_errors":
+            # if field == "non_field_errors":
+            if field in ("non_field_errors", "detail"):
                 raw = value[0] if isinstance(value, list) and value else value
                 non_fields = _non_fields_validation(raw)
             else:
@@ -377,6 +378,7 @@ def _build_response(
     status_code: int,
     errors: dict[str, Any],
     request_id: str | None,
+    headers: dict[str, str] | None = None,
 ) -> Response:
     """
     Assemble the final standardized Response object.
@@ -393,7 +395,7 @@ def _build_response(
         request_id: The current request's id, if available, included in
             meta for tracing a specific failure through logs.
     """
-    return Response(
+    response = Response(
         {
             "success": False,
             "message": _status_to_message(status_code),
@@ -403,6 +405,10 @@ def _build_response(
         },
         status=status_code,
     )
+    if headers:
+        for key, value in headers.items():
+            response[key] = value
+    return response
 
 
 # ─── Main handler ─────────────────────────────────────────────────────────────
@@ -523,6 +529,7 @@ def custom_exception_handler(exc: Exception, context: dict[str, Any]) -> Respons
             status_code=response.status_code,
             errors=_format_drf_errors(response.data, response.status_code),
             request_id=request_id,
+            headers=dict(response.items()),
         )
 
     # ── 3. Unhandled exception ──────────────────────────────────────────────
