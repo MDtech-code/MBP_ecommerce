@@ -1,6 +1,6 @@
 // src/hooks/cart/useCartQueries.js
 import { useQuery } from "@tanstack/react-query";
-import { cartService } from "@shared/api";
+import { cartService,extractData } from "@shared/api";
 import {useAuthStore} from "@entities/user"
 
 
@@ -13,7 +13,7 @@ export function useCartQuery() {
     queryKey: CART_QUERY_KEY,
     queryFn: () => cartService.getCart(),
     staleTime: 1000 * 30,
-    select: (result) => result.data ?? null,
+    select: (result) => extractData(result,null),
     enabled: isAuthenticated,
   });
 }
