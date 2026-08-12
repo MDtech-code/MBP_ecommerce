@@ -1,7 +1,7 @@
 // src/features/address/api/useAddressQuery.js
 
 import { useQuery } from "@tanstack/react-query";
-import { accountService } from "@shared/api";
+import { accountService,extractData } from "@shared/api";
 
 /**
  * Address query — fetches user's saved addresses for checkout.
@@ -32,6 +32,6 @@ export function useAddressListQuery() {
     queryKey: ADDRESS_LIST_KEY,
     queryFn: () => accountService.getAddresses(),
     staleTime: 1000 * 60 * 5, // 5 min — addresses change rarely
-    select: (result) => result.data ?? [],
+    select: (result) => extractData(result),
   });
 }
