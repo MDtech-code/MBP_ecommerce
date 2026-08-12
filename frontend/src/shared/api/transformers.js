@@ -69,6 +69,27 @@ export const extractResponse = (axiosResponse) => {
     meta: envelope.meta ?? null,
   };
 };
+// src/shared/api/transformers.js
+
+// ─── Pagination Unwrap ─────────────────────────────────────────────────────
+
+/**
+ * Extracts the pagination object from a response's meta.
+ *
+ * Call this inside every paginated query hook's `select`:
+ *   select: (result) => ({
+ *     items: result.data ?? [],
+ *     meta: extractPagination(result),
+ *   })
+ *
+ * This is the ONLY place in the frontend that knows meta.pagination is
+ * where pagination info lives. If the backend ever reshapes this again,
+ * this is the one function to change — not every query hook.
+ *
+ * @param {{ meta: object | null }} result — output of extractResponse
+ * @returns {object} pagination object, or {} if absent
+ */
+export const extractPagination = (result) => result?.meta?.pagination ?? {};
 
 // ─── Error Normalization ──────────────────────────────────────────────────────
 
