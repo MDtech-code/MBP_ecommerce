@@ -1,6 +1,7 @@
 // src/hooks/products/useProductQueries.js
 import { useQuery } from "@tanstack/react-query";
-import { productService } from "@shared/api";
+import { productService,extractData,extractPagination } from "@shared/api";
+
 
 /**
  * Product queries — Layer 3a
@@ -34,7 +35,7 @@ export function useCategoriesTree() {
     //   Backend signals invalidate Redis cache on change.
     //   Frontend can safely cache for 10 minutes.
     staleTime: 1000 * 60 * 10, // 10 minutes
-    select: (result) => result.data ?? [],
+    select: (result) => extractData(result,[]),
   });
 }
 
@@ -43,7 +44,7 @@ export function useCategoriesFlat() {
     queryKey: ["categories", "flat"],
     queryFn: () => productService.getCategoriesFlat(),
     staleTime: 1000 * 60 * 10,
-    select: (result) => result.data ?? [],
+    select: (result) => extractData(result,[]),
   });
 }
 
@@ -54,7 +55,7 @@ export function useBrands() {
     queryKey: ["brands"],
     queryFn: () => productService.getBrands(),
     staleTime: 1000 * 60 * 10,
-    select: (result) => result.data ?? [],
+    select: (result) => extractData(result,[]),
   });
 }
 
@@ -68,7 +69,7 @@ export function useBikeModels(brandId = null) {
     queryKey: ["bike-models", brandId],
     queryFn: () => productService.getBikeModels(brandId),
     staleTime: 1000 * 60 * 5,
-    select: (result) => result.data ?? [],
+    select: (result) => extractData(result,[]),
   });
 }
 
@@ -90,8 +91,8 @@ export function useProducts(filters = {}) {
     //   while new page loads — prevents layout flash.
     placeholderData: (prev) => prev,
     select: (result) => ({
-      products: result.data ?? [],
-      meta: result.meta ?? {},
+      products: extractData(result,[]),
+      meta: extractPagination(result),
     }),
   });
 }
@@ -109,6 +110,6 @@ export function useProductDetail(slug) {
     // Why enabled: !!slug:
     //   Don't fire query if slug is undefined (page still mounting).
     enabled: !!slug,
-    select: (result) => result.data ?? null,
+    select: (result) => extractData(result,null),
   });
 }
