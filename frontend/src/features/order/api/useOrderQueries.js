@@ -1,7 +1,7 @@
 // src/features/orders/api/useOrderQueries.js
 
 import { useQuery } from "@tanstack/react-query";
-import { orderService } from "@shared/api";
+import { orderService,extractData,extractPagination } from "@shared/api";
 
 /**
  * Order queries — TanStack Query wrappers for order endpoints.
@@ -28,10 +28,10 @@ export function useOrderListQuery(page = 1) {
     queryKey: ORDER_LIST_KEY(page),
     queryFn: () => orderService.getOrders({ page }),
     staleTime: 1000 * 60, // 1 min
-    placeholderData: (prev) => prev, // keep previous page visible during load
+    placeholderData: (prev) => prev, 
     select: (result) => ({
-      orders: result.data ?? [],
-      meta: result.meta ?? {},
+      orders: extractData(result,[]),
+      meta: extractPagination(result),
     }),
   });
 }
@@ -40,8 +40,8 @@ export function useOrderDetailQuery(orderNumber) {
   return useQuery({
     queryKey: ORDER_DETAIL_KEY(orderNumber),
     queryFn: () => orderService.getOrderDetail(orderNumber),
-    staleTime: 1000 * 30, // 30s — status changes matter
+    staleTime: 1000 * 30, 
     enabled: !!orderNumber,
-    select: (result) => result.data ?? null,
+    select: (result) => extractData(result,null),
   });
 }
