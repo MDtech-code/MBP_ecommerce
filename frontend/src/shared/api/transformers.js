@@ -90,7 +90,7 @@ export const extractResponse = (axiosResponse) => {
  * @returns {object} pagination object, or {} if absent
  */
 export const extractPagination = (result) => result?.meta?.pagination ?? {};
-
+export const extractData = (result) => result?.data ?? null
 // ─── Error Normalization ──────────────────────────────────────────────────────
 
 /**
