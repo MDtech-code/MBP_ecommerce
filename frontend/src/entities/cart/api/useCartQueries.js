@@ -9,7 +9,7 @@ export function useCartQuery() {
     queryKey: CART_QUERY_KEY,
     queryFn: () => cartService.getCart(),
     staleTime: 1000 * 30,
-    select: (result) => extractData(result),
+    select: (result) => extractData(result,null),
     // select: (result) => result.data ?? null,
   });
 }
