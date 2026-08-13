@@ -21,14 +21,11 @@ export function useRegisterForm() {
 
   const normalized = isError ? normalizeError(error) : null;
 
-  const { fieldErrors: serverFieldErrors, formError } =
-    extractErrors(normalized);
+  const { fieldErrors: serverFieldErrors, formError } =extractErrors(normalized);
   const fieldErrors = { ...clientErrors, ...serverFieldErrors };
-  const { isActive: isRateLimited, formatted: retryCountdown } = useCountdown(
-  normalized?.rateLimit?.resetAt
-);
+  const { isActive: isRateLimited, formatted: retryCountdown } = useCountdown(normalized?.rateLimit?.resetAt);
 
-  // ── OnChange Handlers ──────────────────────────────────────────────────────────────
+
 
   const handleChange = useCallback(
     (e) => {
@@ -97,7 +94,6 @@ export function useRegisterForm() {
   return {
     form,
     fieldErrors,
-    // formErrorCode,
     formError,
     isPending,
     ErrorCode,

@@ -21,7 +21,7 @@ export default function RegisterPage() {
   } = useRegisterForm()
 
   const formFields = [
-    { name: "full_name",        placeholder: "Full name",         icon: User                  },
+    { name: "full_name",        placeholder: "Full name",         icon: User, type: "text"    },
     { name: "email",            placeholder: "Email address",     icon: Mail, type: "email"   },
     { name: "password",         placeholder: "Password",          icon: Lock, type: "password"},
     { name: "confirm_password", placeholder: "Confirm password",  icon: Lock, type: "password"},
@@ -60,7 +60,7 @@ export default function RegisterPage() {
 
         <button
           type="submit"
-          disabled={isPending|| isRateLimited}
+          disabled={isPending || isRateLimited}
           className="w-full bg-primary text-white py-3 rounded-lg font-bold
                      hover:opacity-90 transition-opacity
                      disabled:opacity-60 disabled:cursor-not-allowed

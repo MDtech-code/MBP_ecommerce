@@ -1,4 +1,4 @@
-// src/services/accountService.js
+// src/shared/api/services/accountService.js
 
 import { api } from "../client";
 import { extractResponse } from "../transformers";
