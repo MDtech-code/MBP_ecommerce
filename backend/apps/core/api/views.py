@@ -1,18 +1,6 @@
 """
 apps/core/api/views.py
 ─────────────────────────
-All views in the project must inherit from BaseAPIView.
-Never use APIView or GenericAPIView directly — that is what keeps every
-endpoint's response shape consistent.
-
-This file imports only public names from apps.core.api.exceptions
-(build_envelope_from_exception, _format_drf_errors is intentionally not
-imported here beyond the cases below — see each helper's docstring for
-why). No underscore-prefixed name from that module is imported here.
-Reaching into that module's internals would recreate the exact coupling
-this refactor removed; if a helper here needs something that module does
-not expose publicly, the fix is to expose it, not to import the private
-name.
 """
 
 from __future__ import annotations
@@ -86,6 +74,20 @@ class BaseAPIView(APIResponseMixin, GenericAPIView):
             data=data,
             message=message,
             status_code=status_code,
+            meta=meta,
+        )
+
+
+
+    def list_response(self,*,data: Any,message: str = "Request successful",meta: dict[str, Any] | None = None,) -> Response:
+        if isinstance(data, dict):
+            raise TypeError(
+                "list_response() received a dict — use success_response() for single resources."
+            )
+    
+        return self.success_response(
+            data=list(data) if data is not None else [],
+            message=message,
             meta=meta,
         )
 

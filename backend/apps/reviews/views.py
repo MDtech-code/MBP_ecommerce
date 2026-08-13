@@ -173,7 +173,7 @@ class EligibleItemsAPIView(BaseAPIView):
             getattr(request, "id", "n/a"),
         )
 
-        return self.success_response(
+        return self.list_response(
             data=EligibleItemSerializer(
                 items,
                 many=True,
@@ -217,7 +217,7 @@ class PendingReviewsAPIView(BaseAPIView):
             getattr(request, "id", "n/a"),
         )
 
-        return self.success_response(
+        return self.list_response(
             data=EligibleItemSerializer(
                 items,
                 many=True,
@@ -261,7 +261,7 @@ class UserReviewHistoryAPIView(BaseAPIView):
             getattr(request, "id", "n/a"),
         )
 
-        return self.success_response(
+        return self.list_response(
             data=UserReviewHistorySerializer(
                 reviews,
                 many=True,
@@ -338,7 +338,7 @@ class ProductReviewListAPIView(BaseAPIView):
             getattr(request, "id", "n/a"),
         )
 
-        return self.success_response(
+        return self.list_response(
             data=ReviewListSerializer(reviews, many=True).data,
             message=_("Reviews retrieved successfully."),
             meta=meta,

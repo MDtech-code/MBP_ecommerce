@@ -853,7 +853,7 @@ class AddressListCreateView(BaseAPIView):
 
     def get(self, request: Request) -> Response:
         addresses = get_user_addresses(user_id=request.user.id)
-        return self.success_response(
+        return self.list_response(
             data=UserAddressSerializer(addresses, many=True).data,
             message=_("Addresses retrieved successfully."),
         )

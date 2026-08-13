@@ -171,7 +171,7 @@ class ReturnListAPIView(BaseAPIView):
             total,
         )
 
-        return self.success_response(
+        return self.list_response(
             data=serializer.data,
             message="Return requests retrieved successfully.",
             meta=meta,

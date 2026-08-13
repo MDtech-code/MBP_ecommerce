@@ -182,7 +182,7 @@ class OrderListAPIView(BaseAPIView):
             getattr(request, "id", "n/a"),
         )
 
-        return self.success_response(
+        return self.list_response(
             data=data,
             message=_("Orders retrieved successfully."),
             meta=meta,
