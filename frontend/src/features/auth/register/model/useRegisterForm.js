@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { useRegister } from "@features/auth";
 import { normalizeError, extractErrors, ErrorCode } from "@shared/api";
 import { run, hasErrors, registerSchema } from "@shared/lib/validators";
+import useCountdown from "../../../../shared/ui/useCountdown";
 
 export function useRegisterForm() {
   const navigate = useNavigate();
@@ -23,6 +24,9 @@ export function useRegisterForm() {
   const { fieldErrors: serverFieldErrors, formError } =
     extractErrors(normalized);
   const fieldErrors = { ...clientErrors, ...serverFieldErrors };
+  const { isActive: isRateLimited, formatted: retryCountdown } = useCountdown(
+  normalized?.rateLimit?.resetAt
+);
 
   // ── OnChange Handlers ──────────────────────────────────────────────────────────────
 
@@ -97,6 +101,8 @@ export function useRegisterForm() {
     formError,
     isPending,
     ErrorCode,
+    isRateLimited,
+    retryCountdown,
     handleBlur,
     handleChange,
     handleSubmit,

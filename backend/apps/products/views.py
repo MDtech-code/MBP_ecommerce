@@ -111,7 +111,7 @@ class CategoryListAPIView(BaseAPIView):
         if source == "miss":
             # ── 4. Cache miss: query DB → serialize → build tree if needed ─
             queryset = list_active_categories()
-            flat_data = list(CategoryFlatSerializer(queryset, many=True).data)
+            flat_data =CategoryFlatSerializer(queryset, many=True).data
 
             if view_type == "tree":
                 data = build_tree(flat_data)
@@ -149,7 +149,7 @@ class CategoryListAPIView(BaseAPIView):
             getattr(request, "id", "n/a"),
         )
 
-        return self.success_response(
+        return self.list_response(
             data=data,
             message="Categories retrieved successfully.",
             meta={
@@ -334,7 +334,7 @@ class BrandListAPIView(BaseAPIView):
         if source == "miss":
             # ── 2. Cache miss: query DB → serialize → cache ────────────────
             queryset = list_active_brands()
-            data = list(BrandSerializer(queryset, many=True).data)
+            data =BrandSerializer(queryset, many=True).data
 
             two_level_cache.set(
                 BRANDS_CACHE_KEY,
@@ -361,7 +361,7 @@ class BrandListAPIView(BaseAPIView):
             getattr(request, "id", "n/a"),
         )
 
-        return self.success_response(
+        return self.list_response(
             data=data,
             message="Brands retrieved successfully.",
             meta={
@@ -548,7 +548,7 @@ class BikeModelListAPIView(BaseAPIView):
         if source == "miss":
             # ── 4. Cache miss: query DB → serialize → cache ────────────────
             queryset = list_active_bike_models(brand_id=brand_id)
-            data = list(BikeModelSerializer(queryset, many=True).data)
+            data =BikeModelSerializer(queryset, many=True).data
 
             two_level_cache.set(
                 cache_key,
@@ -576,7 +576,7 @@ class BikeModelListAPIView(BaseAPIView):
             getattr(request, "id", "n/a"),
         )
 
-        return self.success_response(
+        return self.list_response(
             data=data,
             message="Bike models retrieved successfully.",
             meta={
@@ -957,13 +957,14 @@ class ProductListAPIView(BaseAPIView):
         offset = (params.page - 1) * params.page_size
         page_qs = queryset[offset: offset + params.page_size]
 
-        serialized = list(
-            ProductListSerializer(
-                page_qs,
-                many=True,
-                context={"request": request},
-            ).data
-        )
+        # serialized = list(
+        #     ProductListSerializer(
+        #         page_qs,
+        #         many=True,
+        #         context={"request": request},
+        #     ).data
+        # )
+        serialized = ProductListSerializer(page_qs,many=True,context={"request": request},).data
 
         # ── 4. Write to cache ──────────────────────────────────────────────
         # Why try/except here specifically:
@@ -993,7 +994,7 @@ class ProductListAPIView(BaseAPIView):
             getattr(request, "id", "n/a"),
         )
 
-        return self.success_response(
+        return self.list_response(
             data=serialized,
             message="Products retrieved successfully.",
             meta=build_pagination_meta(
@@ -1054,12 +1055,8 @@ class ProductDetailAPIView(BaseAPIView):
             )
 
             # ── 3. Serialize in view (correct layer) ───────────────────────
-            data = dict(
-                ProductDetailSerializer(
-                    product,
-                    context={"request": request},
-                ).data
-            )
+            data =ProductDetailSerializer(product,context={"request": request},).data
+            
 
             # ── 4. Write to cache ──────────────────────────────────────────
             # Same deliberate try/except as ProductListAPIView.

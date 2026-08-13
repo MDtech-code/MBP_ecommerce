@@ -190,9 +190,7 @@ REST_FRAMEWORK = {
      'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
-    #* Paginate results using page numbers (e.g., ?page=2) & mention page size 
-    # 'DEFAULT_PAGINATION_CLASS': 'apps.core.pagination.StandardPagination',
-    # 'PAGE_SIZE': 10,
+    
 
     
     'DEFAULT_THROTTLE_CLASSES': [
@@ -202,7 +200,9 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': { 
         'anon': '1000/hour',
         'user': '1000/hour',
+        "register_email": "3/day",
     },
+    "NUM_PROXIES": 1,
     "EXCEPTION_HANDLER": "apps.core.api.exceptions.custom_exception_handler",
 }
 

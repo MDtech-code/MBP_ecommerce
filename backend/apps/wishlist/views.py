@@ -89,7 +89,7 @@ class WishlistListAPIView(BaseAPIView):
             total,
         )
 
-        return self.success_response(
+        return self.list_response(
             data=serializer.data,
             message="Wishlist retrieved successfully.",
             meta=meta,

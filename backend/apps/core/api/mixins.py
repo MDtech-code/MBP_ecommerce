@@ -57,6 +57,7 @@ class APIResponseMixin:
         errors: Any = None,
         status_code: int = status.HTTP_200_OK,
         meta: dict[str, Any] | None = None,
+        included: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
     ) -> Response:
         """
@@ -89,6 +90,9 @@ class APIResponseMixin:
         payload = self.transform_payload(payload)
 
         response = Response(payload, status=status_code)
+
+        if included is not None:
+            payload["included"] = included
 
         if headers:
             for key, value in headers.items():

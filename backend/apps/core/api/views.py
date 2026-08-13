@@ -1,18 +1,6 @@
 """
 apps/core/api/views.py
 ─────────────────────────
-All views in the project must inherit from BaseAPIView.
-Never use APIView or GenericAPIView directly — that is what keeps every
-endpoint's response shape consistent.
-
-This file imports only public names from apps.core.api.exceptions
-(build_envelope_from_exception, _format_drf_errors is intentionally not
-imported here beyond the cases below — see each helper's docstring for
-why). No underscore-prefixed name from that module is imported here.
-Reaching into that module's internals would recreate the exact coupling
-this refactor removed; if a helper here needs something that module does
-not expose publicly, the fix is to expose it, not to import the private
-name.
 """
 
 from __future__ import annotations
@@ -32,6 +20,7 @@ from apps.core.exceptions import (
 )
 from .exceptions import build_envelope_from_exception, _format_drf_errors
 from .mixins import APIResponseMixin
+from datetime import datetime, timezone as dt_timezone
 
 
 class BaseAPIView(APIResponseMixin, GenericAPIView):
@@ -86,6 +75,20 @@ class BaseAPIView(APIResponseMixin, GenericAPIView):
             data=data,
             message=message,
             status_code=status_code,
+            meta=meta,
+        )
+
+
+
+    def list_response(self,*,data: Any,message: str = "Request successful",meta: dict[str, Any] | None = None,) -> Response:
+        if isinstance(data, dict):
+            raise TypeError(
+                "list_response() received a dict — use success_response() for single resources."
+            )
+    
+        return self.success_response(
+            data=list(data) if data is not None else [],
+            message=message,
             meta=meta,
         )
 
@@ -226,20 +229,20 @@ class BaseAPIView(APIResponseMixin, GenericAPIView):
 
     def transform_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         """
-        Inject request_id into every response's meta automatically.
-
-        Overrides APIResponseMixin.transform_payload(), called by
-        build_response() on every response before it is sent. If the
-        request has no id attribute (e.g. RequestIDMiddleware is not
-        active, such as in a test), this is a silent no-op — meta is
-        left as whatever the caller passed, or None.
-
-        Args:
-            payload: The assembled envelope dict, before being sent.
+        Inject request_id into every response's meta .       
         """
         request_id = getattr(self.request, "id", None)
         if request_id:
             if payload.get("meta") is None:
                 payload["meta"] = {}
             payload["meta"]["request_id"] = request_id
+        rate_info = getattr(self.request, "_rate_limit_info", None)
+        if rate_info:
+            if payload.get("meta") is None:
+                payload["meta"] = {}
+            payload["meta"]["rateLimit"] = {
+                "limit": rate_info["limit"],
+                "remaining": rate_info["remaining"],
+                "resetAt": datetime.fromtimestamp(rate_info["reset_at"], tz=dt_timezone.utc).isoformat(),
+            }
         return payload
