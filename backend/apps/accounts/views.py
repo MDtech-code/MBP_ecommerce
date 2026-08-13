@@ -2,24 +2,21 @@ from __future__ import annotations
 
 import logging
 import time
-from django.conf import settings
-from django.db import transaction
+
 from django.utils.translation import gettext_lazy as _
-from django.contrib.auth import get_user_model
 from django.contrib.auth.signals import user_logged_in,user_logged_out
-from django.middleware.csrf import get_token
+
 
 
 from rest_framework import status
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.exceptions import TokenError
+
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle
-from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
-from rest_framework.exceptions import ErrorDetail
+
 from apps.accounts.auth_strategies.registry import auth_strategy_registry
 from apps.accounts.services.social_auth import login_or_register_social_user
 from apps.core.error_codes import ErrorCode
@@ -28,7 +25,7 @@ from apps.core.permissions import IsNotAuthenticated
 from apps.core.timing import normalize_response_time
 from apps.common.utils.email_utils import mask_email
 from apps.core.throttles import CustomAnonRateThrottle,CustomUserRateThrottle
-from .throttles import RegisterEmailRateThrottle
+
 
 from apps.accounts.utils.ip_utils import (
     get_client_ip,
@@ -41,7 +38,7 @@ from apps.accounts.utils.cookie_utils import (
     clear_email_cookie
 )
 from apps.core.utils.csrf_cookie import clear_csrf_cookie
-from .models import User, EmailVerificationToken, PasswordResetToken,UserProfile,UserAddress
+from .models import UserProfile
 from apps.accounts.serializers import (
     SendPhoneOTPSerializer,
     VerifyPhoneOTPSerializer,
@@ -107,7 +104,7 @@ logger = logging.getLogger(__name__)
 class RegisterView(BaseAPIView):
 
     permission_classes = [IsNotAuthenticated]
-    throttle_classes = [CustomAnonRateThrottle, RegisterEmailRateThrottle]
+    throttle_classes = [CustomAnonRateThrottle]
     serializer_class = RegisterSerializer
 
     def post(self, request: Request) -> Response:
