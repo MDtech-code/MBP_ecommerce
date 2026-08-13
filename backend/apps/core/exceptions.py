@@ -104,7 +104,7 @@ class ConflictError(DomainError):
     """ Raised when there’s a state mismatch """
 
     default_code="Conflict"
-
+  
     def __init__(self,message:str="The request had a conflict",**kwargs) -> None:
        super().__init__(message,code="Conflict",status_code=409,**kwargs)
 

@@ -222,13 +222,10 @@ class UserSerializer(TimestampFieldsMixin,serializers.ModelSerializer):
          return None
 
 
-# ─── Registration Serializer ──────────────────────────────────────────────────
+#! ─── Registration Serializer ──────────────────────────────────────────────────
 
 class RegisterSerializer(serializers.Serializer):
-    """
-    Validate  user registration input.
-    """
-
+    
     full_name = serializers.CharField(
         max_length=255,
         error_messages={"blank": _("Full name is required.")},

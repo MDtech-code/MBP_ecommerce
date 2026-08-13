@@ -13,26 +13,7 @@ from rest_framework.response import Response
 
 
 class APIResponseMixin:
-    """
-    Mixin providing build_response(), the single function every response
-    helper on BaseAPIView delegates to.
-
-    Guarantees every endpoint returns the same top-level shape:
-
-        {
-            "success": bool,        - True if 2xx, False otherwise,
-                                       derived from status_code, never
-                                       passed in directly
-            "message": str | None,  - human-readable summary
-            "data":    Any,         - response payload, None on error
-            "errors":  Any | None,  - error detail, None on success
-            "meta":    dict | None  - pagination, request_id, extras
-        }
-
-    transform_payload() is a hook subclasses override to inject
-    cross-cutting data (BaseAPIView uses it to add request_id) without
-    this mixin needing to know that concern exists.
-    """
+    
 
     MESSAGE_KEY: str = "message"
     ERRORS_KEY: str = "errors"

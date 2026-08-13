@@ -12,7 +12,6 @@ from rest_framework import status
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
-
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle
@@ -125,7 +124,6 @@ class RegisterView(BaseAPIView):
             )
 
         try:
-            
             user = register_user(**serializer.validated_data)
         except DomainError as exc:
             normalize_response_time(start)
