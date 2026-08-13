@@ -81,7 +81,7 @@ from rest_framework.views import exception_handler
 
 from apps.core.error_codes import ErrorCode
 from apps.core.exceptions import BaseAppError
-
+from datetime import datetime, timezone as dt_timezone
 logger = logging.getLogger("apps.core")
 
 
@@ -372,7 +372,33 @@ def _status_to_message(status_code: int) -> str:
 
 
 # ─── Response builder (private) ────────────────────────────────────────────────
+def _build_response(
+    *,
+    status_code: int,
+    errors: dict[str, Any],
+    request_id: str | None,
+    request: Request | None = None,
+    headers: dict[str, str] | None = None,
+) -> Response:
+    meta: dict[str, Any] = {"request_id": request_id}
 
+    rate_info = getattr(request, "_rate_limit_info", None) if request else None
+    if rate_info:
+        meta["rateLimit"] = {
+            "limit": rate_info["limit"],
+            "remaining": rate_info["remaining"],
+            "resetAt": datetime.fromtimestamp(rate_info["reset_at"], tz=dt_timezone.utc).isoformat(),
+        }
+
+    response = Response(
+        {"success": False, "message": _status_to_message(status_code), "data": None, "errors": errors, "meta": meta},
+        status=status_code,
+    )
+    if headers:
+        for key, value in headers.items():
+            response[key] = value
+    return response
+'''
 def _build_response(
     *,
     status_code: int,
@@ -380,21 +406,7 @@ def _build_response(
     request_id: str | None,
     headers: dict[str, str] | None = None,
 ) -> Response:
-    """
-    Assemble the final standardized Response object.
-
-    Every exit point of custom_exception_handler funnels through this
-    function, which is what guarantees every error response — regardless
-    of which branch produced it — has the identical top-level shape
-    (success, message, data, errors, meta).
-
-    Args:
-        status_code: HTTP status to return.
-        errors: The full errors sub-object, as produced by
-            build_envelope_from_exception or _format_drf_errors.
-        request_id: The current request's id, if available, included in
-            meta for tracing a specific failure through logs.
-    """
+    
     response = Response(
         {
             "success": False,
@@ -409,7 +421,7 @@ def _build_response(
         for key, value in headers.items():
             response[key] = value
     return response
-
+'''
 
 # ─── Main handler ─────────────────────────────────────────────────────────────
 
@@ -525,10 +537,12 @@ def custom_exception_handler(exc: Exception, context: dict[str, Any]) -> Respons
                 type(exc).__name__,
                 extra={"request_id": request_id},
             )
+        
         return _build_response(
             status_code=response.status_code,
             errors=_format_drf_errors(response.data, response.status_code),
             request_id=request_id,
+            request=request,
             headers=dict(response.items()),
         )
 

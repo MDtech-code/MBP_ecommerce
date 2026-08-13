@@ -13,6 +13,8 @@ export default function RegisterPage() {
     fieldErrors,
     formError,
     isPending,
+    isRateLimited,
+    retryCountdown,
     handleBlur,
     handleChange,
     handleSubmit,
@@ -58,13 +60,13 @@ export default function RegisterPage() {
 
         <button
           type="submit"
-          disabled={isPending}
+          disabled={isPending|| isRateLimited}
           className="w-full bg-primary text-white py-3 rounded-lg font-bold
                      hover:opacity-90 transition-opacity
                      disabled:opacity-60 disabled:cursor-not-allowed
                      shadow-lg shadow-primary/25 touch-manipulation"
         >
-          {isPending ? "CREATING ACCOUNT..." : "CREATE ACCOUNT"}
+          {isPending ? "CREATING ACCOUNT..." : (isRateLimited ? `Try again in ${retryCountdown}` : "Create account")}
         </button>
       </form>
 

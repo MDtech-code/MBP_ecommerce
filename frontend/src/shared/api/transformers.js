@@ -91,6 +91,7 @@ export const extractResponse = (axiosResponse) => {
  */
 export const extractPagination = (result) => result?.meta?.pagination ?? {};
 export const extractData = (result,fallback=null) => result?.data ?? fallback
+export const extractRateLimit = (result) => result?.meta?.rateLimit ?? null;
 // ─── Error Normalization ──────────────────────────────────────────────────────
 
 /**
@@ -142,6 +143,7 @@ export const normalizeError = (rawAxiosError) => {
   }
 
   const { status, data } = rawAxiosError.response;
+  const isRateLimit = status === 429;
 
   return {
     message: data?.message ?? _deriveMessageFromStatus(status),
@@ -164,6 +166,7 @@ export const normalizeError = (rawAxiosError) => {
     meta: data?.meta ?? null,
     status,
     requestId: data?.meta?.request_id ?? null,
+    rateLimit: isRateLimit ? _deriveRateLimitInfo(data) : null,
 
     isNetworkError: false,
     isServerError: status >= 500,
@@ -172,7 +175,7 @@ export const normalizeError = (rawAxiosError) => {
     isForbidden: status === 403,
     isNotFound: status === 404,
     isConflict: status === 409,
-    isRateLimit: status === 429,
+    isRateLimit,
   };
 };
 
@@ -240,6 +243,45 @@ const _deriveMessageFromStatus = (status) => {
 
 
 
+/**
+ * Complete rate-limit picture for a 429, preferring structured
+ * meta.rateLimit (authoritative, server-computed) and falling back to
+ * parsing DRF's default message only when meta.rateLimit is absent —
+ * e.g. an endpoint whose throttle class doesn't attach _rate_limit_info.
+ * The fallback is English-only (matches DRF's default Throttled string)
+ * — if messages are ever localized it stops matching and quietly
+ * returns retryAfterSeconds: null. meta.rateLimit is the real contract;
+ * this is a safety net, not a second source of truth.
+ */
+const _deriveRateLimitInfo = (data) => {
+  const structured = data?.meta?.rateLimit ?? null;
+
+  if (structured) {
+    return {
+      limit: structured.limit,
+      remaining: structured.remaining,
+      resetAt: structured.resetAt,
+      retryAfterSeconds: Math.max(
+        0,
+        Math.round((new Date(structured.resetAt).getTime() - Date.now()) / 1000)
+      ),
+    };
+  }
+
+  const fallbackSeconds = _parseRetrySecondsFromMessage(data?.errors?.non_fields?.message);
+  return {
+    limit: null,
+    remaining: 0,
+    resetAt: fallbackSeconds != null ? new Date(Date.now() + fallbackSeconds * 1000).toISOString() : null,
+    retryAfterSeconds: fallbackSeconds,
+  };
+};
+
+const _parseRetrySecondsFromMessage = (message) => {
+  if (!message) return null;
+  const match = message.match(/available in (\d+) seconds?/i);
+  return match ? parseInt(match[1], 10) : null;
+};
 
 
 

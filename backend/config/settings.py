@@ -200,7 +200,9 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': { 
         'anon': '1000/hour',
         'user': '1000/hour',
+        "register_email": "3/day",
     },
+    "NUM_PROXIES": 1,
     "EXCEPTION_HANDLER": "apps.core.api.exceptions.custom_exception_handler",
 }
 

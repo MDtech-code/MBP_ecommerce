@@ -20,6 +20,7 @@ from apps.core.exceptions import (
 )
 from .exceptions import build_envelope_from_exception, _format_drf_errors
 from .mixins import APIResponseMixin
+from datetime import datetime, timezone as dt_timezone
 
 
 class BaseAPIView(APIResponseMixin, GenericAPIView):
@@ -228,20 +229,20 @@ class BaseAPIView(APIResponseMixin, GenericAPIView):
 
     def transform_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         """
-        Inject request_id into every response's meta automatically.
-
-        Overrides APIResponseMixin.transform_payload(), called by
-        build_response() on every response before it is sent. If the
-        request has no id attribute (e.g. RequestIDMiddleware is not
-        active, such as in a test), this is a silent no-op — meta is
-        left as whatever the caller passed, or None.
-
-        Args:
-            payload: The assembled envelope dict, before being sent.
+        Inject request_id into every response's meta .       
         """
         request_id = getattr(self.request, "id", None)
         if request_id:
             if payload.get("meta") is None:
                 payload["meta"] = {}
             payload["meta"]["request_id"] = request_id
+        rate_info = getattr(self.request, "_rate_limit_info", None)
+        if rate_info:
+            if payload.get("meta") is None:
+                payload["meta"] = {}
+            payload["meta"]["rateLimit"] = {
+                "limit": rate_info["limit"],
+                "remaining": rate_info["remaining"],
+                "resetAt": datetime.fromtimestamp(rate_info["reset_at"], tz=dt_timezone.utc).isoformat(),
+            }
         return payload

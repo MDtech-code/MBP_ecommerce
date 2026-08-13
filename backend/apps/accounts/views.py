@@ -27,7 +27,8 @@ from apps.core.api.views import BaseAPIView
 from apps.core.permissions import IsNotAuthenticated
 from apps.core.timing import normalize_response_time
 from apps.common.utils.email_utils import mask_email
-
+from apps.core.throttles import CustomAnonRateThrottle,CustomUserRateThrottle
+from .throttles import RegisterEmailRateThrottle
 
 from apps.accounts.utils.ip_utils import (
     get_client_ip,
@@ -106,7 +107,7 @@ logger = logging.getLogger(__name__)
 class RegisterView(BaseAPIView):
 
     permission_classes = [IsNotAuthenticated]
-    throttle_classes = [AnonRateThrottle]
+    throttle_classes = [CustomAnonRateThrottle, RegisterEmailRateThrottle]
     serializer_class = RegisterSerializer
 
     def post(self, request: Request) -> Response:
