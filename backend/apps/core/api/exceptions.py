@@ -103,7 +103,7 @@ def build_envelope_from_exception(exc: BaseAppError) -> dict[str, Any]:
     return {
         "code": _status_to_error_code(exc.status_code),
         "fields": None,
-        "non_fields": exc.to_envelope,
+        "non_fields": exc.to_envelope(),
     }
 
 

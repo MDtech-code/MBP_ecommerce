@@ -1,16 +1,7 @@
 """
 apps/core/api/mixins.py
 ─────────────────────────
-Response envelope shape — the one place that decides what every API
-response looks like at the top level, success or failure.
 
-This module has no knowledge of exceptions, in either direction. It does
-not import apps.core.exceptions or apps.core.api.exceptions, and nothing
-in those two files imports this one for exception-related purposes.
-Its only job is: given some data, a message, and an error payload,
-produce a Response with a consistent envelope. Whether that data or
-error payload came from a raised exception or a plain view return is
-not this module's concern.
 """
 
 from __future__ import annotations
@@ -60,26 +51,7 @@ class APIResponseMixin:
         included: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
     ) -> Response:
-        """
-        Assemble a Response with the standard envelope.
-
-        success is computed from status_code (True for any 2xx) rather
-        than accepted as a parameter, so it is never possible to return
-        a response where success and status_code disagree.
-
-        Args:
-            data: The response payload. None for error responses.
-            message: Human-readable summary shown at the top level.
-            errors: Error detail. None for success responses.
-            status_code: HTTP status code for this response.
-            meta: Additional metadata (pagination info, request id, etc).
-                Passed through transform_payload() before being sent,
-                which may add to or replace this value.
-            headers: Extra HTTP headers to attach to the response.
-
-        Returns:
-            A DRF Response object with the standard envelope as its body.
-        """
+        
         payload: dict[str, Any] = {
             self.SUCCESS_KEY: 200 <= status_code < 300,
             self.MESSAGE_KEY: message,
@@ -101,19 +73,5 @@ class APIResponseMixin:
         return response
 
     def transform_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """
-        Hook point for subclasses to modify the payload before it is sent.
-
-        Called once, on every response, by build_response(), after the
-        base envelope is assembled and before the Response object is
-        constructed. Default implementation is a no-op — subclasses
-        override this to add cross-cutting concerns (request id, timing,
-        PII masking) without build_response() needing to know about them.
-
-        Args:
-            payload: The assembled envelope dict, before being sent.
-
-        Returns:
-            The payload to actually send. Default returns it unchanged.
-        """
+        
         return payload
