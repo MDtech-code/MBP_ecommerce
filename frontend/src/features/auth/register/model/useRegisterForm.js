@@ -5,7 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { useRegister } from "@features/auth";
 import { normalizeError, extractErrors, ErrorCode } from "@shared/api";
 import { run, hasErrors, registerSchema } from "@shared/lib/validators";
-import useCountdown from "../../../../shared/ui/useCountdown";
+import {useCountdown} from "@shared/ui";
 
 export function useRegisterForm() {
   const navigate = useNavigate();
