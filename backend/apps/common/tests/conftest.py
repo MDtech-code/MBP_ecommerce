@@ -7,10 +7,7 @@ from rest_framework.test import APIClient
 from .factories import UserFactory
 
 
-@pytest.fixture
-def api_client() -> APIClient:
-    """Unauthenticated DRF test client."""
-    return APIClient()
+
 
 
 @pytest.fixture
