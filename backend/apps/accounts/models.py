@@ -2,15 +2,20 @@ from __future__ import annotations
 
 import logging
 import uuid
+
 from datetime import timedelta
 
-from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
 from django.db import models, transaction
+
+from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
+
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
-from apps.common.validators import phone_validator
 from apps.common.models import TimeStampedModel
+
+from apps.common.validators import phone_validator
+
 from apps.common.choices.role import Role
 from apps.common.choices.city import City
 from apps.common.choices.city_postal_map import CITY_POSTAL_MAP, CITY_PROVINCE_MAP
@@ -21,20 +26,17 @@ from apps.accounts.choices.address_label import AddressLabel
 
 from .managers import UserManager
 
-logger = logging.getLogger("apps.accounts")
+logger = logging.getLogger(__name__)
+
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# USER (AUTH CORE)
+#! USER (AUTH CORE)
 # ─────────────────────────────────────────────────────────────────────────────
 
 class User(AbstractBaseUser, PermissionsMixin):
-    """
-    Custom user model using email as the primary identifier.
-    Replaces Django's default username-based User.
-    Email is the login field — standard for ecommerce.
-    """
-
+    
     email = models.EmailField(
         _("email address"),
         unique=True,

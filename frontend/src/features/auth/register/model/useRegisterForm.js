@@ -10,6 +10,7 @@ import {useCountdown} from "@shared/ui";
 export function useRegisterForm() {
   const navigate = useNavigate();
   const { mutate: register, isPending, isError, error } = useRegister();
+  
   const [form, setForm] = useState({
     full_name: "",
     email: "",

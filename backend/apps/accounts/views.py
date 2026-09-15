@@ -102,14 +102,16 @@ logger = logging.getLogger(__name__)
 
 class RegisterView(BaseAPIView):
 
+
     permission_classes = [IsNotAuthenticated]
     throttle_classes = [CustomAnonRateThrottle]
     serializer_class = RegisterSerializer
 
     def post(self, request: Request) -> Response:
+
         log_context = {"request_id": request.id}
         start=time.monotonic()
-
+        print(request.data,type(request.data))
         serializer = self.get_serializer(data=request.data)
 
         if not serializer.is_valid():

@@ -18,6 +18,63 @@ logger = logging.getLogger(__name__)
 
 
 
+
+
+
+
+#! ─── Registration Serializer ──────────────────────────────────────────────────
+
+class RegisterSerializer(serializers.Serializer):
+    
+    full_name = serializers.CharField(
+        max_length=255,
+        error_messages={"blank": _("Full name is required.")},
+    )
+    email = serializers.EmailField(
+        error_messages={
+            "blank": _("Email address is required."),
+            "invalid": _("Enter a valid email address."),
+        }
+    )
+    password = serializers.CharField(
+        write_only=True,
+        min_length=8,
+        error_messages={
+            "blank": _("Password is required."),
+            "min_length": _("Password must be at least 8 characters."),
+        },
+    )
+    confirm_password = serializers.CharField(
+        write_only=True,
+        error_messages={"blank": _("Please confirm your password.")},
+    )
+
+    def validate_email(self, value: str) -> str:
+        return validate_email_format(value)
+
+    def validate_full_name(self, value: str) -> str:
+        return validate_full_name(value)
+
+    def validate_password(self, value: str) -> str:
+        return validate_strong_password(value)
+
+    def validate(self, attrs: dict) -> dict:
+        try:
+            validate_passwords_match(attrs["password"], attrs["confirm_password"])
+        except DjangoValidationError:
+            raise serializers.ValidationError(
+                {
+                    "confirm_password": ErrorDetail(
+                        _("Passwords do not match."),
+                        code=ErrorCode.PASSWORD_MISMATCH,
+                    )
+                }
+            )
+        attrs.pop("confirm_password")
+        return attrs
+
+
+
 # ─── User Profile Serializer ───────────────────────────────────────────────────────
 class UserProfileSerializer(TimestampFieldsMixin,serializers.ModelSerializer):
     
@@ -222,56 +279,7 @@ class UserSerializer(TimestampFieldsMixin,serializers.ModelSerializer):
          return None
 
 
-#! ─── Registration Serializer ──────────────────────────────────────────────────
 
-class RegisterSerializer(serializers.Serializer):
-    
-    full_name = serializers.CharField(
-        max_length=255,
-        error_messages={"blank": _("Full name is required.")},
-    )
-    email = serializers.EmailField(
-        error_messages={
-            "blank": _("Email address is required."),
-            "invalid": _("Enter a valid email address."),
-        }
-    )
-    password = serializers.CharField(
-        write_only=True,
-        min_length=8,
-        error_messages={
-            "blank": _("Password is required."),
-            "min_length": _("Password must be at least 8 characters."),
-        },
-    )
-    confirm_password = serializers.CharField(
-        write_only=True,
-        error_messages={"blank": _("Please confirm your password.")},
-    )
-
-    def validate_email(self, value: str) -> str:
-        return validate_email_format(value)
-
-    def validate_full_name(self, value: str) -> str:
-        return validate_full_name(value)
-
-    def validate_password(self, value: str) -> str:
-        return validate_strong_password(value)
-
-    def validate(self, attrs: dict) -> dict:
-        try:
-            validate_passwords_match(attrs["password"], attrs["confirm_password"])
-        except DjangoValidationError:
-            raise serializers.ValidationError(
-                {
-                    "confirm_password": ErrorDetail(
-                        _("Passwords do not match."),
-                        code=ErrorCode.PASSWORD_MISMATCH,
-                    )
-                }
-            )
-        attrs.pop("confirm_password")
-        return attrs
 
 
 # ─── Login Serializer ─────────────────────────────────────────────────────────

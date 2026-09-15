@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+
 from typing import TYPE_CHECKING, Any
 
 from django.contrib.auth.base_user import BaseUserManager
@@ -12,7 +13,7 @@ from apps.common.choices.role import Role
 if TYPE_CHECKING:
     from .models import User
 
-logger = logging.getLogger("apps.accounts")
+logger = logging.getLogger(__name__)
 
 
 class UserManager(BaseUserManager):

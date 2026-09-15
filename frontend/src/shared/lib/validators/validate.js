@@ -1,28 +1,5 @@
 // shared/lib/validators/validate.js
-//
-// Generic schema runner.
-//
-// A schema is a plain object mapping field names to arrays of rule functions:
-//   {
-//     email: [required, emailFormat],
-//     password: [required, strongPassword],
-//   }
-//
-// run(schema, formValues) → fieldErrors
-//
-// fieldErrors shape is IDENTICAL to what extractErrors() returns from the
-// backend pipeline — so the hook can merge client errors and server errors
-// with zero special casing:
-//   {
-//     email:    { message: "...", code: null },
-//     password: { message: "...", code: null },
-//   }
-//
-// Only the FIRST failing rule per field is returned (same as DRF behavior —
-// field validators short-circuit on first failure).
-//
-// Returns empty object {} if all fields pass — same empty shape as
-// extractErrors when backend returns no field errors.
+
 
 /**
  * Run all rules for a single field value.
@@ -32,6 +9,8 @@
  * @param {any} value
  * @returns {string|null}
  */
+
+
 const runField = (rules, value) => {
   for (const rule of rules) {
     const error = rule(value);
