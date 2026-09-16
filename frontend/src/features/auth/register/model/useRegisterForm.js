@@ -1,6 +1,6 @@
 // src/hooks/account/useRegisterForm.js
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useLayoutEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useRegister } from "@features/auth";
 import { normalizeError, extractErrors, ErrorCode } from "@shared/api";
@@ -20,9 +20,12 @@ export function useRegisterForm() {
   const [clientErrors, setClientErrors] = useState({});
 
   const formRef = useRef(form);
-  formRef.current = form;
   const submitAttemptedRef = useRef(submitAttempted);
-  submitAttemptedRef.current = submitAttempted;
+
+  useLayoutEffect(() => {
+    formRef.current = form;
+    submitAttemptedRef.current = submitAttempted;
+  }, [form, submitAttempted]);
 
   const normalized = isError ? normalizeError(error) : null;
 
