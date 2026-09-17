@@ -103,10 +103,10 @@ class ConflictError(DomainError):
 
     """ Raised when there’s a state mismatch """
 
-    default_code="Conflict"
+    default_code="conflict_error"
   
     def __init__(self,message:str="The request had a conflict",**kwargs) -> None:
-       super().__init__(message,code="Conflict",status_code=409,**kwargs)
+       super().__init__(message,code="conflict_error",status_code=409,**kwargs)
 
 
 
@@ -114,10 +114,10 @@ class UnprocessableEntityError(DomainError):
 
     """ Raised when the request is syntactically valid but semantically wrong. """
 
-    default_code="Unprocessable Entity"
+    default_code="unprocessable_entity_error"
 
     def __init__(self,message:str="The request is unprocessable",**kwargs) -> None:
-        super().__init__(message,code="Unprocessable_Entity",status_code=422,**kwargs)
+        super().__init__(message,code="unprocessable_entity_error",status_code=422,**kwargs)
 
 
 
@@ -160,7 +160,7 @@ class InternalServerError(InfrastructureError):
 class BadGatewayError(InfrastructureError):
     default_code = "bad_gateway_error"
     def __init__(self, message: str = "Upstream service returned invalid response.", **kwargs) -> None:
-        super().__init__(message, code="bad_gateway", **kwargs)
+        super().__init__(message, code="bad_gateway_error", **kwargs)
         self.status_code = 502
 
 
