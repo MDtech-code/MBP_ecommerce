@@ -1,27 +1,22 @@
-// src/shared/hooks/useCountdown.js
 import { useState, useEffect } from "react";
 
-/**
- * Ticks down to a target ISO timestamp, recomputing every second.
- * Centralizes retry-countdown UI so every form that can hit a 429
- * shares one implementation instead of each hook re-deriving
- * Date.now() math independently.
- */
 export function useCountdown(targetIso) {
-  const [secondsLeft, setSecondsLeft] = useState(() =>
-    _secondsUntil(targetIso),
-  );
+  const [prevTargetIso, setPrevTargetIso] = useState(targetIso);
+  const [secondsLeft, setSecondsLeft] = useState(() => _secondsUntil(targetIso));
+
+  if (targetIso !== prevTargetIso) {
+    setPrevTargetIso(targetIso);
+    setSecondsLeft(_secondsUntil(targetIso));
+  }
 
   useEffect(() => {
-    if (!targetIso) {
-      setSecondsLeft(0);
-      return;
-    }
-    setSecondsLeft(_secondsUntil(targetIso));
+    if (!targetIso) return;
+
     const id = setInterval(
       () => setSecondsLeft(_secondsUntil(targetIso)),
       1000,
     );
+
     return () => clearInterval(id);
   }, [targetIso]);
 
