@@ -1,9 +1,9 @@
 // shared/ui/FormInput.jsx
 
 import { Eye, EyeOff } from "lucide-react";
-import { useState } from "react";
+import { useState,memo } from "react";
 
-export default function FormInput({
+function FormInput({
   icon: Icon,
   type = "text",
   placeholder,
@@ -55,3 +55,4 @@ export default function FormInput({
     </div>
   );
 }
+export default memo(FormInput);
