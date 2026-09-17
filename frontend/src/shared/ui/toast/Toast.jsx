@@ -10,31 +10,7 @@ import {
 
 const DURATION = 3000;
 
-const variantMap = {
-  error: {
-    role: "alert",
-    icon: CircleAlert,
-    container:
-      "border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-neutral-900 dark:text-red-400",
-    progress: "bg-red-500",
-  },
 
-  success: {
-    role: "status",
-    icon: CircleCheck,
-    container:
-      "border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-neutral-900 dark:text-green-400",
-    progress: "bg-green-500",
-  },
-
-  info: {
-    role: "status",
-    icon: Info,
-    container:
-      "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-neutral-900 dark:text-blue-400",
-    progress: "bg-blue-500",
-  },
-};
 
 export default function Toast({
   type = "error",
@@ -50,6 +26,19 @@ export default function Toast({
   const [progress, setProgress] = useState(100);
 
   const intervalRef = useRef(null);
+  const pausedRef = useRef(false)
+
+
+
+  const handleMouseEnter = () => {
+    setPaused(true)
+    pausedRef.current = true   
+  }
+
+  const handleMouseLeave = () => {
+    setPaused(false)
+    pausedRef.current = false  
+  }
 
   useEffect(() => {
     requestAnimationFrame(() => setVisible(true));
@@ -57,7 +46,7 @@ export default function Toast({
     const step = 100 / (duration / 30);
 
     intervalRef.current = setInterval(() => {
-      if (paused) return;
+      if (pausedRef.current) return;
 
       setProgress((prev) => {
         const next = prev - step;
@@ -79,15 +68,15 @@ export default function Toast({
     }, 30);
 
     return () => clearInterval(intervalRef.current);
-  }, [paused, duration, onClose]);
+  }, [ duration, onClose]);
 
   
 
   return (
     <div
       role={variant.role}
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
       className={`
         fixed
         bottom-2
@@ -144,3 +133,33 @@ export default function Toast({
     </div>
   );
 }
+
+
+
+
+
+const variantMap = {
+  error: {
+    role: "alert",
+    icon: CircleAlert,
+    container:
+      "border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-neutral-900 dark:text-red-400",
+    progress: "bg-red-500",
+  },
+
+  success: {
+    role: "status",
+    icon: CircleCheck,
+    container:
+      "border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-neutral-900 dark:text-green-400",
+    progress: "bg-green-500",
+  },
+
+  info: {
+    role: "status",
+    icon: Info,
+    container:
+      "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-neutral-900 dark:text-blue-400",
+    progress: "bg-blue-500",
+  },
+};
