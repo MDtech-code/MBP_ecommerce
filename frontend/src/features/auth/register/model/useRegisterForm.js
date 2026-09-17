@@ -1,6 +1,6 @@
 // src/hooks/account/useRegisterForm.js
 
-import { useState, useCallback } from "react";
+import { useState, useCallback,useRef,useLayoutEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useRegister } from "@features/auth";
 import { normalizeError, extractErrors, ErrorCode } from "@shared/api";
@@ -17,8 +17,17 @@ export function useRegisterForm() {
     password: "",
     confirm_password: "",
   });
+
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [clientErrors, setClientErrors] = useState({});
+  const formRef = useRef(form);
+  const submitAttemptedRef = useRef(submitAttempted);
+
+  useLayoutEffect(() => {
+    formRef.current = form;
+    submitAttemptedRef.current = submitAttempted;
+  }, [form, submitAttempted]);
+
 
   const normalized = isError ? normalizeError(error) : null;
 
@@ -47,13 +56,13 @@ export function useRegisterForm() {
 
   const handleBlur = useCallback(
     (e) => {
-      if (!submitAttempted) return;
+      if (!submitAttemptedRef.current) return;
 
       const { name } = e.target;
-
-      const schema = registerSchema(form);
+      const currentForm = formRef.current;
+      const schema = registerSchema(currentForm);
       const fieldSchema = { [name]: schema[name] };
-      const result = run(fieldSchema, form);
+      const result = run(fieldSchema, currentForm);
 
       setClientErrors((prev) => {
         const next = { ...prev };
@@ -65,16 +74,16 @@ export function useRegisterForm() {
         return next;
       });
     },
-    [submitAttempted, form],
+    [],
   );
 
   const handleSubmit = useCallback(
     (e) => {
       e.preventDefault();
       setSubmitAttempted(true);
-
-      const schema = registerSchema(form);
-      const result = run(schema, form);
+      const currentForm = formRef.current;
+      const schema = registerSchema(currentForm);
+      const result = run(schema,currentForm);
 
       if (hasErrors(result)) {
         setClientErrors(result);
@@ -83,13 +92,13 @@ export function useRegisterForm() {
 
       setClientErrors({});
 
-      register(form, {
+      register(currentForm, {
         onSuccess: () => {
           navigate("/verify-email");
         },
       });
     },
-    [form, register, navigate],
+    [register, navigate],
   );
 
   return {
