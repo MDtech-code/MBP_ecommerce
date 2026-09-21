@@ -1,51 +1,24 @@
-# backend/conftest.py
-
-from __future__ import annotations
-
-
+"""Small, shared fixtures. Feature-specific behavior belongs in its own suite."""
 import pytest
+from django.conf import settings
 from django.core.cache import caches
 from rest_framework.test import APIClient
 
 
-
-
-# ─── Sentry — disable during tests ───────────────────────────────────────────
-
-@pytest.fixture(autouse=True, scope="session")
-def disable_sentry():
-    import sentry_sdk
-    sentry_sdk.init()  
-
-# ─── Cache Cleanup ────────────────────────────────────────────────────────────
-
 @pytest.fixture(autouse=True)
-def clear_all_caches():
-    try:
-        caches["default"].clear()
-    except Exception:
-        pass
-
-    try:
-        caches["local"].clear()
-    except Exception:
-        pass
-
+def isolated_caches():
+    # Fail closed: the old fixture could flush a developer's configured Redis.
+    if not getattr(settings, "TESTING", False):
+        pytest.fail("Use config.test_settings; application caches must not be cleared")
+    for alias in ("default", "local"):
+        if settings.CACHES[alias]["BACKEND"] != "django.core.cache.backends.locmem.LocMemCache":
+            pytest.fail("Default suite requires isolated local-memory caches")
+        caches[alias].clear()
     yield
+    for alias in ("default", "local"):
+        caches[alias].clear()
 
-    try:
-        caches["default"].clear()
-    except Exception:
-        pass
-
-    try:
-        caches["local"].clear()
-    except Exception:
-        pass
-
-
-# ─── HTTP Client ──────────────────────────────────────────────────────────────
 
 @pytest.fixture
-def api_client() -> APIClient:
+def api_client():
     return APIClient()

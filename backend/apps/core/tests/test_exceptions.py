@@ -8,7 +8,7 @@ through custom_exception_handler. If it breaks, ALL error responses break.
 
 Four layers of tests:
 
-    Layer 1 — _format_errors() unit tests
+    Layer 1 — _format_drf_errors() unit tests
         Pure function. No DB. No HTTP. Tests normalization logic directly.
         Fastest possible — milliseconds.
         NEW: Tests assert the structured {code, fields, non_fields} envelope
@@ -44,7 +44,7 @@ from rest_framework.exceptions import (
 from rest_framework.test import APIRequestFactory
 
 from apps.core.api.exceptions import (
-    _format_errors,
+    _format_drf_errors,
     _monitors,
     _notify_monitors,
     _status_to_message,
@@ -160,15 +160,15 @@ def assert_error_envelope(data: dict) -> None:
             )
 
 
-# ─── Layer 1: _format_errors() Unit Tests ─────────────────────────────────────
+# ─── Layer 1: _format_drf_errors() Unit Tests ─────────────────────────────────────
 
 @pytest.mark.unit
 class TestFormatErrors:
     """
-    Unit tests for _format_errors().
+    Unit tests for _format_drf_errors().
 
     NEW CONTRACT:
-        _format_errors() now always returns a structured dict:
+        _format_drf_errors() now always returns a structured dict:
         {
             "code":       str,           # top-level category from status code
             "fields":     dict | None,   # field-level errors
@@ -188,8 +188,8 @@ class TestFormatErrors:
 
     DRF attaches ErrorDetail objects to every error it produces.
     ErrorDetail is a str subclass with an extra .code attribute.
-    Old _format_errors threw that .code away silently.
-    New _format_errors extracts it so frontend receives machine-readable codes.
+    Old _format_drf_errors threw that .code away silently.
+    New _format_drf_errors extracts it so frontend receives machine-readable codes.
     """
 
     # ── Dict input — field-level errors ──────────────────────────────────────
@@ -209,7 +209,7 @@ class TestFormatErrors:
         """
         data = {"email": [ErrorDetail("Enter a valid email address.", code="invalid")]}
 
-        result = _format_errors(data, status_code=400)
+        result = _format_drf_errors(data, status_code=400)
 
         assert result["code"]   == ErrorCode.VALIDATION_ERROR
         assert result["non_fields"] is None
@@ -236,7 +236,7 @@ class TestFormatErrors:
             ]
         }
 
-        result = _format_errors(data, status_code=400)
+        result = _format_drf_errors(data, status_code=400)
 
         assert result["fields"]["email"]["code"] == ErrorCode.EMAIL_ALREADY_EXISTS
 
@@ -252,7 +252,7 @@ class TestFormatErrors:
             "password": [ErrorDetail("Too short.", code="password_too_weak")],
         }
 
-        result = _format_errors(data, status_code=400)
+        result = _format_drf_errors(data, status_code=400)
 
         assert result["fields"]["email"]["code"]    == "email_invalid_format"
         assert result["fields"]["password"]["code"] == "password_too_weak"
@@ -273,7 +273,7 @@ class TestFormatErrors:
             ]
         }
 
-        result = _format_errors(data, status_code=400)
+        result = _format_drf_errors(data, status_code=400)
 
         # First error wins
         assert result["fields"]["password"]["message"] == "Too short."
@@ -301,7 +301,7 @@ class TestFormatErrors:
             ]
         }
 
-        result = _format_errors(data, status_code=401)
+        result = _format_drf_errors(data, status_code=401)
 
         assert result["fields"]     is None
         assert result["non_fields"]["message"] == (
@@ -323,7 +323,7 @@ class TestFormatErrors:
             "non_field_errors": [ErrorDetail("Account disabled.", code="account_disabled")],
         }
 
-        result = _format_errors(data, status_code=400)
+        result = _format_drf_errors(data, status_code=400)
 
         assert result["fields"]["email"]["code"] == "required"
         assert result["non_fields"]["code"]      == "account_disabled"
@@ -336,7 +336,7 @@ class TestFormatErrors:
         Both must be None — not empty dicts — so frontend can do
         simple falsy checks: if (errors.fields) { ... }
         """
-        result = _format_errors({}, status_code=400)
+        result = _format_drf_errors({}, status_code=400)
 
         assert result["code"]       == ErrorCode.VALIDATION_ERROR
         assert result["fields"]     is None
@@ -347,15 +347,15 @@ class TestFormatErrors:
         Plain string field values (no ErrorDetail) get fallback code 'error'.
 
         Some DRF exceptions produce plain strings instead of ErrorDetail.
-        _format_errors must handle these gracefully with a fallback code
+        _format_drf_errors must handle these gracefully with a fallback code
         rather than crashing or silently dropping the error.
         """
-        data = {"detail": "Not found."}
+        data = {"email": "Not found."}
 
-        result = _format_errors(data, status_code=404)
+        result = _format_drf_errors(data, status_code=404)
 
-        assert result["fields"]["detail"]["message"] == "Not found."
-        assert result["fields"]["detail"]["code"]    == "error"
+        assert result["fields"]["email"]["message"] == "Not found."
+        assert result["fields"]["email"]["code"]    == "error"
 
     # ── List input — top-level non-field errors ───────────────────────────────
 
@@ -371,7 +371,7 @@ class TestFormatErrors:
             ErrorDetail("Authentication credentials were not provided.", code="not_authenticated")
         ]
 
-        result = _format_errors(data, status_code=401)
+        result = _format_drf_errors(data, status_code=401)
 
         assert result["fields"] is None
         assert result["non_fields"]["message"] == (
@@ -383,13 +383,13 @@ class TestFormatErrors:
         """Custom code on list ErrorDetail must survive to non_fields.code."""
         data = [ErrorDetail("Account suspended.", code=ErrorCode.ACCOUNT_DISABLED)]
 
-        result = _format_errors(data, status_code=401)
+        result = _format_drf_errors(data, status_code=401)
 
         assert result["non_fields"]["code"] == ErrorCode.ACCOUNT_DISABLED
 
     def test_empty_list_produces_none_fields_and_none_non_fields(self):
         """Empty list produces fields=None and non_fields=None."""
-        result = _format_errors([], status_code=400)
+        result = _format_drf_errors([], status_code=400)
 
         assert result["fields"]     is None
         assert result["non_fields"] is None
@@ -404,7 +404,7 @@ class TestFormatErrors:
         These are non-field errors with the top-level category as code
         since there is no ErrorDetail to extract a specific code from.
         """
-        result = _format_errors("Not found.", status_code=404)
+        result = _format_drf_errors("Not found.", status_code=404)
 
         assert result["fields"]            is None
         assert result["non_fields"]["message"] == "Not found."
@@ -412,7 +412,7 @@ class TestFormatErrors:
 
     def test_empty_string_input_goes_to_non_fields(self):
         """Empty string input must go to non_fields without crashing."""
-        result = _format_errors("", status_code=400)
+        result = _format_drf_errors("", status_code=400)
 
         assert result["fields"]                is None
         assert result["non_fields"]["message"] == ""
@@ -421,32 +421,32 @@ class TestFormatErrors:
 
     def test_status_400_produces_validation_error_code(self):
         """400 status must produce errors.code = 'validation_error'."""
-        result = _format_errors({}, status_code=400)
+        result = _format_drf_errors({}, status_code=400)
         assert result["code"] == ErrorCode.VALIDATION_ERROR
 
     def test_status_401_produces_authentication_error_code(self):
         """401 status must produce errors.code = 'authentication_error'."""
-        result = _format_errors([], status_code=401)
+        result = _format_drf_errors([], status_code=401)
         assert result["code"] == ErrorCode.AUTHENTICATION_ERROR
 
     def test_status_403_produces_permission_error_code(self):
         """403 status must produce errors.code = 'permission_error'."""
-        result = _format_errors([], status_code=403)
+        result = _format_drf_errors([], status_code=403)
         assert result["code"] == ErrorCode.PERMISSION_ERROR
 
     def test_status_404_produces_not_found_code(self):
         """404 status must produce errors.code = 'not_found'."""
-        result = _format_errors("Not found.", status_code=404)
+        result = _format_drf_errors("Not found.", status_code=404)
         assert result["code"] == ErrorCode.NOT_FOUND
 
     def test_status_429_produces_rate_limit_code(self):
         """429 status must produce errors.code = 'rate_limit_exceeded'."""
-        result = _format_errors([], status_code=429)
+        result = _format_drf_errors([], status_code=429)
         assert result["code"] == ErrorCode.RATE_LIMIT_EXCEEDED
 
     def test_status_500_produces_server_error_code(self):
         """500 status must produce errors.code = 'server_error'."""
-        result = _format_errors("Unexpected error.", status_code=500)
+        result = _format_drf_errors("Unexpected error.", status_code=500)
         assert result["code"] == ErrorCode.SERVER_ERROR
 
     # ── Output shape guarantee ────────────────────────────────────────────────
@@ -470,7 +470,7 @@ class TestFormatErrors:
             ([],                                             400),
         ]
         for data, status_code in inputs:
-            result = _format_errors(data, status_code)
+            result = _format_drf_errors(data, status_code)
             assert "code"       in result, f"'code' missing for input {data!r}"
             assert "fields"     in result, f"'fields' missing for input {data!r}"
             assert "non_fields" in result, f"'non_fields' missing for input {data!r}"
@@ -762,21 +762,7 @@ class TestCustomExceptionHandlerDirect:
 
     @override_settings(DEBUG=False)
     def test_unhandled_exception_errors_never_none_in_production(self):
-        """
-        In production (DEBUG=False), errors is a structured dict with
-        server_error code and non_fields=None to avoid leaking internals.
-
-        OLD: assert response.data["errors"] is None
-        NEW: errors is always a structured dict.
-             non_fields is None in production to avoid leaking exception detail.
-             errors.code tells frontend it is a server error.
-
-        Why changed:
-            errors=None in old system was blunt — frontend could not even
-            read a category code. New system: errors.code="server_error"
-            always present, but non_fields.message is None in production
-            so no internal details leak.
-        """
+        """Production errors retain a safe message, never raw exception detail."""
         request = _make_request()
         exc = RuntimeError("SELECT * FROM secret_table WHERE password=...")
 
@@ -786,9 +772,13 @@ class TestCustomExceptionHandlerDirect:
         assert errors is not None,                      "errors must never be None — use structured shape"
         assert errors["code"]       == ErrorCode.SERVER_ERROR
         assert errors["fields"]     is None
-        assert errors["non_fields"] is None, (
-            "Production 500 must not expose exception detail in non_fields"
-        )
+        assert errors["non_fields"] == {
+            "category": "unexpected",
+            "message": "An unexpected error occurred. Please try again later.",
+            "code": ErrorCode.SERVER_ERROR,
+            "extra": None,
+        }
+        assert "secret_table" not in str(response.data)
 
     @override_settings(DEBUG=True)
     def test_unhandled_exception_non_fields_exposed_in_debug(self):

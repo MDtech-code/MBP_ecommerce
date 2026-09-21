@@ -94,3 +94,8 @@ seed/images/
 frontend/repomix-output.xml
 frontend/repomix-output.txt
 frontend/repomix-output-old.xml
+
+# Test reports
+coverage/
+playwright-report/
+test-results/

@@ -92,10 +92,12 @@ def validate_strong_password(value: str) -> str:
     except ValidationError as exc:
         # Django may raise multiple messages — we preserve them all
         # but attach our unified code so frontend knows the category.
-        raise ValidationError(
-            exc.messages,
-            code=ErrorCode.PASSWORD_TOO_WEAK,
-        )
+        # A code on a list-valued ValidationError is not propagated by Django
+        # to the individual errors. Attach it to each message explicitly.
+        raise ValidationError([
+            ValidationError(message, code=ErrorCode.PASSWORD_TOO_WEAK)
+            for message in exc.messages
+        ]) from exc
     return value
 
 

@@ -198,7 +198,7 @@ export const extractErrors = (normalized) => {
  
   return {
     fieldErrors,
-    formError: nonField?.message ?? null,
+    formError: nonField?.message ?? (Object.keys(rawFields).length === 0 ? normalized?.message ?? null : null),
     formErrorCode: nonField?.code ?? null,
     category: nonField?.category ?? null,
     extra: nonField?.extra ?? null,
