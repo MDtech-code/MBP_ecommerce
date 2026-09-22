@@ -16,7 +16,12 @@ _test_env = {
     "POSTGRES_USER": "mbp_tests",
     "POSTGRES_PASSWORD": "test-only",
     "POSTGRES_HOST": "127.0.0.1",
+    # Import-only defaults. Final DATABASES below reads TEST_POSTGRES_PORT:
+    # local compose=55432, CI explicitly supplies 5432.
     "POSTGRES_PORT": "55432",
+    # Deliberately unusable import-only sentinel, NOT a live Redis endpoint.
+    # CACHES and Celery are replaced below; the real-Redis lane uses
+    # config.test_redis_settings and its separate TEST_REDIS_URL.
     "REDIS_URL": "redis://127.0.0.1:1/15",
     "GOOGLE_CLIENT_ID": "test-client",
     "GOOGLE_CLIENT_SECRET": "test-secret",
@@ -56,7 +61,11 @@ DEFAULT_FROM_EMAIL = "no-reply@example.test"
 FRONTEND_URL = "https://shop.example.test"
 CELERY_BROKER_URL = "memory://"
 CELERY_RESULT_BACKEND = "cache+memory://"
-CELERY_TASK_ALWAYS_EAGER = False  # Workflow/task tests opt in explicitly.
+# .delay() publishes to memory://; without a worker it does not run the task.
+# Service tests must mock dispatch and assert its arguments. Task tests call
+# .run()/.apply(); workflow tests opt into eager execution explicitly. Eager
+# execution still does not prove delivery through a real broker/worker.
+CELERY_TASK_ALWAYS_EAGER = False
 CELERY_TASK_EAGER_PROPAGATES = True
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.InMemoryStorage"},

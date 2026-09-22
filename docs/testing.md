@@ -6,7 +6,7 @@ This is the implementation runbook for the [approved registration plan](registra
 
 - Work remains on `arena/01a0c287-mbp-ecommerce`. Only this branch is published for PR review; no direct commits/pushes to `develop` and no merge.
 - pytest now defaults to `config.test_settings`. It imports the real application configuration without reading `.env`, disables Sentry initialization during that import, and replaces database/cache/mail/storage/broker settings with test-only configuration.
-- The default cache fixture refuses application settings or non-local-memory caches rather than flushing a developer's Redis and swallowing errors.
+- The default cache fixture refuses application settings and unexpected cache backends. The opt-in Redis lane requires a dedicated namespaced backend and cleans only its namespace; it never calls Redis `clear()`/FLUSHDB. Connection failures in that lane fail loudly.
 - Test database names must start with `test_mbp_`. Only `TEST_POSTGRES_*` variables select its connection; application `POSTGRES_*` values are not reused.
 - Ordinary email tests use Django's local-memory backend. Celery defaults to an in-memory broker and is **not** globally eager. Service tests must assert mocked dispatch explicitly; future workflow tests will opt into eager execution.
 - No production validators or middleware are disabled. No SQLite substitution for PostgreSQL constraints/transactions.
@@ -124,6 +124,79 @@ Existing frontend testing documentation describes older folders and unit-only mo
 3. Repair stale registration service/view/task tests while implementing approved post-commit dispatch, no-op resend, verification-cookie cleanup and secret-safe logging regressions. **The request-data print and raw token logging identified in the plan have not been removed in this batch.**
 4. PostgreSQL rollback and concurrency tests, real API contracts, verification/resend composition and frontend stale-error/lifecycle race behavior.
 5. Playwright with isolated full stack/mail capture, Secure-cookie checks and login eligibility boundary.
-6. Run the updated CI and add browser/live-service lanes after the backend baseline is runnable. The existing full backend suite remains mandatory; historical failures were not hidden or made continue-on-error. CI uses no SMTP/Sentry credentials or live Redis.
+6. Run the updated CI and add browser/live-service lanes after the backend baseline is runnable. The existing full backend suite remains mandatory; historical failures were not hidden or made continue-on-error. CI uses no SMTP/Sentry credentials. A separate mandatory Redis job was added in the follow-up below.
 
 The next batch should start with backend execution and the remaining reusable backend prerequisites, not duplicate the already-tested frontend validators/error adapters.
+
+
+## Redis review follow-up — 2026-09-22
+
+### Which review suggestions apply?
+
+1. **Add real Redis coverage: accepted, with separate test lanes.** Existing
+   `core/tests/test_cache.py` tests lock-related control flow and L2→L1 backfill
+   with a mocked L2. Those tests remain useful but are not Redis integration.
+   `TwoLevelCache.delete()` catches/logs `delete_pattern` errors, so a LocMem
+   backend does not necessarily raise to its caller; it can instead leave stale
+   L2 data. Real Redis checks are necessary to catch this adapter mismatch.
+2. **Port 1 is not a typo.** `_test_env.REDIS_URL` is an intentionally unusable
+   base-import sentinel. Default test settings subsequently replace CACHES and
+   Celery with local/in-memory backends. The Redis lane never uses that URL:
+   `TEST_REDIS_URL` defaults to `redis://127.0.0.1:56379/15` locally and CI supplies
+   `redis://127.0.0.1:6379/15` explicitly.
+3. **No PostgreSQL port mismatch.** Final DATABASES reads `TEST_POSTGRES_PORT`.
+   Local test Compose publishes `55432:5432`; CI supplies `5432` to match its
+   `5432:5432` mapping. `_test_env.POSTGRES_PORT` is only an import-time default.
+4. **Non-eager Celery is deliberate.** `.delay()` publishes to `memory://`, but
+   without an in-process worker the task does not execute. Service tests must
+   mock dispatch and assert arguments/call counts. Task tests call `.run()` or
+   `.apply()`; workflow tests explicitly enable eager execution. Eager mode
+   still does not prove delivery through an actual broker/worker. The Redis
+   cache lane does not change Celery's broker.
+
+### Two lanes, not one misleading substitute
+
+- Default `config.test_settings`: real local L1; ordinary cache tests mock L2;
+  no Redis requirement. Redis integration tests are explicitly skipped here.
+- `config.test_redis_settings`: actual django-redis backend, DB **15**, unique
+  `test_mbp_<uuid>` key prefix per process, independent L1s in contention tests.
+  A disposable Redis instance is still required: a DB number alone is not a
+  guarantee that no developer data exists there.
+- Cleanup uses django-redis's prefix-aware `delete_pattern("*")`, **never**
+  FLUSHDB/FLUSHALL. A test confirms an unrelated raw sentinel survives cleanup.
+- The CI `redis-integration` job is mandatory and separate from the historical
+  backend job, so an unrelated collection failure cannot prevent this lane
+  from being attempted. There is no continue-on-error.
+
+The 10 Redis cases cover serialized/falsy values, L2→L1 backfill, invalidation
+and nonmatching-key survival, namespace cleanup safety, atomic lock contention,
+normal in-flight stampede prevention with two independent L1s, and lock release
+on builder failure. These bounded coordination checks **do not prove** lock
+ownership after lease expiry, behavior after maximum wait, or all multi-process
+failure scenarios; those remain separate production cache risks.
+
+### Run the Redis lane locally
+
+From the repository root, with Python 3.12+ dependencies installed:
+
+```bash
+docker compose -f compose.test.yml up -d --wait redis
+cd backend
+python -m pytest apps/core/tests/test_cache_redis.py --ds=config.test_redis_settings -m redis_integration
+cd ..
+docker compose -f compose.test.yml down -v
+```
+
+The local Redis port is **56379**, intentionally different from a developer's
+usual 6379/6380. A dedicated service on another port can be selected with
+`TEST_REDIS_URL`; settings reject URLs not using DB 15. Do not point it at
+production. The ordinary test suite remains runnable without starting Redis.
+
+### Verification status
+
+The initial PR's GitHub frontend job passed; its full backend test step failed
+(after dependencies installed successfully). Log download failed in this sandbox,
+so the cause is not attributed to Redis or PostgreSQL port settings.
+The new Redis tests require supported Python/Redis execution and are not claimed
+passing on the strength of static checks. See the PR's new CI job for runtime
+results after publication.
