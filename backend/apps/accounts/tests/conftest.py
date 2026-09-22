@@ -2,9 +2,7 @@
 from __future__ import annotations
 
 import pytest
-from rest_framework.test import APIClient
 
-from apps.common.tests.factories import UserFactory
 
 REGISTER_URL = "/api/accounts/register/"
 
