@@ -209,3 +209,44 @@ for code commit `41854e5`:
 
 The draft PR remains blocked on the full backend suite. Redis success is not a
 claim that every backend workflow or every cache concurrency scenario passes.
+
+
+## CSRF test portability follow-up — 2026-09-22
+
+MD's Windows coverage run reported a timeout inside the first CSRF test's
+`import("./csrf")`, followed by two observed requests in the next test.
+Inspection found that CSRF imported the broad `@shared/lib` barrel, which also
+loads auth/React Query/API modules and forms a cycle back to CSRF. The timeout
+can leave the first async test continuing after global cookie cleanup; its late
+request can then reach the second test's handler. This is a plausible cascade
+from the supplied log, not a reproduced Windows timing trace.
+
+Changes:
+
+- Import `getCookie` directly from the shared cookie utility, retaining the real
+  Axios client and the same singleton bootstrap behavior. No API contract change.
+- Reset/load the CSRF module in awaited `beforeEach` setup, before test bodies
+  create cookies or start HTTP, rather than inside each timed test body.
+- Add an import-boundary guard that rejects reintroduction of the shared barrel;
+  it failed against the previous import and passes against the narrow import.
+- Always settle the deduplication test's pending requests even if an assertion
+  fails. Also test that concurrent callers share a rejection and can then retry.
+- Keep the default timeouts, single-request assertion and coverage thresholds.
+- Run the frontend CI job on both Ubuntu and Windows, with OS-specific coverage
+  artifact names. No backend check is removed or weakened.
+
+Local validation after the fix: CSRF **3/3** passed; full frontend coverage
+**101/101** passed with scoped branch coverage **99.31%**; production build passed.
+Windows CI results are recorded in the PR checks rather than inferred from Linux.
+
+To update and rerun from PowerShell:
+
+```powershell
+# Repository root; save/commit any local changes first.
+git switch arena/01a0c287-mbp-ecommerce
+git pull --ff-only origin arena/01a0c287-mbp-ecommerce
+cd frontend
+npm ci
+npm test -- src/shared/api/csrf.test.js
+npm run test:coverage
+```

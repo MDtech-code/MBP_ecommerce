@@ -87,7 +87,11 @@ jobs:
         run: python -m pytest apps/core/tests/test_cache_redis.py --ds=config.test_redis_settings -m redis_integration
 
   frontend-test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -108,6 +112,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: frontend-foundation-coverage
+          name: frontend-foundation-coverage-${{ matrix.os }}
           path: frontend/coverage/
           if-no-files-found: ignore
