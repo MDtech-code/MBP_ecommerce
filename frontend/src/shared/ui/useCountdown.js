@@ -30,10 +30,10 @@ export function useCountdown(targetIso) {
   };
 }
 
-const _secondsUntil = (targetIso) =>
-  targetIso
-    ? Math.max(
-        0,
-        Math.round((new Date(targetIso).getTime() - Date.now()) / 1000),
-      )
+const _secondsUntil = (targetIso) => {
+  if (!targetIso) return 0;
+  const target = new Date(targetIso).getTime();
+  return Number.isFinite(target)
+    ? Math.max(0, Math.round((target - Date.now()) / 1000))
     : 0;
+};

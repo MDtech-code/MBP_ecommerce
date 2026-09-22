@@ -10,10 +10,16 @@ export const getCookie = (name) => {
   const parts = value.split(`; ${name}=`);
   if (parts.length === 2) {
     const raw = parts.pop().split(";").shift();
+    let decoded;
     try {
-      return JSON.parse(decodeURIComponent(raw));
+      decoded = decodeURIComponent(raw);
     } catch {
-      return decodeURIComponent(raw); // fallback to string
+      return null; // Treat a malformed cookie as absent, not a broken page.
+    }
+    try {
+      return JSON.parse(decoded);
+    } catch {
+      return decoded;
     }
   }
   return null;

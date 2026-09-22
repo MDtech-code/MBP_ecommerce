@@ -8,7 +8,9 @@
 // so every endpoint needing CSRF protection already has a token
 // available, regardless of which page the user starts on.
 import { api } from "./client";
-import {getCookie} from "@shared/lib"
+// Import the leaf utility: the shared barrel also loads auth/API modules and
+// creates a circular, unnecessarily expensive dependency for this bootstrap.
+import { getCookie } from "@shared/lib/cookies";
 
 let csrfBootstrapPromise = null;
 

@@ -1,7 +1,7 @@
 // shared/ui/FormInput.jsx
 
 import { Eye, EyeOff } from "lucide-react";
-import { useState,memo } from "react";
+import { useState, useId, memo } from "react";
 
 function FormInput({
   icon: Icon,
@@ -13,6 +13,7 @@ function FormInput({
   onBlur,
   error,
 }) {
+  const errorId = useId();
   const [showPassword, setShowPassword] = useState(false);
   const isPassword = type === "password";
 
@@ -26,6 +27,9 @@ function FormInput({
         <input
           type={isPassword && showPassword ? "text" : type}
           placeholder={placeholder}
+          aria-label={placeholder || name}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
           name={name}
           value={value}
           onChange={onChange}
@@ -50,7 +54,7 @@ function FormInput({
 
       
       {error && (
-        <p className="text-xs text-red-500 dark:text-red-400 pl-1">{error}</p>
+        <p id={errorId} className="text-xs text-red-500 dark:text-red-400 pl-1">{error}</p>
       )}
     </div>
   );

@@ -5,6 +5,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import process from "process";
 import tailwindcss from "@tailwindcss/vite";
+import { aliases } from "./config/aliases";
 
 //* Resolve the absolute directory of vite.config.js
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -42,35 +43,9 @@ export default defineConfig(({ mode }) => {
     // INCORRECT: import { useLoginForm } from '@features/auth/model/useLoginForm'
     //
     // Every slice exposes a public index.js barrel — import from that only.
-    resolve: {
-      alias: {
-        "@app": path.resolve(__dirname, "src/app"),
-        "@pages": path.resolve(__dirname, "src/pages"),
-        "@widgets": path.resolve(__dirname, "src/widgets"),
-        "@features": path.resolve(__dirname, "src/features"),
-        "@entities": path.resolve(__dirname, "src/entities"),
-        "@shared": path.resolve(__dirname, "src/shared"),
-      },
-    },
+    resolve: { alias: aliases },
 
-    // ── Test Configuration ──────────────────────────────────────────────────
-    test: {
-      globals: true,
-      environment: "jsdom",
-      setupFiles: ["./src/app/config/test/setup.js"],
-
-      // Points to NEW location after Phase 2 moves setup.js to app/config/test/
-      // During Phase 1 (right now) this still points to old location.
-      // We update this path when we execute the setup.js move in Phase 2.
-      alias: {
-        "@app": new URL("./src/app", import.meta.url).pathname,
-        "@pages": new URL("./src/pages", import.meta.url).pathname,
-        "@widgets": new URL("./src/widgets", import.meta.url).pathname,
-        "@features": new URL("./src/features", import.meta.url).pathname,
-        "@entities": new URL("./src/entities", import.meta.url).pathname,
-        "@shared": new URL("./src/shared", import.meta.url).pathname,
-      },
-    },
+    // Test environment/setup/coverage live in vitest.config.js.
 
     // ── Dev Server ──────────────────────────────────────────────────────────
     server: {

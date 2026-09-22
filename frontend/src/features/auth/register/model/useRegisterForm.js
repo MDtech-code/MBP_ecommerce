@@ -20,6 +20,8 @@ export function useRegisterForm() {
 
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [clientErrors, setClientErrors] = useState({});
+  // A synchronous guard also covers two submits before React rerenders.
+  const submittingRef = useRef(false);
   const formRef = useRef(form);
   const submitAttemptedRef = useRef(submitAttempted);
 
@@ -80,6 +82,7 @@ export function useRegisterForm() {
   const handleSubmit = useCallback(
     (e) => {
       e.preventDefault();
+      if (submittingRef.current || isPending || isRateLimited) return;
       setSubmitAttempted(true);
       const currentForm = formRef.current;
       const schema = registerSchema(currentForm);
@@ -92,13 +95,17 @@ export function useRegisterForm() {
 
       setClientErrors({});
 
+      submittingRef.current = true;
       register(currentForm, {
+        onSettled: () => {
+          submittingRef.current = false;
+        },
         onSuccess: () => {
           navigate("/verify-email");
         },
       });
     },
-    [register, navigate],
+    [register, navigate, isPending, isRateLimited],
   );
 
   return {
