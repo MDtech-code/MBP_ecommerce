@@ -197,6 +197,15 @@ production. The ordinary test suite remains runnable without starting Redis.
 The initial PR's GitHub frontend job passed; its full backend test step failed
 (after dependencies installed successfully). Log download failed in this sandbox,
 so the cause is not attributed to Redis or PostgreSQL port settings.
-The new Redis tests require supported Python/Redis execution and are not claimed
-passing on the strength of static checks. See the PR's new CI job for runtime
-results after publication.
+Runtime validation is now available from GitHub Actions run
+[35700605194](https://github.com/MDtech-code/MBP_ecommerce/actions/runs/35700605194),
+for code commit `41854e5`:
+
+- **redis-integration: passed** on Python 3.12 with the Redis 7 service.
+- **frontend-test: passed**, including the coverage gate and build.
+- **test (full historical backend suite): failed** at the pytest step; migration
+  check was consequently skipped. Detailed log download still fails from this
+  sandbox, so the precise failure cause is not asserted here.
+
+The draft PR remains blocked on the full backend suite. Redis success is not a
+claim that every backend workflow or every cache concurrency scenario passes.
