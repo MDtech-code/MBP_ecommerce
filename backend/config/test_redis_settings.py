@@ -1,8 +1,4 @@
-"""Opt-in real Redis lane; the default test suite stays server-independent.
 
-Use a dedicated disposable Redis instance, DB 15, and a unique key namespace.
-No test calls FLUSHDB/FLUSHALL. DB 15 alone is not sufficient isolation.
-"""
 import os
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -15,7 +11,7 @@ _url = urlparse(TEST_REDIS_URL)
 if _url.scheme not in {"redis", "rediss"} or not _url.hostname or _url.path != "/15":
     raise ValueError("TEST_REDIS_URL must be an explicit Redis URL using database 15")
 
-# A new prefix per process also isolates independent/parallel test invocations.
+
 TEST_REDIS_KEY_PREFIX = f"test_mbp_{uuid4().hex}"
 CACHES = {
     "default": {
@@ -34,4 +30,4 @@ CACHES = {
         "LOCATION": f"{TEST_REDIS_KEY_PREFIX}_l1",
     },
 }
-# Celery remains in-memory here: real Redis caching is not a live-worker test.
+
