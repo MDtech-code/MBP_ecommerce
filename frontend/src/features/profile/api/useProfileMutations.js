@@ -36,24 +36,7 @@ export function useUploadAvatar() {
   return useMutation({
     mutationFn: accountService.uploadAvatar,
 
-    // ── OLD ────────────────────────────────────────────────────────
-    // Manual Zustand merge — inconsistent with all other mutations
-    // that use query invalidation as the single update strategy.
-    // Manual merge is also fragile: if user object shape changes on
-    // backend, this merge silently produces a stale nested object.
-    //
-    // onSuccess: ({ data }) => {
-    //   setUser({
-    //     ...user,
-    //     profile: { ...user.profile, avatar: data.avatar },
-    //   })
-    // },
-    // ───────────────────────────────────────────────────────────────
-
-    // ── NEW ────────────────────────────────────────────────────────
-    // Invalidate profile query — refetch calls setUser once via
-    // useProfile queryFn. Single consistent strategy across all
-    // mutations. Backend response is always source of truth.
+    
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: PROFILE_KEY })
     },
@@ -72,13 +55,7 @@ export function useVerifyPhoneOtp() {
     mutationFn: ({ phone, otp }) =>
       accountService.verifyPhoneOtp({ phone, otp }),
     onSuccess: () => {
-      // ── OLD ──────────────────────────────────────────────────────
-      // Wrong key — ["user-profile"] does not match ["account","profile"]
-      // Invalidation fired but matched nothing — is_phone_verified
-      // stayed stale in Zustand until manual page refresh.
-      //
-      // queryClient.invalidateQueries({ queryKey: ["user-profile"] })
-      // ─────────────────────────────────────────────────────────────
+      
 
       // ── NEW — correct key ─────────────────────────────────────────
       queryClient.invalidateQueries({ queryKey: PROFILE_KEY })

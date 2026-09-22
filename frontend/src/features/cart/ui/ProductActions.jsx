@@ -4,23 +4,7 @@ import { useState } from "react";
 import { useCart } from "../model/useCart";
 import { useAuthStore }        from "@entities/user"
 import { useNavigate }         from "react-router-dom"
-/**
- * ProductActions — full cart action block for Product Detail Page.
- *
- * Responsibilities:
- *   - Quantity selector with stock guard
- *   - ADD TO CART button (wired to useCart)
- *   - BUY NOW button (future feature)
- *
- * Props:
- *   isInStock: boolean — from product.is_in_stock
- *   stock:     number  — from product.stock (max qty guard)
- *
- * Cart wiring:
- *   handleAddToCart(productId, qty) from useCart
- *   productId passed as prop from ProductDetailPage
- *   via useProductDetail hook
- */
+
 export default function ProductActions({ productId, isInStock = true, stock = 0 }) {
   const [qty, setQty] = useState(1);
   const { handleAddToCart, isMutating } = useCart();
