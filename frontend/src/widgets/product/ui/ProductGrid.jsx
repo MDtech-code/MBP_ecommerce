@@ -2,13 +2,7 @@
 import { ProductCard }       from "@entities/product"
 import { ProductCardAction } from "@features/cart"
 
-/**
- * ProductGrid — composes ProductCard (entity) with
- * ProductCardAction (feature) via the action prop slot.
- *
- * Widget layer is the correct place for this composition.
- * Neither entity nor feature knows the other exists.
- */
+
 export default function ProductGrid({ products = [], isLoading = false }) {
 
   if (isLoading) {
@@ -47,9 +41,7 @@ export default function ProductGrid({ products = [], isLoading = false }) {
           key={product.id}
           product={product}
           action={
-            // Widget composes entity + feature here.
-            // ProductCard does not know what this is.
-            // ProductCardAction does not know which card it is in.
+         
             <ProductCardAction
               productId={product.id}
               isInStock={product.is_in_stock}

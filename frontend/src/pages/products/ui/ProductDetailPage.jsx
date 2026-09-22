@@ -10,16 +10,7 @@ import { ProductTrust }   from "@entities/product"
 import { ProductTabs }    from "@entities/product"
 import { RelatedProducts } from "@widgets/product"
 
-/**
- * ProductDetail page — Layer 4 (dumb).
- *
- * Zero API calls here.
- * Zero business logic here.
- * Receives everything from useProductDetail() and passes down.
- *
- * URL: /product/:slug
- * slug is read inside useProductDetail via useParams()
- */
+
 export default function ProductDetail() {
   const {
     product,

@@ -1,3 +1,4 @@
+// src/widgets/security/ui/index.js
 import { ChevronRight } from "lucide-react";
 
 export default function SecurityCard({

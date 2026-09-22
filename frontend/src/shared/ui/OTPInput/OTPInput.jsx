@@ -1,17 +1,6 @@
 // src/shared/ui/OTPInput/index.jsx
 
-/**
- * OTPInput — 6 individual digit boxes.
- *
- * Props:
- *   otp        → array of 6 string values from hook
- *   inputRefs  → ref array from hook
- *   onChange   → (index, value) => void
- *   onKeyDown  → (index, e) => void
- *   onPaste    → (e) => void
- *   disabled   → bool
- *   hasError   → bool — red border on all boxes when true
- */
+
 export default function OTPInput({
   otp,
   inputRefs,

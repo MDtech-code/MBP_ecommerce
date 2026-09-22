@@ -1,26 +1,9 @@
-// src/components/products/ProductSidebar.jsx
+// src/widgets/sidebar/ui/ProductSidebar.jsx
 import { ChevronDown } from "lucide-react";
 import { useCategoriesFlat, useBrands, useBikeModels } from '@entities/product'
 
 
-/**
- * ProductSidebar — all data from backend, all filter state from useProductList.
- *
- * Props (all from useProductList hook in parent page):
- *   activeFilters  : { category, brand, bikeModel, minPrice, maxPrice }
- *   setCategory    : (slug: string|null) => void
- *   setBrand       : (slug: string|null) => void
- *   setBikeModel   : (id: string|null) => void
- *   setMinPrice    : (val: string|null) => void
- *   setMaxPrice    : (val: string|null) => void
- *   clearFilters   : () => void
- *
- * Why only root categories in sidebar:
- *   Flat list from backend includes ALL categories (root + sub).
- *   We filter to is_subcategory=false for the sidebar top-level list.
- *   Subcategory drill-down is handled by the mega menu, not sidebar.
- *   Sidebar checkbox selects a category slug → filters products.
- */
+
 export default function ProductSidebar({
   activeFilters = {},
   setCategory,
@@ -34,13 +17,13 @@ export default function ProductSidebar({
   const { data: brands        = [], isLoading: brandsLoading } = useBrands();
   const { data: bikeModels    = [], isLoading: bikesLoading  } = useBikeModels();
 
-  // Only root categories in sidebar
+
   const rootCategories = allCategories.filter((c) => !c.is_subcategory);
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
   const handleCategoryToggle = (slug) => {
-    // Toggle — clicking active category deselects it
+
     setCategory(activeFilters.category === slug ? null : slug);
   };
 
@@ -60,7 +43,7 @@ export default function ProductSidebar({
     setMaxPrice(e.target.value || null);
   };
 
-  // ── Active filter count for "Clear" button ───────────────────────────────
+  // ── Active filter  ───────────────────────────────
   const activeCount = [
     activeFilters.category,
     activeFilters.brand,

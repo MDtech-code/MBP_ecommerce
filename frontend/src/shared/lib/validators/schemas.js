@@ -1,15 +1,5 @@
 // shared/lib/validators/schemas.js
-//
-// Form schemas — bind fields to ordered rule arrays.
-// One schema per form that has client-side validation.
-//
-// Cross-field rules (matchesField) are DYNAMIC — they need current form state.
-// So schemas that contain cross-field rules are FUNCTIONS that receive form
-// values and return the schema object. Pure schemas are plain objects.
-//
-// Naming convention:
-//   registerSchema(form)   ← function, needs form.password for confirm check
-//   loginSchema            ← plain object, no cross-field dependency
+
 
 import {
   required,

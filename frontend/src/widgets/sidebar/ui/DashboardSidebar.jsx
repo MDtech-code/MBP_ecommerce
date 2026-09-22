@@ -1,4 +1,4 @@
-// src/widgets/sidebar/DashboardSidebar.jsx
+// src/widgets/sidebar/ui/DashboardSidebar.jsx
 
 
 import { NavLink } from "react-router-dom"

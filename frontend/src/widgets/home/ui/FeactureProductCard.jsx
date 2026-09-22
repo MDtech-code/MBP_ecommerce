@@ -1,5 +1,5 @@
 
-// import { getMediaUrl } from "@shared/lib/media"; 
+
 import {IMAGES} from "@shared/assets";
 
 

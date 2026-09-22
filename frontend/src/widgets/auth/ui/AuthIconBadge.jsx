@@ -1,17 +1,4 @@
-// shared/ui/AuthIconBadge.jsx
-//
-// Reusable icon circle used on all auth info/status pages.
-// Renders a centered icon inside a circular gray container.
-// Optionally renders a small primary-colored badge in the bottom-right corner.
-//
-// Props:
-//   icon   — Lucide icon component (required)
-//   badge  — string character to show in badge (optional)
-//             pass null or omit for no badge (ForgotPasswordSent)
-//
-// Usage:
-//   <AuthIconBadge icon={MailCheck} badge="✓" />
-//   <AuthIconBadge icon={Mail} />              ← no badge
+
 
 export default function AuthIconBadge({ icon: Icon, badge = null }) {
   return (

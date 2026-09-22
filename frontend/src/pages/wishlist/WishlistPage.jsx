@@ -13,18 +13,7 @@ import { useWishlist } from "@features/wishlist/model/useWishlist";
 import { useCart } from "@features/cart/model/useCart";
 import {Pagination} from "@shared/ui/Pagination";
 
-/**
- * WishlistPage — /wishlist
- *
- * Renders inside DashboardLayout outlet.
- *
- * Features:
- *   - Paginated wishlist items grid
- *   - Add to cart directly from wishlist card
- *   - Remove from wishlist per item
- *   - Empty state with CTA to browse products
- *   - Skeleton loading
- */
+
 export default function WishlistPage() {
   const [page, setPage] = useState(1);
 
@@ -144,13 +133,7 @@ export default function WishlistPage() {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// WishlistCard — single wishlist item card
-//
-// Shape from WishlistItemSerializer:
-//   id, product_id, product_name, product_slug,
-//   product_price, product_in_stock, created_at, updated_at
-// ─────────────────────────────────────────────────────────────────────────────
+
 function WishlistCard({ item, isRemoving, isAddingToCart, onRemove, onAddToCart }) {
   return (
     <div className="group bg-white border border-gray-200 rounded-2xl

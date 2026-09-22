@@ -4,7 +4,7 @@
 
 
 /**
- *
+ *Validates that a field has a non-empty value.
  * @param {string} value
  * @returns {string|null}
  */

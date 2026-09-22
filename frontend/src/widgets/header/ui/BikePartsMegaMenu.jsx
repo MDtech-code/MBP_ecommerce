@@ -4,27 +4,13 @@ import { Link } from "react-router-dom";
 import { ChevronRight, Bike } from "lucide-react";
 import { useCategoriesTree } from "@entities/product"
 
-/**
- * BikePartsMegaMenu
- *
- * 3-panel hover mega menu driven by live category tree from backend.
- *
- * Panel 1: Root categories (level 0)
- * Panel 2: Children of hovered root (level 1)
- * Panel 3: Children of hovered level-1 + "Need Help?" CTA
- *
- * Data shape (from backend tree response):
- *   { id, name, slug, children: [...] }
- *
- * Navigation:
- *   Clicking any category → /product?category=<slug>
- */
+
 export default function BikePartsMegaMenu({ onClose }) {
   const { data: categories = [], isLoading } = useCategoriesTree();
 
-  // Which root category is hovered → drives panel 2
+  
   const [activeRoot, setActiveRoot] = useState(null);
-  // Which level-1 category is hovered → drives panel 3
+  
   const [activeSub, setActiveSub] = useState(null);
 
   // Initialize activeRoot to first category on load

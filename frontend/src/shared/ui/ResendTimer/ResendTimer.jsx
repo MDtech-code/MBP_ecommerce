@@ -1,13 +1,6 @@
 // src/shared/ui/ResendTimer/index.jsx
 
-/**
- * ResendTimer — countdown + resend link.
- *
- * Props:
- *   seconds     → current countdown seconds (0 = resend active)
- *   onResend    → function to call when resend clicked
- *   isResending → bool — show loading state on resend
- */
+
 export default function ResendTimer({ seconds, onResend, isResending }) {
   if (seconds > 0) {
     return (

@@ -9,7 +9,7 @@ export default function Footer() {
 
       {/* Main Footer */}
       <div className="max-w-7xl mx-auto px-6 py-12">
-        {/* Changed from strict flex to a responsive grid that becomes flex on lg screens */}
+        
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:flex lg:divide-x lg:divide-gray-700 gap-10 lg:gap-0">
 
           {/* Col 1 - Brand */}

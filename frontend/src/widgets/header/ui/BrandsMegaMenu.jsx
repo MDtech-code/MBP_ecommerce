@@ -4,19 +4,7 @@ import { ShieldCheck, WalletCards, Truck, RotateCcw, Lock } from "lucide-react";
 import { useBrands, useCategoriesTree } from "@entities/product"
 import { getMediaUrl } from "@shared/lib"
 
-/**
- * BrandsMegaMenu
- *
- * 3-panel mega menu:
- *   Panel 1: Category list + "Select Bike" CTA
- *   Panel 2: Popular brands grid (logo + name)
- *   Panel 3: "100% Genuine" promo card
- *
- * Footer: 5 trust badges + "Looking for a brand?" strip
- *
- * Brands come from /api/products/brands/ — logo is a relative path
- * so we pass it through getMediaUrl() same as avatar pattern.
- */
+
 
 const TRUST_BADGES = [
   { icon: ShieldCheck, label: "100% Genuine Parts" },
@@ -26,7 +14,7 @@ const TRUST_BADGES = [
   { icon: Lock,        label: "Secure Payments" },
 ];
 
-// Show max 14 brands in grid — last cell is "View All"
+
 const MAX_GRID_BRANDS = 14;
 
 export default function BrandsMegaMenu({ onClose }) {

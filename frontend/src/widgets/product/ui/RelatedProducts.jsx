@@ -4,25 +4,7 @@ import { Link } from "react-router-dom";
 import { getMediaUrl } from "@shared/lib/media"; 
 import { IMAGES} from "@shared/assets";
 
-/**
- * RelatedProducts
- *
- * Props:
- *   products: Array — product.related_products from backend
- *             shape: ProductListSerializer (same as list endpoint)
- *
- * Backend fields used:
- *   slug          → Link to /product/:slug
- *   primary_image → product image (can be null)
- *   name          → product title
- *   current_price → display price
- *   has_discount  → crossed price control
- *   price         → original price when discounted
- *
- * NOT in backend:
- *   rating  → dummy stars
- *   reviews → dummy count
- */
+
 
 const DUMMY_RATING  = 4;
 const FALLBACK_IMG  = IMAGES.PLACEHOLDER;

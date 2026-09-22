@@ -11,7 +11,7 @@ export default function Pagination({
 }) {
   if (totalPages <= 1) return null;
 
-  // ── Build page window (up to 5 pages centered on currentPage) ─────────────
+  // ── Build page  ─────────────
   const WINDOW = 5;
   let start = Math.max(1, currentPage - Math.floor(WINDOW / 2));
   let end   = start + WINDOW - 1;

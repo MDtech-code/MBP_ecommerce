@@ -5,18 +5,7 @@ import { Star, Clock, CheckCircle, ChevronRight } from "lucide-react";
 import { useMyReviews } from "@features/reviews";
 import { useState } from "react";
 
-/**
- * ReviewsPage — /reviews
- *
- * Renders inside DashboardLayout outlet.
- *
- * Two sections:
- *   1. Pending Reviews  — products user can review (from GET /api/reviews/pending/)
- *   2. Your Reviews     — reviews user has submitted (from GET /api/reviews/my-reviews/)
- *
- * Inline review form opens per pending item.
- * Only one form open at a time — controlled by activeItemId.
- */
+
 export default function ReviewsPage() {
   const {
     // Pending
@@ -401,12 +390,6 @@ function DashboardStarPicker({ value, onChange }) {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MyReviewCard — single submitted review in history section
-// Shape: UserReviewHistorySerializer
-//   id, product_name, product_slug, product_image, order_number,
-//   rating, title, body, is_approved, created_at, updated_at
-// ─────────────────────────────────────────────────────────────────────────────
 function MyReviewCard({ review }) {
   const formattedDate = review.created_at
     ? new Date(review.created_at).toLocaleDateString("en-US", {

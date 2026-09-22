@@ -11,7 +11,7 @@ export default function HeroBenefits({
   showDivider = true,
 }) {
 
-  // ✅ Default fallback (clean & safe)
+  
   const benefitsData = items ?? [
     { id: 1, title: "100% Original Products", icon: ShieldCheck },
     { id: 2, title: "Cash on Delivery", icon: WalletCards },
@@ -21,7 +21,7 @@ export default function HeroBenefits({
 
   const isHorizontal = direction === "horizontal";
 
-  // ✅ Vertical → only first 3
+  
   const displayItems = isHorizontal
     ? benefitsData
     : benefitsData.slice(0, 3);

@@ -1,5 +1,22 @@
 
-  const variantMap = {
+ 
+
+  export default function AlertBanner({ type = "error", children, className = "" }) {
+    const variant = variantMap[type];
+
+    return (
+      <div
+        role={variant.role}
+        className={`text-sm border rounded-lg px-4 py-3 ${variant.className} ${className}`}
+      >
+        {children} 
+      </div>
+    );
+  }
+
+
+
+   const variantMap = {
     error: {
       role: "alert",
       className:
@@ -16,16 +33,3 @@
         "text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800",
     },
   };
-
-  export default function AlertBanner({ type = "error", children, className = "" }) {
-    const variant = variantMap[type];
-
-    return (
-      <div
-        role={variant.role}
-        className={`text-sm border rounded-lg px-4 py-3 ${variant.className} ${className}`}
-      >
-        {children} 
-      </div>
-    );
-  }

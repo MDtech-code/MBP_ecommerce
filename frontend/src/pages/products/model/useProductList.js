@@ -5,35 +5,7 @@ import { useSearchParams } from "react-router-dom";
 import { useProducts } from "@entities/product";
 import { normalizeError } from "@shared/api";
 
-/**
- * useProductList — Layer 3b
- *
- * Business logic hook for the ProductListing page.
- *
- * Responsibilities:
- *   - Reads filters from URL search params (shareable/bookmarkable URLs)
- *   - Provides filter update handlers
- *   - Provides pagination handlers
- *   - Provides sort handler
- *   - Exposes normalized error when query fails
- *   - Returns clean destructured values to page (dumb UI)
- *
- * Why URL search params not useState:
- *   User can share the URL and get the same filtered view.
- *   Browser back button restores previous filter state.
- *   Page refresh keeps filters intact.
- *
- * URL param → backend param mapping:
- *   ?category=brake-system → ?category=brake-system (slug)
- *   ?brand=honda           → ?brand=honda (slug)
- *   ?bike=1                → ?bike_model=1 (id)
- *   ?min=500               → ?min_price=500
- *   ?max=5000              → ?max_price=5000
- *   ?q=brake               → ?q=brake
- *   ?featured=true         → ?featured=true
- *   ?sort=newest           → ?sort=newest
- *   ?page=2                → ?page=2
- */
+
 export function useProductList() {
   const [searchParams, setSearchParams] = useSearchParams();
 

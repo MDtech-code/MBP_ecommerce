@@ -1,23 +1,4 @@
-/**
- * locationData.js — shared city/province/postal data
- *
- * Single source of truth for all Pakistani city data on the frontend.
- * Mirrors backend CITY_PROVINCE_MAP and CITY_POSTAL_MAP exactly.
- * Mirrors backend _calculate_shipping_fee() logic exactly.
- *
- * Any backend change to city data or shipping tiers
- * MUST be reflected here simultaneously.
- *
- * Consumers:
- *   - useAddressForm     (address create/edit)
- *   - checkoutStore      (city → province/postal/shipping auto-derive)
- *   - CheckoutAddressPage (city dropdown)
- *   - CartSummary        (shipping fee preview — not yet, placeholder)
- */
 
-
-// ── Province codes ────────────────────────────────────────────────────────────
-// Matches Province TextChoices in apps/accounts/choices/province.py
 export const CITY_PROVINCE_MAP = {
   // Punjab → PB
   Lahore: "PB",
@@ -60,8 +41,7 @@ export const CITY_PROVINCE_MAP = {
 };
 
 // ── Postal codes ──────────────────────────────────────────────────────────────
-// Sourced from Pakistan Post official codes
-// Matches CITY_POSTAL_MAP in apps/accounts/constants.py
+
 export const CITY_POSTAL_MAP = {
   // Punjab
   Lahore: "54000",
@@ -104,7 +84,7 @@ export const CITY_POSTAL_MAP = {
 };
 
 // ── City list for dropdowns ───────────────────────────────────────────────────
-// Ordered to match City TextChoices in apps/accounts/choices/city.py
+
 export const CITY_LIST = [
   // Punjab
   "Lahore",
@@ -147,8 +127,7 @@ export const CITY_LIST = [
 ];
 
 // ── Shipping tier ─────────────────────────────────────────────────────────────
-// Mirrors _calculate_shipping_fee() in apps/orders/services/order_service.py
-// MUST stay in sync — if backend changes tiers, update here too
+
 const MAJOR_CITIES = new Set(["Lahore", "Karachi", "Islamabad", "Rawalpindi"]);
 
 export const SHIPPING_RATES = {

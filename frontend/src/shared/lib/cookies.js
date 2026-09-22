@@ -14,7 +14,7 @@ export const getCookie = (name) => {
     try {
       decoded = decodeURIComponent(raw);
     } catch {
-      return null; // Treat a malformed cookie as absent, not a broken page.
+      return null; 
     }
     try {
       return JSON.parse(decoded);

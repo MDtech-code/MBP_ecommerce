@@ -8,20 +8,7 @@ import { Pagination }     from "@shared/ui"
 import { useProductList } from "../model/useProductList";
 import { Link } from "react-router-dom";
 
-/**
- * ProductListing page — Layer 4 (dumb).
- *
- * Zero API calls here.
- * Zero business logic here.
- * Destructures everything from useProductList and passes down.
- *
- * URL drives all state:
- *   /product                          → all products, page 1
- *   /product?category=brake-system    → filtered by category
- *   /product?brand=honda              → filtered by brand
- *   /product?bike=1                   → compatibility filter
- *   /product?sort=price_asc&page=2    → sorted + paginated
- */
+
 export default function ProductListing() {
   const {
     products,
