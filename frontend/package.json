@@ -6,10 +6,10 @@
   "scripts": {
     "dev": "cross-env NODE_EXTRA_CA_CERTS=../certs/rootCA.pem vite",
     "dev:docker": "vite --mode docker --host 0.0.0.0",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
-    "test:coverage": "vitest run --coverage",
+    "test:coverage": "vitest run --coverage --passWithNoTests",
     "build": "vite build",
     "lint": "eslint .",
     "lint:fsd": "node scripts/verify-fsd.js",

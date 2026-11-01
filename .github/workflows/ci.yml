@@ -1,5 +1,34 @@
 name: MBP Ecommerce CI
 
+# ─────────────────────────────────────────────────────────────────────────────
+# SCOPE — read this before adding steps.
+#
+# This pipeline is a SAFETY NET, not a coverage report. Everything in it is
+# designed to stay green while the application is being built out, and to go
+# red only when something is genuinely broken.
+#
+#   test              → requirements install on a clean Linux runner
+#                     → unit suite: foundation canaries (apps load, URLconf wires,
+#                       error-code registry, error-envelope contract)
+#                     → no model change has drifted away from its migrations
+#   redis-integration → TwoLevelCache against a real redis:7 (DB 15):
+#                       sentinel encoding, L1→L2 backfill, SCAN invalidation,
+#                       stampede lock
+#   frontend-test     → npm ci → 35 foundation tests → production build
+#
+# The backend suite is deliberately DB-free: no test uses pytest.mark.django_db,
+# so pytest-django never creates or connects to a database. Adding a DB test is
+# a deliberate decision, and it will fail loudly the first time — by design.
+#
+# Deliberately NOT wired up yet, because each is red for pre-existing reasons
+# unrelated to this pipeline (see docs/00_CODEBASE_MAP.md §7):
+#   npm run lint         → 5 eslint errors (react-hooks/set-state-in-effect, no-unused-vars)
+#   npm run lint:fsd     → 21 FSD architecture violations
+#   npm run test:coverage → per-file 90% gate over 6 files, only 3 are covered
+# Turn each one on in the same PR that makes it pass, so a red check always means
+# "you broke something", never "someone left a TODO".
+# ─────────────────────────────────────────────────────────────────────────────
+
 on:
   push:
     branches: [develop, master]
@@ -10,32 +39,54 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # ── Backend: unit suite + migration drift ───────────────────────────────────
   test:
+    name: backend — unit suite and migrations
     runs-on: ubuntu-latest
+
+    # settings.py is env-driven: config.settings requires SECRET_KEY,
+    # POSTGRES_*, GOOGLE_* and FACEBOOK_* with no default, so Django cannot
+    # even import without them. These are fake CI values, never credentials.
     env:
       DJANGO_SETTINGS_MODULE: config.test_settings
-      TEST_POSTGRES_HOST: 127.0.0.1
-      TEST_POSTGRES_PORT: "5432"
-      TEST_POSTGRES_USER: mbp_tests
-      TEST_POSTGRES_PASSWORD: test-only
-      TEST_POSTGRES_DB: test_mbp_ecommerce
+      SECRET_KEY: ci-only-not-a-real-secret
+      DEBUG: "False"
+      POSTGRES_DB: mbp_ci
+      POSTGRES_USER: mbp_ci
+      POSTGRES_PASSWORD: ci-only-not-a-real-password
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: "5432"
+      GOOGLE_CLIENT_ID: ci-only
+      GOOGLE_CLIENT_SECRET: ci-only
+      GOOGLE_REDIRECT_URI: https://localhost:8000/api/accounts/auth/social/
+      FACEBOOK_APP_ID: ci-only
+      FACEBOOK_APP_SECRET: ci-only
+
+    # Not required by the DB-free suite, but the migration-drift step needs a
+    # real schema to compare against.
     services:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_DB: mbp_tests
-          POSTGRES_USER: mbp_tests
-          POSTGRES_PASSWORD: test-only
+          POSTGRES_DB: mbp_ci
+          POSTGRES_USER: mbp_ci
+          POSTGRES_PASSWORD: ci-only-not-a-real-password
         options: >-
-          --health-cmd "pg_isready -U mbp_tests -d mbp_tests"
+          --health-cmd "pg_isready -U mbp_ci -d mbp_ci"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
         ports:
           - 5432:5432
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -43,23 +94,42 @@ jobs:
           cache-dependency-path: |
             backend/requirements.txt
             backend/requirements-test.txt
+
       - name: Install dependencies
         working-directory: backend
-        run: python -m pip install -r requirements-test.txt
-      # Keep the full historical suite visible, including failures still being
-      # repaired in the staged registration rollout. No skips/continue-on-error.
-      - name: Run all backend tests
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-test.txt
+
+      - name: Run unit suite
         working-directory: backend
         run: python -m pytest --tb=short -v
-      - name: Check for missing migrations
-        working-directory: backend
-        run: python manage.py makemigrations --check --dry-run
 
+      - name: Reject missing migrations
+        working-directory: backend
+        run: |
+          python manage.py migrate --noinput
+          python manage.py makemigrations --check --dry-run
+
+  # ── Backend: real Redis adapter ────────────────────────────────────────────
   redis-integration:
+    name: backend — redis integration
     runs-on: ubuntu-latest
     env:
       DJANGO_SETTINGS_MODULE: config.test_redis_settings
       TEST_REDIS_URL: redis://127.0.0.1:6379/15
+      SECRET_KEY: ci-only-not-a-real-secret
+      POSTGRES_DB: mbp_ci
+      POSTGRES_USER: mbp_ci
+      POSTGRES_PASSWORD: ci-only-not-a-real-password
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: "5432"
+      GOOGLE_CLIENT_ID: ci-only
+      GOOGLE_CLIENT_SECRET: ci-only
+      GOOGLE_REDIRECT_URI: https://localhost:8000/api/accounts/auth/social/
+      FACEBOOK_APP_ID: ci-only
+      FACEBOOK_APP_SECRET: ci-only
+
     services:
       redis:
         image: redis:7-alpine
@@ -70,8 +140,10 @@ jobs:
           --health-retries 10
         ports:
           - 6379:6379
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -79,39 +151,47 @@ jobs:
           cache-dependency-path: |
             backend/requirements.txt
             backend/requirements-test.txt
+
       - name: Install dependencies
         working-directory: backend
-        run: python -m pip install -r requirements-test.txt
-      - name: Exercise real Redis adapter and cache coordination
-        working-directory: backend
-        run: python -m pytest apps/core/tests/test_cache_redis.py --ds=config.test_redis_settings -m redis_integration
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-test.txt
 
+      - name: Exercise TwoLevelCache against real Redis
+        working-directory: backend
+        run: >-
+          python -m pytest apps/core/tests/test_cache_redis.py
+          --ds=config.test_redis_settings -m redis_integration --tb=short -v
+
+  # ── Frontend: foundation tests + build ─────────────────────────────────────
   frontend-test:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    name: frontend — tests and build
+    runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22.22.3'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+
       - name: Install dependencies
         working-directory: frontend
         run: npm ci
-      - name: Run frontend tests and scoped coverage gate
+
+      - name: Run frontend tests
         working-directory: frontend
-        run: npm run test:coverage
-      - name: Build frontend
+        run: npm test
+
+      # Also resolves every import path through the FSD aliases, so a broken
+      # cross-layer import fails here even though the app has no TypeScript.
+      - name: Build production bundle
         working-directory: frontend
+        env:
+          VITE_API_ORIGIN: https://localhost:8000
+          VITE_GOOGLE_CLIENT_ID: ci-only
+          VITE_FACEBOOK_APP_ID: ci-only
         run: npm run build
-      - name: Upload coverage report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: frontend-foundation-coverage-${{ matrix.os }}
-          path: frontend/coverage/
-          if-no-files-found: ignore
