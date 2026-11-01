@@ -345,13 +345,14 @@ Verified differences between what you described and what is actually on `develop
 | 2 | `backup/` folder for Postgres | **Not in the repo at all** — no folder, no script, and zero mentions of `pg_dump`/`pg_restore` anywhere. Only traces: `.gitignore` has `/backups/`, `*.dump`, `*.sql`, `*.bak`. So the dumps were always local/gitignored; the *automation* is not versioned. |
 | 3 | `certs/root.pem` | **Missing.** Only `localhost.pem` + `localhost-key.pem` exist. |
 | 4 | `certs/rootCA.pem` | **Missing**, but both Dockerfiles `COPY` it and `npm run dev` sets `NODE_EXTRA_CA_CERTS` to it → `docker compose build` and `npm run dev` will fail until it's exported. |
-| 5 | CI status | Was **red for weeks** (latest run `40540897790`, 2026-10-27, ~1 min), failing at `Install dependencies` and `Run frontend tests`. **Fixed — §10.** |
-| 6 | `backend/requirements-test.txt` | **Missing** — CI used to install exactly this file. No longer referenced (§10). |
-| 7 | `backend/config/test_settings.py`, `config/test_redis_settings.py` | **Still missing.** No longer referenced by CI (§10), but `pytest.ini` still points at `config.test_settings`, so local `pytest` cannot start. |
-| 8 | `backend/apps/core/tests/` | **Still missing.** The redis-integration job that targeted it was dropped (§10). |
+| 5 | CI status | Was **red for weeks** (latest run `40540897790`, 2026-10-27, ~1 min), failing at `Install dependencies` and `Run frontend tests`. **Green now — 3 jobs, §10/§11.** |
+| 6 | `backend/requirements-test.txt` | Was **missing** (CI installed exactly this file). **Restored — §11.** |
+| 7 | `backend/config/test_settings.py`, `config/test_redis_settings.py` | Were **missing** while `pytest.ini` pointed at them. **Both created — §11.** |
+| 8 | `backend/apps/core/tests/` | Was **missing**. **Now holds the foundation canaries + the real-Redis lane — §11.** |
 | 9 | `requirements.txt` encoding | Was **UTF-16LE with BOM** (PowerShell `>` redirect), which broke `pip install -r` on Linux/Docker/CI. **Converted to UTF-8 + LF, with a comment explaining the trap — §10.** |
 | 10 | Backend tests that exist | Only `apps/{recomendations,returns,reviews,tax,wishlist}/tests.py` and an empty `apps/cart/tests/`. `pytest.ini` has `python_files = test_*.py`, which **does not match `tests.py`** → 0 tests collected, pytest exits 5. |
 | 11 | Frontend test setup | `setupFiles` pointed at a **missing** `src/app/config/test/setup.js` → vitest couldn't boot. **Restored `setup.js` + `server.js`; all 35 tests in the 3 surviving files now pass — §10.** The per-file 90% coverage gate over 6 files is still unreachable (3 files are covered), so `test:coverage` stays out of CI. |
+| 19 | `ErrorCode.SOCIAL_AUTH_FAILED` | Its value is `"social login fail"` — spaces, so it breaks the registry's own documented "values are snake_case" rule. All 80 values are unique; this is the only violation. Not fixed here because the file says changing a value is a breaking change for the frontend. It is allowlisted in `KNOWN_NON_SNAKE_CASE_CODES` so the rule is still enforced for the other 79. |
 | 12 | Duplicate services modules | `accounts/services.py` (0 bytes) **and** `accounts/services/` package; `products/services.py` (fully commented out) **and** `products/services/` package. Python resolves the *package* first, so nothing breaks today — but these are dead, confusing duplicates. Delete both files. |
 | 13 | Redis port | Settings default to **6380**, Compose publishes **6379**. `REDIS_URL` in `.env` masks this, but any unset env silently points at a dead port. |
 | 14 | Celery beat | No beat service in Compose, no `CELERY_BEAT_SCHEDULE`. Tasks are all triggered from request/webhook paths, so nothing is scheduled. |
@@ -421,3 +422,73 @@ removed, so a red run now means something real.
 **Known risk on the first run:** the `Reject missing migrations` step is the only one whose
 result cannot be predicted from a static read — if a model was edited without a migration,
 it will go red, and that is a true finding rather than a broken pipeline.
+
+---
+
+## 11. Test strategy as built (sentinel layer)
+
+There are no feature tests yet, and inventing them top-down is what caused the previous
+stall. What exists instead is a **sentinel layer**: a small set of assertions about
+properties the whole project depends on. They stay green as features are added, and they
+go red only when something is genuinely broken — so a red build keeps its meaning.
+
+### What runs today
+
+| Job | Contents | Cases |
+|---|---|---|
+| `test` | `apps/core/tests/test_foundation.py` + migration drift | **40** (DB-free) |
+| `redis-integration` | `apps/core/tests/test_cache_redis.py` on real `redis:7` DB 15 | **13** |
+| `frontend-test` | the 3 surviving files in `src/**/*.test.js` | **35** |
+
+### `test_foundation.py` — the canaries
+
+| Test | Invariant | Fails when |
+|---|---|---|
+| `test_every_project_app_is_loaded` (17) | every entry in `settings.PROJECT_APPS` is in the app registry | an app's `models.py`/`AppConfig.ready()` breaks, or a package is missing |
+| `test_project_app_list_is_not_empty` | ≥10 apps declared | the parametrized test above would silently collect nothing |
+| `test_root_urlconf_exposes_every_documented_namespace` | the 10 mounted namespaces exist | a `config/urls.py` include is broken or removed |
+| `test_documented_top_level_routes_reverse` (4) | `csrf`, `schema`, `swagger-ui`, `redoc` reverse to `/api/...` | a top-level route is unwired |
+| `test_error_code_values_are_unique` | no two `ErrorCode` names share a value | the frontend could no longer branch on a code |
+| `test_error_code_values_are_snake_case` | registry matches its own stated rule (1 documented exception) | a new code is added malformed |
+| `test_known_deviations_still_exist` | the allowlist hasn't rotted | an allowlisted code is renamed/deleted |
+| `test_http_status_maps_to_a_stable_error_code` (11) | `_status_to_error_code` table incl. the unknown-status default | the HTTP→code contract drifts |
+| `test_domain_error_response_uses_the_shared_envelope` | `{success,message,data,errors,meta}` + `errors.{code,fields,non_fields}` | the envelope shape `transformers.js` parses changes |
+| `test_internal_context_is_never_serialized_into_a_response` | `exc.internal` never reaches the payload | the documented security invariant is broken |
+| `test_domain_error_rejects_an_out_of_range_status_code` | `DomainError` only allows 4xx | a 500 starts leaking through the wrong exception class |
+
+**DB-free by design.** No test uses `pytest.mark.django_db`, so pytest-django never
+creates or connects to a database — the suite cannot be flaky for lack of a DB, and it
+runs in ~1s. The first DB test will fail loudly the moment someone adds one, which forces
+that to be a deliberate decision.
+
+### `test_cache_redis.py` — the one lane that needs infrastructure
+
+Against a real `redis:7`, because against LocMem every assertion would pass for the wrong
+reason:
+
+- L2 really is `django_redis.cache.RedisCache` (guards the lane itself)
+- `set` writes `{"__v": ...}` to **both** levels
+- an L2 hit returns `("l2_redis")` **and backfills L1**
+- falsy values (`[]`, `{}`, `False`, `0`, `""`, `None`) are not mistaken for a miss — the documented reason the sentinel exists
+- `delete` removes the key from both levels (SCAN-based `delete_pattern`)
+- `get_or_set` builds from the database **once**, then serves from memory
+- a failing builder re-raises **and leaves no lock behind**
+
+The module calls `pytest.skip(allow_module_level=True)` unless the default cache is really
+Redis, so a plain `pytest` run (which uses `config.test_settings`) skips it instead of
+testing the fake and reporting a false pass.
+
+### How tests should be added from here
+
+Add them **where the invariant lives**, not per endpoint:
+
+| Layer | Test it with | Example invariant |
+|---|---|---|
+| selector | queryset shape, no HTTP | `list_orders_for_user` never returns another user's order |
+| service | transitions + invariants, DB allowed | stock never negative; coupon usage never exceeds its limit; cancel restores stock exactly once |
+| view | one test per route for the wiring contract only | auth required, envelope shape, status code |
+| model | only what the DB enforces | unique constraints |
+
+The rule that kills duplication: **one test per invariant**, not per endpoint. When two
+flows touch the same rule (checkout and cancellation both move stock), the rule is tested
+once, at the service. `factory_boy` is already installed — use factories, not fixtures.
