@@ -25,7 +25,7 @@ ERROR ENVELOPE
         "code":       "<top-level ErrorCode>",
         "fields":     { "<field>": {"message": "...", "code": "..."} } | null,
         "non_fields": {
-            "category": "domain" | "system" | "validation" | "unexpected",
+            "category": "domain" | "system" | "validation" | "request" | "unexpected",
             "message":  "...",
             "code":     "...",
             "extra":    {...} | null   ← only client_extra, never internal
@@ -61,7 +61,7 @@ import logging
 from typing import Any, Callable
 
 from django.conf import settings
-from rest_framework.exceptions import ErrorDetail
+from rest_framework.exceptions import ErrorDetail, ValidationError
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import exception_handler
@@ -109,17 +109,17 @@ def build_envelope_from_exception(exc: BaseAppError) -> dict[str, Any]:
 
 #! ─── non Field-error helpers  ─────────────────────────────────────────────
 
-def _non_fields_validation(detail: Any) -> dict[str, Any]:
+def _non_fields_error(detail: Any, *, category: str) -> dict[str, Any]:
 
     if isinstance(detail, ErrorDetail):
         return {
-            "category": "validation",
+            "category": category,
             "message": str(detail),
             "code": str(detail.code) if detail.code else "invalid",
             "extra": None,
         }
     return {
-        "category": "validation",
+        "category": category,
         "message": str(detail),
         "code": "invalid",
         "extra": None,
@@ -158,7 +158,17 @@ def _resolve_single(value: Any) -> dict[str, str]:
 
 #! ─── DRF error normalizer  ────────────────────────────────────────────
 
-def _format_drf_errors(data: Any, status_code: int) -> dict[str, Any]:
+def _format_drf_errors(
+    data: Any,
+    status_code: int,
+    *,
+    category: str = "validation",
+) -> dict[str, Any]:
+    """Format error details using the category selected by the caller.
+
+    The default preserves serializer-error handling in BaseAPIView.error_response().
+    The global handler supplies a category based on the actual exception.
+    """
     top_level_code = _status_to_error_code(status_code)
     fields: dict[str, Any] = {}
     non_fields: dict[str, Any] | None = None
@@ -168,16 +178,16 @@ def _format_drf_errors(data: Any, status_code: int) -> dict[str, Any]:
             
             if field in ("non_field_errors", "detail"):
                 raw = value[0] if isinstance(value, list) and value else value
-                non_fields = _non_fields_validation(raw)
+                non_fields = _non_fields_error(raw, category=category)
             else:
                 fields[field] = _resolve_single(value)
 
     elif isinstance(data, list) and data:
-        non_fields = _non_fields_validation(data[0])
+        non_fields = _non_fields_error(data[0], category=category)
 
     elif isinstance(data, str):
         non_fields = {
-            "category": "validation",
+            "category": category,
             "message": data,
             "code": top_level_code,
             "extra": None,
@@ -303,6 +313,14 @@ def custom_exception_handler(exc: Exception, context: dict[str, Any]) -> Respons
     response = exception_handler(exc, context)
 
     if response is not None:
+        # HTTP 400 alone cannot distinguish validation from malformed requests.
+        if isinstance(exc, ValidationError):
+            category = "validation"
+        elif response.status_code >= 500:
+            category = "system"
+        else:
+            category = "request"
+
         if response.status_code >= 500:
             _notify_monitors(exc)
             logger.error(
@@ -322,7 +340,9 @@ def custom_exception_handler(exc: Exception, context: dict[str, Any]) -> Respons
         
         return _build_response(
             status_code=response.status_code,
-            errors=_format_drf_errors(response.data, response.status_code),
+            errors=_format_drf_errors(
+                response.data, response.status_code, category=category
+            ),
             request_id=request_id,
             request=request,
             headers=dict(response.items()),
