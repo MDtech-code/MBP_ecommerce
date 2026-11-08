@@ -28,7 +28,7 @@ ERROR ENVELOPE
             "category": "domain" | "system" | "validation" | "request" | "unexpected",
             "message":  "...",
             "code":     "...",
-            "extra":    {...} | null   ← only client_extra, never internal
+            "extra":    {...} | null   ← public DRF details or client_extra, never internal
         } | null
     },
     "meta": { "request_id": "..." }
@@ -64,6 +64,7 @@ from django.conf import settings
 from rest_framework.exceptions import ErrorDetail, ValidationError
 from rest_framework.request import Request
 from rest_framework.response import Response
+from rest_framework.settings import api_settings
 from rest_framework.views import exception_handler
 
 from apps.core.error_codes import ErrorCode
@@ -164,30 +165,36 @@ def _format_drf_errors(
     *,
     category: str = "validation",
 ) -> dict[str, Any]:
-    """Format error details using the category selected by the caller.
+    """Choose the interpretation using the category selected by the caller.
 
     The default preserves serializer-error handling in BaseAPIView.error_response().
-    The global handler supplies a category based on the actual exception.
+    Other DRF errors must not interpret public response metadata as input fields.
     """
+    if category == "validation":
+        return _format_validation_errors(data, status_code)
+    return _format_general_error(data, status_code, category=category)
+
+
+def _format_validation_errors(data: Any, status_code: int) -> dict[str, Any]:
+    """Preserve the existing first-message policy for serializer errors."""
     top_level_code = _status_to_error_code(status_code)
     fields: dict[str, Any] = {}
     non_fields: dict[str, Any] | None = None
 
     if isinstance(data, dict):
         for field, value in data.items():
-            
-            if field in ("non_field_errors", "detail"):
+            if field == api_settings.NON_FIELD_ERRORS_KEY:
                 raw = value[0] if isinstance(value, list) and value else value
-                non_fields = _non_fields_error(raw, category=category)
+                non_fields = _non_fields_error(raw, category="validation")
             else:
                 fields[field] = _resolve_single(value)
 
     elif isinstance(data, list) and data:
-        non_fields = _non_fields_error(data[0], category=category)
+        non_fields = _non_fields_error(data[0], category="validation")
 
     elif isinstance(data, str):
         non_fields = {
-            "category": category,
+            "category": "validation",
             "message": data,
             "code": top_level_code,
             "extra": None,
@@ -196,6 +203,59 @@ def _format_drf_errors(
     return {
         "code": top_level_code,
         "fields": fields if fields else None,
+        "non_fields": non_fields,
+    }
+
+
+def _format_general_error(
+    data: Any,
+    status_code: int,
+    *,
+    category: str,
+) -> dict[str, Any]:
+    """Format DRF's public error body without applying serializer-field rules.
+
+    Additional public keys retain their structure under extra. A structured detail
+    value is retained under extra.detail with a status-based message. No exception
+    attributes are inspected, and the input body is not mutated.
+    """
+    top_level_code = _status_to_error_code(status_code)
+    extra: dict[str, Any] = {}
+
+    if isinstance(data, dict):
+        detail = data.get("detail")
+        explicit_code = data.get("code")
+        extra = {
+            key: value
+            for key, value in data.items()
+            if key not in ("detail", "code")
+        }
+    else:
+        detail = data
+        explicit_code = None
+
+    if isinstance(detail, str):
+        non_fields = _non_fields_error(detail, category=category)
+    else:
+        non_fields = {
+            "category": category,
+            "message": _status_to_message(status_code),
+            "code": top_level_code,
+            "extra": None,
+        }
+        if detail is not None:
+            extra["detail"] = detail
+
+    if isinstance(explicit_code, str) and explicit_code:
+        non_fields["code"] = str(explicit_code)
+    elif isinstance(data, dict) and "code" in data:
+        # A non-string code is public data, not a machine-readable reason code.
+        extra["code"] = explicit_code
+
+    non_fields["extra"] = extra if extra else None
+    return {
+        "code": top_level_code,
+        "fields": None,
         "non_fields": non_fields,
     }
 
