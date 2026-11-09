@@ -150,11 +150,35 @@ def _extract_error_detail(detail: Any) -> dict[str, str]:
 
 
 
-def _resolve_single(value: Any) -> dict[str, str]:
-    
+def _resolve_single(value: Any) -> dict[str, Any]:
+    """Resolve one field's error value without discarding extra messages.
+
+    The first message stays in message/code so existing clients keep working.
+    When DRF supplies more than one message for the same field, every message
+    is also exposed under details instead of being silently dropped.
+    """
     if isinstance(value, list) and value:
-        return _extract_error_detail(value[0])
+        resolved = _extract_error_detail(value[0])
+        if len(value) > 1:
+            resolved["details"] = [_extract_error_detail(item) for item in value]
+        return resolved
     return _extract_error_detail(value)
+
+
+def _resolve_non_field(value: Any, *, category: str) -> dict[str, Any]:
+    """Resolve non-field errors, preserving every message DRF supplied.
+
+    extra stays None for a single message. Multiple messages mirror the
+    general formatter's contract by listing them under extra.messages.
+    """
+    if isinstance(value, list) and value:
+        resolved = _non_fields_error(value[0], category=category)
+        if len(value) > 1:
+            resolved["extra"] = {
+                "messages": [_extract_error_detail(item) for item in value]
+            }
+        return resolved
+    return _non_fields_error(value, category=category)
 
 
 #! ─── DRF error normalizer  ────────────────────────────────────────────
@@ -176,7 +200,7 @@ def _format_drf_errors(
 
 
 def _format_validation_errors(data: Any, status_code: int) -> dict[str, Any]:
-    """Preserve the existing first-message policy for serializer errors."""
+    """Preserve the first-message policy while keeping every reported message."""
     top_level_code = _status_to_error_code(status_code)
     fields: dict[str, Any] = {}
     non_fields: dict[str, Any] | None = None
@@ -184,13 +208,12 @@ def _format_validation_errors(data: Any, status_code: int) -> dict[str, Any]:
     if isinstance(data, dict):
         for field, value in data.items():
             if field == api_settings.NON_FIELD_ERRORS_KEY:
-                raw = value[0] if isinstance(value, list) and value else value
-                non_fields = _non_fields_error(raw, category="validation")
+                non_fields = _resolve_non_field(value, category="validation")
             else:
                 fields[field] = _resolve_single(value)
 
     elif isinstance(data, list) and data:
-        non_fields = _non_fields_error(data[0], category="validation")
+        non_fields = _resolve_non_field(data, category="validation")
 
     elif isinstance(data, str):
         non_fields = {
