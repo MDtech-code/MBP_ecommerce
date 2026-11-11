@@ -131,7 +131,9 @@ class ErrorCode:
 
     # ── Top-level category codes (go into errors.code) ───────────────────────
     # These describe WHAT KIND of error occurred, not the specific cause.
-    # Used by exceptions.py to populate the top-level errors.code field.
+    # The specific cause lives in errors.non_fields.code.
+    # exceptions.py prefers the exception's own family name and falls back
+    # to _status_to_error_code() only when the exception declares nothing.
     VALIDATION_ERROR             = "validation_error"
     AUTHENTICATION_ERROR         = "authentication_error"
     PERMISSION_ERROR             = "permission_error"
@@ -140,6 +142,12 @@ class ErrorCode:
     SERVER_ERROR                 = "server_error"
     METHOD_NOT_ALLOWED           = "method_not_allowed"
     CONFLICT_ERROR               = "conflict_error"
+    BAD_REQUEST                  = "bad_request"
+    DOMAIN_ERROR                 = "domain_error"
+    UNPROCESSABLE_ENTITY_ERROR   = "unprocessable_entity_error"
+    PARSE_ERROR                  = "parse_error"
+    UNSUPPORTED_MEDIA_TYPE       = "unsupported_media_type"
+    NOT_ACCEPTABLE               = "not_acceptable"
 # # apps/core/error_codes.py
 # from __future__ import annotations
 
