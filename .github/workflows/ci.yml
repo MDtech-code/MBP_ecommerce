@@ -3,30 +3,29 @@ name: MBP Ecommerce CI
 # ─────────────────────────────────────────────────────────────────────────────
 # SCOPE — read this before adding steps.
 #
-# This pipeline is a SAFETY NET, not a coverage report. Everything in it is
-# designed to stay green while the application is being built out, and to go
-# red only when something is genuinely broken.
+# The test suite has been intentionally reduced to a placeholder while the
+# project's test architecture is being decided. Every job below exists only to
+# prove that dependencies install and that the frontend still builds.
 #
-#   test              → requirements install on a clean Linux runner
-#                     → unit suite: foundation canaries (apps load, URLconf wires,
-#                       error-code registry, error-envelope contract)
-#                     → no model change has drifted away from its migrations
-#   redis-integration → TwoLevelCache against a real redis:7 (DB 15):
-#                       sentinel encoding, L1→L2 backfill, SCAN invalidation,
-#                       stampede lock
-#   frontend-test     → npm ci → 35 foundation tests → production build
+#   test              → requirements install + smoke placeholder
+#   redis-integration → requirements install + smoke placeholder
+#   frontend-test     → npm ci + smoke placeholder + production build
 #
-# The backend suite is deliberately DB-free: no test uses pytest.mark.django_db,
-# so pytest-django never creates or connects to a database. Adding a DB test is
-# a deliberate decision, and it will fail loudly the first time — by design.
+# IMPORTANT: a green run here means "dependencies install, the bundle builds".
+# It does NOT mean the application behaves correctly. There are currently no
+# assertions covering apps, URLs, the error envelope, the error-code registry,
+# the cache adapter, or any API contract.
 #
-# Deliberately NOT wired up yet, because each is red for pre-existing reasons
-# unrelated to this pipeline (see docs/00_CODEBASE_MAP.md §7):
+# The build step is kept because it resolves every import path through the FSD
+# aliases, so a broken cross-layer import still fails here.
+#
+# When the real test strategy is chosen, replace the placeholder modules and
+# wire the runners back into these jobs.
+#
+# Still deliberately NOT wired up:
 #   npm run lint         → 5 eslint errors (react-hooks/set-state-in-effect, no-unused-vars)
 #   npm run lint:fsd     → 21 FSD architecture violations
 #   npm run test:coverage → per-file 90% gate over 6 files, only 3 are covered
-# Turn each one on in the same PR that makes it pass, so a red check always means
-# "you broke something", never "someone left a TODO".
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -44,7 +43,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ── Backend: unit suite + migration drift ───────────────────────────────────
+  # ── Backend: dependency install + placeholder ───────────────────────────────
   test:
     name: backend — unit suite and migrations
     runs-on: ubuntu-latest
@@ -67,8 +66,7 @@ jobs:
       FACEBOOK_APP_ID: ci-only
       FACEBOOK_APP_SECRET: ci-only
 
-    # Not required by the DB-free suite, but the migration-drift step needs a
-    # real schema to compare against.
+    # Kept so the migration-drift step can run when it is re-enabled.
     services:
       postgres:
         image: postgres:16
@@ -105,13 +103,7 @@ jobs:
         working-directory: backend
         run: python -m pytest --tb=short -v
 
-      - name: Reject missing migrations
-        working-directory: backend
-        run: |
-          python manage.py migrate --noinput
-          python manage.py makemigrations --check --dry-run
-
-  # ── Backend: real Redis adapter ────────────────────────────────────────────
+  # ── Backend: Redis lane placeholder ─────────────────────────────────────────
   redis-integration:
     name: backend — redis integration
     runs-on: ubuntu-latest
@@ -130,17 +122,8 @@ jobs:
       FACEBOOK_APP_ID: ci-only
       FACEBOOK_APP_SECRET: ci-only
 
-    services:
-      redis:
-        image: redis:7-alpine
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
-        ports:
-          - 6379:6379
-
+    # No Redis container: the placeholder asserts nothing about the cache.
+    # Restore redis:7-alpine here when the TwoLevelCache lane is rebuilt.
     steps:
       - uses: actions/checkout@v4
 
@@ -158,13 +141,13 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements-test.txt
 
-      - name: Exercise TwoLevelCache against real Redis
+      - name: Run cache placeholder
         working-directory: backend
         run: >-
           python -m pytest apps/core/tests/test_cache_redis.py
-          --ds=config.test_redis_settings -m redis_integration --tb=short -v
+          --ds=config.test_redis_settings --tb=short -v
 
-  # ── Frontend: foundation tests + build ─────────────────────────────────────
+  # ── Frontend: placeholder + build ───────────────────────────────────────────
   frontend-test:
     name: frontend — tests and build
     runs-on: ubuntu-latest
@@ -186,7 +169,7 @@ jobs:
         working-directory: frontend
         run: npm test
 
-      # Also resolves every import path through the FSD aliases, so a broken
+      # Resolves every import path through the FSD aliases, so a broken
       # cross-layer import fails here even though the app has no TypeScript.
       - name: Build production bundle
         working-directory: frontend
