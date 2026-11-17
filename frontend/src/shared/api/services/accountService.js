@@ -1,10 +1,8 @@
 // src/shared/api/services/accountService.js
 
-import { api } from "../client";
+import { api, authClient } from "../client";
 import { extractResponse } from "../transformers";
 import { getCookie } from "@shared/lib";
-import axios from "axios";
-import { DIRECT_API_ORIGIN } from "@shared/config/api"; 
 
 
 export const accountService = {
@@ -353,11 +351,9 @@ export const accountService = {
    */
 
   bootstrap: async () => {
-    console.log("i am from the bootstrap");
-
-    
-    const response = await axios.post(
-      `${DIRECT_API_ORIGIN}/api/accounts/token/refresh/`,
+    console.log("[accountService.bootstrap] Calling /api/accounts/token/refresh/ via authClient...");
+    const response = await authClient.post(
+      "/api/accounts/token/refresh/",
       {},
       {
         withCredentials: true,
@@ -366,6 +362,7 @@ export const accountService = {
         },
       },
     );
+    console.log("[accountService.bootstrap] Token refresh succeeded");
     return extractResponse(response);
   },
 };

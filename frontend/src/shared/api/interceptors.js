@@ -1,14 +1,12 @@
 
-// src/api/interceptors.js
-import axios from "axios"
-import { api } from "./client"
+// src/shared/api/interceptors.js
+import { api, authClient } from "./client";
 import {
   setAuthToken,
   getAuthToken,
+  getCookie,
 } from "@shared/lib";
-import { getCookie } from "@shared/lib";
 import { useAuthStore } from "@entities/user";
-import { DIRECT_API_ORIGIN } from "@shared/config/api"; 
 
 
 
@@ -23,6 +21,7 @@ const processQueue = (error, token = null) => {
 }
 
 export const setupInterceptors = () => {
+  console.log("[Interceptor] Setting up request and response interceptors...");
 
   // Request interceptor — attach token to every request
   api.interceptors.request.use(
@@ -43,7 +42,14 @@ export const setupInterceptors = () => {
       const originalRequest = error.config
       const status = error.response?.status
       const errorCode = error.response?.data?.errors?.code
+      if (error.code === "ECONNABORTED") {
+        console.warn(
+          "[Interceptor] Request timed out:",
+          originalRequest?.url,
+        );
+      }
       if (sessionStorage.getItem("logged_out") === "true") {
+        console.log("[Interceptor] Skipping 401 refresh — session is marked logged_out");
         return Promise.reject(error);
       }
       // ─── 401 handling ─────────────────────────────────────
@@ -56,6 +62,10 @@ export const setupInterceptors = () => {
         errorCode !== "invalid_credentials"  
       ) {
         if (isRefreshing) {
+          console.log(
+            "[Interceptor] Refresh already in progress — queueing request:",
+            originalRequest?.url,
+          );
           return new Promise((resolve, reject) => {
             failedQueue.push({ resolve, reject });
           })
@@ -71,23 +81,28 @@ export const setupInterceptors = () => {
         
 
         try {
-          console.log(" interceptor called ... ");
-          const response = await axios.post(
-            `${DIRECT_API_ORIGIN}/api/accounts/token/refresh/`,
+          console.log(
+            "[Interceptor] 401 detected — calling /api/accounts/token/refresh/ for:",
+            originalRequest?.url,
+          );
+          const response = await authClient.post(
+            "/api/accounts/token/refresh/",
             {},
             {
               withCredentials: true,
               headers: {
-                "X-CSRFToken": getCookie("csrftoken"), 
+                "X-CSRFToken": getCookie("csrftoken"),
               },
             },
           );
 
           const newToken = response.data.data.access;
+          console.log("[Interceptor] Token refresh succeeded — replaying queued requests");
           setAuthToken(newToken);
           processQueue(null, newToken);
           return api(originalRequest);
         } catch (err) {
+          console.warn("[Interceptor] Token refresh failed — logging out user", err?.response?.status);
           processQueue(err, null);
           useAuthStore.getState().logout();
           return Promise.reject(err);
