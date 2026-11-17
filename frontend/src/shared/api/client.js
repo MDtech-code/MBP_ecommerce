@@ -31,3 +31,7 @@ export const authClient = axios.create({
   ...baseConfig,
   timeout: AUTH_BOOTSTRAP_TIMEOUT,
 });
+
+if (import.meta.env.DEV) {
+  console.log("[API:Client] Axios instances created (api & authClient)");
+}

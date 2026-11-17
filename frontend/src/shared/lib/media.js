@@ -5,8 +5,16 @@ export const getMediaUrl = (path) => {
 
   if (path.startsWith("http")) {
     const url = new URL(path);
-    return `${API_BASE_URL}${url.pathname}`;
+    const resolved = `${API_BASE_URL}${url.pathname}`;
+    if (import.meta.env.DEV) {
+      console.debug("[Media] Resolved absolute path:", { path, resolved });
+    }
+    return resolved;
   }
 
-  return `${API_BASE_URL}${path}`;
+  const resolved = `${API_BASE_URL}${path}`;
+  if (import.meta.env.DEV) {
+    console.debug("[Media] Resolved relative path:", { path, resolved });
+  }
+  return resolved;
 };

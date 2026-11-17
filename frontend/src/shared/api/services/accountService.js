@@ -351,6 +351,7 @@ export const accountService = {
    */
 
   bootstrap: async () => {
+    console.log("[accountService.bootstrap] Calling /api/accounts/token/refresh/ via authClient...");
     const response = await authClient.post(
       "/api/accounts/token/refresh/",
       {},
@@ -361,6 +362,7 @@ export const accountService = {
         },
       },
     );
+    console.log("[accountService.bootstrap] Token refresh succeeded");
     return extractResponse(response);
   },
 };

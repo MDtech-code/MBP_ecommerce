@@ -20,3 +20,11 @@ export const API_BASE_URL = import.meta.env.VITE_PUBLIC_API_URL || "";
 export const API_TIMEOUT = 10_000;
 
 export const AUTH_BOOTSTRAP_TIMEOUT = 5_000;
+
+if (import.meta.env.DEV) {
+  console.log("[Config:API] Initialized:", {
+    API_BASE_URL: API_BASE_URL || "(relative via Vite proxy)",
+    API_TIMEOUT,
+    AUTH_BOOTSTRAP_TIMEOUT,
+  });
+}
