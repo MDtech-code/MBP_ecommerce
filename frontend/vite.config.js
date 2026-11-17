@@ -30,7 +30,7 @@ export default defineConfig(({ mode }) => {
   //* Load environment variables based on mode (local, docker, etc.)
   const env = loadEnv(mode, process.cwd(), "");
 
-  const apiTarget = env.VITE_API_ORIGIN;
+  const apiTarget = env.VITE_API_ORIGIN || "https://localhost:8000";
   console.log("apiTarget =", apiTarget);
 
   return {
@@ -62,6 +62,11 @@ export default defineConfig(({ mode }) => {
         },
         // ✅ ADD THIS - proxy media files too!
         "/media": {
+          target: apiTarget,
+          changeOrigin: true,
+          secure: true,
+        },
+        "/graphql": {
           target: apiTarget,
           changeOrigin: true,
           secure: true,

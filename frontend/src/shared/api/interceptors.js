@@ -1,14 +1,12 @@
 
-// src/api/interceptors.js
-import axios from "axios"
-import { api } from "./client"
+// src/shared/api/interceptors.js
+import { api, authClient } from "./client";
 import {
   setAuthToken,
   getAuthToken,
+  getCookie,
 } from "@shared/lib";
-import { getCookie } from "@shared/lib";
 import { useAuthStore } from "@entities/user";
-import { DIRECT_API_ORIGIN } from "@shared/config/api"; 
 
 
 
@@ -71,14 +69,13 @@ export const setupInterceptors = () => {
         
 
         try {
-          console.log(" interceptor called ... ");
-          const response = await axios.post(
-            `${DIRECT_API_ORIGIN}/api/accounts/token/refresh/`,
+          const response = await authClient.post(
+            "/api/accounts/token/refresh/",
             {},
             {
               withCredentials: true,
               headers: {
-                "X-CSRFToken": getCookie("csrftoken"), 
+                "X-CSRFToken": getCookie("csrftoken"),
               },
             },
           );
